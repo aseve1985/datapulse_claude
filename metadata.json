@@ -1,0 +1,5 @@
+{
+  "name": "DataPulse Libgot",
+  "description": "Analizador de ventas con IA que genera gráficos e insights automáticos a partir de un rango de fechas.",
+  "requestFramePermissions": []
+}
