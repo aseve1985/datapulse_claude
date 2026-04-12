@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "start": "node server.ts",
     "build": "vite build",
+    "build:server": "esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.mjs --external:vite --external:fsevents --loader:.ts=ts",
+    "start": "node dist/server.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
