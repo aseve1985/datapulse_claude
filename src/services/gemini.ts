@@ -193,11 +193,97 @@ function createDataDigest(salesData: any[]) {
   };
 }
 
+const MODULE_CONTEXTS: Record<string, string> = {
+  sales: `Estás analizando datos del módulo de VENTAS. El foco es: ingresos, productos más vendidos, clientes, tendencias comerciales y ticket promedio.`,
+  collections: `Estás analizando datos del módulo de COBRANZAS. El foco es: pagos recibidos, cartera vencida, mora, eficiencia de recaudación y aging de deuda.`,
+  risks: `Estás analizando datos del módulo de RIESGOS. El foco es: perfiles crediticios, indicadores de mora, comportamiento de pago, alertas de riesgo y segmentación por nivel de riesgo.`,
+  marketing: `Estás analizando datos del módulo de MARKETING. El foco es: performance de campañas, ROI, adquisición de clientes, conversión y canales de captación.`,
+  finance: `Estás analizando datos del módulo de FINANZAS. El foco es: presupuesto, flujo de caja, estados financieros, rentabilidad y desvíos.`,
+  callcenter: `Estás analizando datos del módulo de CALLCENTER. El foco es: volumen de llamadas, tiempos de atención, resolución en primer contacto y satisfacción del cliente.`,
+  legal: `Estás analizando datos del módulo de LEGALES. El foco es: contratos, litigios, estado de causas y cumplimiento normativo.`,
+  board: `Estás analizando datos del módulo de DIRECTORIO. El foco es: KPIs estratégicos de alto nivel, resumen ejecutivo y visión global del negocio.`,
+  product: `Estás analizando datos del módulo de PRODUCTO. El foco es: ciclo de vida del producto, inventario, adopción y desarrollo.`,
+  administration: `Estás analizando datos del módulo de ADMINISTRACIÓN. El foco es: procesos internos, recursos operativos y gestión administrativa.`,
+};
+
+function buildDataPrompt(
+  dataDigest: any,
+  dateRange: { from: string; to: string },
+  filtersDescription: string,
+  moduleId?: string
+): string {
+  const isApiModule = moduleId && MODULE_CONTEXTS[moduleId];
+
+  if (isApiModule) {
+    // API module: use business context + module-specific framing
+    return `
+      Eres un analista de negocios senior.
+
+      MÓDULO: ${MODULE_CONTEXTS[moduleId]}
+
+      CONTEXTO DE NEGOCIO Y REGLAS (LEER CON ATENCIÓN):
+      ${getBusinessContext()}
+
+      CONTEXTO DEL ANÁLISIS:
+      - PERIODO: Desde ${dateRange.from} hasta ${dateRange.to}.
+      - FILTROS ACTIVOS: ${filtersDescription}.
+
+      RESUMEN INTEGRAL DINÁMICO:
+      ${JSON.stringify(dataDigest, null, 2)}
+
+      INSTRUCCIONES CRÍTICAS DE REPORTE:
+      1. REPORTA POR PAÍS: No mezcles Argentina y Colombia en el análisis financiero.
+      2. DESGLOSE POR DIMENSIONES: Usa los datos en "desglose_por_dimensiones" para analizar cada segmento con sus métricas numéricas.
+      3. PROMEDIO: Calcúlalo como [total métrica] / [cantidad_operaciones] del segmento.
+      4. AUDITORÍA: En "calculation_explanation", detalla cómo llegaste a los números.
+
+      Responde en formato JSON:
+      {
+        "summary": "Resumen analítico (separado por país si aplica)",
+        "insights": ["Insight 1", "Insight 2", "Insight 3"],
+        "recommendation": "Recomendación estratégica",
+        "calculation_explanation": "Detalle de cálculos"
+      }
+    `;
+  } else {
+    // File or Sheet: completely generic — AI must detect the domain
+    return `
+      Eres un analista de datos senior. Se te ha proporcionado un dataset externo cargado manualmente por el usuario.
+
+      IMPORTANTE: NO asumas que estos datos son de ventas, préstamos u otro dominio específico.
+      Tu primera tarea es DETECTAR qué tipo de información contiene el dataset (hotelería, RRHH, logística, salud, etc.)
+      y analizar en función de lo que realmente ves.
+
+      PERIODO DEL FILTRO: Desde ${dateRange.from} hasta ${dateRange.to}.
+      FILTROS ACTIVOS: ${filtersDescription}.
+
+      RESUMEN DEL DATASET:
+      ${JSON.stringify(dataDigest, null, 2)}
+
+      INSTRUCCIONES:
+      1. Identificá el dominio del dataset por los nombres de columnas y valores que contiene.
+      2. Analizá en función de ese dominio — no uses terminología de ventas ni finanzas si no corresponde.
+      3. Si hay columnas numéricas, identificá cuáles son métricas clave para ese dominio.
+      4. Si hay grupos geográficos o categorías, usá las reglas de formato numérico: punto para miles, sin decimales en montos.
+      5. En "calculation_explanation", indicá qué tipo de dataset detectaste y por qué.
+
+      Responde en formato JSON:
+      {
+        "summary": "Descripción del dataset y resumen de hallazgos",
+        "insights": ["Insight 1 relevante al dominio detectado", "Insight 2", "Insight 3"],
+        "recommendation": "Recomendación basada en los datos",
+        "calculation_explanation": "Tipo de dataset detectado y lógica del análisis"
+      }
+    `;
+  }
+}
+
 export async function generateInsights(
   salesData: any[],
   dateRange: { from: string; to: string },
   activeFilters: { field: string; values: string[] }[] = [],
-  email?: string
+  email?: string,
+  moduleId?: string
 ) {
   const isRawText = salesData && salesData.length === 1 && salesData[0].rawText;
   let prompt = '';
@@ -210,12 +296,12 @@ export async function generateInsights(
       ${salesData[0].rawText.substring(0, 15000)}
 
       INSTRUCCIONES:
-      1. Analiza el texto y extrae los hallazgos más relevantes para el negocio.
+      1. Analiza el texto y extrae los hallazgos más relevantes.
       2. Si hay tablas o datos numéricos, intenta interpretarlos.
       3. Proporciona un resumen ejecutivo y 3 insights clave.
-      4. Si el documento no parece contener datos de negocio relevantes, menciónalo cortésmente.
+      4. Si el documento no parece contener datos relevantes, menciónalo cortésmente.
 
-      Responde en formato JSON con la siguiente estructura:
+      Responde en formato JSON:
       {
         "summary": "Resumen analítico del documento",
         "insights": ["Insight 1", "Insight 2", "Insight 3"],
@@ -230,33 +316,7 @@ export async function generateInsights(
       .map(f => `${f.field}: ${f.values.join(', ')}`)
       .join(', ') || 'Ninguno';
 
-    prompt = `
-      Eres un analista de negocios senior. Analiza el RESUMEN INTEGRAL de los datos de ventas proporcionados.
-
-      CONTEXTO DE NEGOCIO Y REGLAS (LEER CON ATENCIÓN):
-      ${getBusinessContext()}
-
-      CONTEXTO DEL ANÁLISIS:
-      - PERIODO: Desde ${dateRange.from} hasta ${dateRange.to}.
-      - FILTROS ACTIVOS: ${filtersDescription}.
-
-      RESUMEN INTEGRAL DINÁMICO:
-      ${JSON.stringify(dataDigest, null, 2)}
-
-      INSTRUCCIONES CRÍTICAS DE REPORTE:
-      1. REPORTA POR PAÍS: No mezcles Argentina y Colombia en el análisis financiero.
-      2. DESGLOSE POR DIMENSIONES: En "desglose_por_dimensiones", cada segmento tiene un objeto "metricas" con el detalle de cada columna numérica (Capital, Interés, etc.). ÚSALOS para responder sobre cualquier dimensión (Tipo Cliente, Sucursal, etc.).
-      3. TICKET PROMEDIO: Calcúlalo usando: [monto_nominal_total de la métrica correspondiente] / [cantidad_operaciones] del segmento.
-      4. AUDITORÍA: En "calculation_explanation", detalla CÓMO llegaste a los números.
-
-      Responde en formato JSON con la siguiente estructura:
-      {
-        "summary": "Resumen analítico (separado por país)",
-        "insights": ["Insight 1 (País A)", "Insight 2 (País B)", "Insight 3 (Comparativa de CANTIDADES)"],
-        "recommendation": "Recomendación estratégica",
-        "calculation_explanation": "Detalle de los cálculos y cotizaciones usadas"
-      }
-    `;
+    prompt = buildDataPrompt(dataDigest, dateRange, filtersDescription, moduleId);
   }
 
   try {
@@ -285,14 +345,15 @@ export async function chatWithData(
   messages: { role: 'user' | 'model', content: string }[],
   salesData: any[],
   activeFilters: { field: string; values: string[] }[] = [],
-  email?: string
+  email?: string,
+  moduleId?: string
 ) {
   const isRawText = salesData && salesData.length === 1 && salesData[0].rawText;
   let systemInstruction = '';
 
   if (isRawText) {
     systemInstruction = `
-      Eres un analista de negocios experto. Tienes acceso al contenido de un documento PDF.
+      Eres un analista de datos experto. Tienes acceso al contenido de un documento PDF.
 
       CONTENIDO DEL DOCUMENTO:
       ${salesData[0].rawText.substring(0, 10000)}
@@ -303,29 +364,52 @@ export async function chatWithData(
       3. Mantén un tono profesional y analítico.
     `;
   } else {
+    const isApiModule = moduleId && MODULE_CONTEXTS[moduleId];
     const dataDigest = createDataDigest(salesData);
     const filtersDescription = activeFilters
       .filter(f => f.values.length > 0)
       .map(f => `${f.field}: ${f.values.join(' | ')}`)
       .join(' | ') || 'Ninguno';
 
-    systemInstruction = `
-      Eres un analista de negocios experto. Tienes acceso a un análisis dinámico de los datos de ventas.
+    if (isApiModule) {
+      systemInstruction = `
+        Eres un analista de negocios experto.
 
-      CONTEXTO DE NEGOCIO Y REGLAS (ESTRICTO):
-      ${getBusinessContext()}
+        MÓDULO: ${MODULE_CONTEXTS[moduleId]}
 
-      FILTROS ACTIVOS ACTUALMENTE: ${filtersDescription}
+        CONTEXTO DE NEGOCIO Y REGLAS (ESTRICTO):
+        ${getBusinessContext()}
 
-      RESUMEN INTEGRAL DINÁMICO:
-      ${JSON.stringify(dataDigest, null, 2)}
+        FILTROS ACTIVOS ACTUALMENTE: ${filtersDescription}
 
-      INSTRUCCIONES DE PRECISIÓN:
-      1. REPORTE SEPARADO: Nunca sumes montos de ARS y COP.
-      2. DESGLOSE DINÁMICO: En "desglose_por_dimensiones", tienes el detalle de todas las métricas numéricas para cada categoría. Si te preguntan por "Tipo de Cliente", busca esa clave y usa los datos dentro de "metricas".
-      3. TICKET PROMEDIO: Usa el valor nominal de la métrica (ej: Capital Desembolsado) y divídelo por "cantidad_operaciones" del segmento.
-      4. TRANSPARENCIA: Muestra siempre el cálculo realizado.
-    `;
+        RESUMEN INTEGRAL DINÁMICO:
+        ${JSON.stringify(dataDigest, null, 2)}
+
+        INSTRUCCIONES DE PRECISIÓN:
+        1. REPORTE SEPARADO: Nunca sumes montos de ARS y COP.
+        2. DESGLOSE DINÁMICO: Usa "desglose_por_dimensiones" para responder sobre segmentos con sus métricas.
+        3. PROMEDIO: Usa [total métrica] / [cantidad_operaciones] del segmento.
+        4. TRANSPARENCIA: Muestra siempre el cálculo realizado.
+      `;
+    } else {
+      systemInstruction = `
+        Eres un analista de datos experto. El usuario cargó un dataset externo manualmente.
+
+        IMPORTANTE: NO asumas que estos datos son de ventas, préstamos u otro dominio específico.
+        Primero identificá el dominio del dataset por los nombres de columnas y valores, y respondé en consecuencia.
+
+        FILTROS ACTIVOS ACTUALMENTE: ${filtersDescription}
+
+        RESUMEN DEL DATASET:
+        ${JSON.stringify(dataDigest, null, 2)}
+
+        INSTRUCCIONES:
+        1. Respondé basándote en los datos reales del dataset, usando la terminología que corresponda al dominio detectado.
+        2. Si te preguntan algo que no está en los datos, indicalo claramente.
+        3. Formato numérico: punto para miles, sin decimales en montos, coma para porcentajes.
+        4. Siempre mostrá los cálculos realizados.
+      `;
+    }
   }
 
   try {

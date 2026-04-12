@@ -31,6 +31,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [tokenUsage, setTokenUsage] = useState<{ total: number; sesiones: number } | null>(null);
+  const [initialReport, setInitialReport] = useState<any>(null);
   const isMounted = useRef(true);
 
   const showError = (msg: string) => {
@@ -224,9 +225,10 @@ export default function App() {
     if (res.ok) setSavedReports(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleSelectModule = async (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string) => {
+  const handleSelectModule = async (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => {
     // Helper to finalize module selection
     const finalizeSelection = (data: any[], moduleInfo: any) => {
+      setInitialReport(reportToLoad || null);
       setModuleData(data);
       setActiveModule(moduleInfo);
       setCurrentView('dashboard');
@@ -456,6 +458,7 @@ export default function App() {
               savedReports={savedReports.filter(r => r.modulo === activeModule?.id)}
               onSaveReport={handleSaveReport}
               userEmail={authStatus?.email}
+              initialReport={initialReport}
             />
           </motion.div>
         )}

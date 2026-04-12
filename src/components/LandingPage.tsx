@@ -1,4 +1,4 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeSVG } from 'qrcode.react';
 import { PowerBIButton, ContactGrid } from './ContactSection';
@@ -35,7 +35,7 @@ import {
 import { EXCHANGE_RATES } from '../constants';
 
 interface LandingPageProps {
-  onSelectModule: (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string) => void;
+  onSelectModule: (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => void;
   onOpenTerms: () => void;
   onRefreshRates: () => void;
   authStatus: any;
@@ -157,6 +157,23 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
   }, [authStatus?.displayName]);
   const [isSheetInputVisible, setIsSheetInputVisible] = React.useState(false);
   const [isAccountExpanded, setIsAccountExpanded] = React.useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
+
+  // Push a history entry when any modal opens so the mobile back button closes it instead of leaving the app
+  useEffect(() => {
+    if (deniedModule || deleteConfirmId) {
+      window.history.pushState({ modal: true }, '');
+    }
+  }, [deniedModule, deleteConfirmId]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (deniedModule) setDeniedModule(null);
+      if (deleteConfirmId) setDeleteConfirmId(null);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [deniedModule, deleteConfirmId]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -311,8 +328,8 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
                     const isClickable = isApiModule || hasSheetUrl;
                     const handleOpen = (e: React.MouseEvent) => {
                       e.stopPropagation();
-                      if (isApiModule) onSelectModule(r.modulo, 'api');
-                      else if (hasSheetUrl) onSelectModule(r.modulo, 'sheet', undefined, r.filtros.sheetUrl);
+                      if (isApiModule) onSelectModule(r.modulo, 'api', undefined, undefined, r);
+                      else if (hasSheetUrl) onSelectModule(r.modulo, 'sheet', undefined, r.filtros.sheetUrl, r);
                     };
                     return (
                       <div key={r.id} className="flex items-center justify-between group">
@@ -326,8 +343,8 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
                           {isClickable && <ChevronRight size={9} className="text-zinc-700 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />}
                         </button>
                         <button
-                          onClick={(e) => { e.stopPropagation(); onDeleteReport?.(r.id); }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-zinc-600 transition-all"
+                          onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(r.id); }}
+                          className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1 hover:text-red-400 text-zinc-600 transition-all"
                         >
                           <Trash2 size={9} />
                         </button>
@@ -397,7 +414,11 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: index * 0.05 }}
             onClick={() => handleModuleClick(module)}
-            className="group relative flex flex-col p-8 bg-slate-900/40 backdrop-blur-md rounded-[2rem] border border-slate-800/50 hover:border-blue-500/40 hover:bg-slate-800/60 transition-all text-left overflow-hidden shadow-xl"
+            className={`group relative flex flex-col p-8 backdrop-blur-md rounded-[2rem] border transition-all text-left overflow-hidden shadow-xl ${
+              checkAccess(module.id)
+                ? 'bg-slate-900/40 border-slate-800/50 hover:border-blue-500/40 hover:bg-slate-800/60'
+                : 'bg-slate-900/20 border-slate-800/30 opacity-40 grayscale cursor-not-allowed'
+            }`}
           >
             {!checkAccess(module.id) && (
               <div className="absolute top-4 right-4 z-20">
@@ -411,20 +432,26 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
               </div>
             )}
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl -mr-16 -mt-16 group-hover:bg-blue-500/10 transition-colors" />
-            
-            <div className={`w-14 h-14 ${module.color} rounded-2xl flex items-center justify-center text-white mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all shadow-lg shadow-black/20`}>
+
+            <div className={`w-14 h-14 ${module.color} rounded-2xl flex items-center justify-center text-white mb-6 ${checkAccess(module.id) ? 'group-hover:scale-110 group-hover:rotate-3' : ''} transition-all shadow-lg shadow-black/20`}>
               <module.icon size={28} />
             </div>
-            
-            <h3 className="text-xl font-bold text-white mb-3 group-hover:text-blue-400 transition-colors">{module.title}</h3>
+
+            <h3 className={`text-xl font-bold mb-3 transition-colors ${checkAccess(module.id) ? 'text-white group-hover:text-blue-400' : 'text-zinc-500'}`}>{module.title}</h3>
             <p className="text-zinc-500 text-sm leading-relaxed mb-8 group-hover:text-zinc-400 transition-colors">
               {module.description}
             </p>
-            
-            <div className="mt-auto flex items-center text-blue-500/80 font-bold text-xs uppercase tracking-widest group-hover:text-blue-400 transition-colors">
-              Explorar 
-              <ChevronRight size={14} className="ml-1 group-hover:translate-x-1 transition-transform" />
-            </div>
+
+            {checkAccess(module.id) ? (
+              <div className="mt-auto flex items-center text-blue-500/80 font-bold text-xs uppercase tracking-widest group-hover:text-blue-400 transition-colors">
+                Explorar
+                <ChevronRight size={14} className="ml-1 group-hover:translate-x-1 transition-transform" />
+              </div>
+            ) : (
+              <div className="mt-auto flex items-center text-zinc-600 font-bold text-xs uppercase tracking-widest">
+                <Lock size={11} className="mr-1.5" /> Sin acceso
+              </div>
+            )}
           </motion.button>
         ))}
       </div>
@@ -454,8 +481,8 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
                       {mod ? <mod.icon size={16} /> : <FileUp size={16} />}
                     </div>
                     <button
-                      onClick={() => onDeleteReport?.(report.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/10 rounded-lg text-zinc-600 hover:text-red-400 transition-all"
+                      onClick={() => setDeleteConfirmId(report.id)}
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 hover:bg-red-500/10 rounded-lg text-zinc-600 hover:text-red-400 transition-all"
                       title="Eliminar"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -471,14 +498,14 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
                   )}
                   {isApiModule ? (
                     <button
-                      onClick={() => onSelectModule(report.modulo, 'api')}
+                      onClick={() => onSelectModule(report.modulo, 'api', undefined, undefined, report)}
                       className="mt-auto w-full py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/20 text-blue-400 rounded-xl text-xs font-bold transition-colors"
                     >
                       Abrir módulo
                     </button>
                   ) : report.filtros?.sheetUrl ? (
                     <button
-                      onClick={() => onSelectModule(report.modulo, 'sheet', undefined, report.filtros.sheetUrl)}
+                      onClick={() => onSelectModule(report.modulo, 'sheet', undefined, report.filtros.sheetUrl, report)}
                       className="mt-auto w-full py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/20 text-blue-400 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
                     >
                       <ExternalLink size={11} />
@@ -619,6 +646,41 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
           © 2026 Business Intelligence Suite - Punta de lanza tecnológica
         </div>
       </footer>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="max-w-sm w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-8 shadow-2xl"
+          >
+            <div className="w-14 h-14 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500 mb-5 mx-auto">
+              <Trash2 size={26} />
+            </div>
+            <div className="text-center space-y-3 mb-6">
+              <h2 className="text-xl font-bold text-white">¿Eliminar reporte?</h2>
+              <p className="text-zinc-400 text-sm leading-relaxed">
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmId(null)}
+                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl transition-all text-sm uppercase tracking-widest"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => { onDeleteReport?.(deleteConfirmId); setDeleteConfirmId(null); }}
+                className="flex-1 py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 font-bold rounded-xl transition-all text-sm uppercase tracking-widest"
+              >
+                Eliminar
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Access Denied Warning */}
       {deniedModule && (

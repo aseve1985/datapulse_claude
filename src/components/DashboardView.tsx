@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  AreaChart, Area, Cell, PieChart, Pie
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart, Area, Cell, PieChart, Pie,
+  ScatterChart, Scatter, ZAxis
 } from 'recharts';
 import { PowerBIButton, ContactGrid } from './ContactSection';
 import { 
@@ -10,7 +11,7 @@ import {
   ChevronRight, AlertCircle, Sparkles, User, Bot,
   Download, Filter, X, ArrowLeft, Database, ArrowRight,
   ChevronDown, Check, FileUp, Mic, MicOff, Copy, CheckCheck,
-  BookmarkPlus, Bookmark, FolderOpen, Trash2
+  BookmarkPlus, Bookmark, FolderOpen, Trash2, Activity
 } from 'lucide-react';
 import { 
   format, 
@@ -219,11 +220,12 @@ const ChartContainer = React.memo(({ title, children, icon: Icon, onConfigChange
 
           <div className="space-y-1">
             <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tipo de Gráfico</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {[
                 { id: 'AREA', label: 'Líneas', icon: TrendingUp },
                 { id: 'BAR', label: 'Barras', icon: ShoppingBag },
-                { id: 'PIE', label: 'Torta', icon: Filter }
+                { id: 'PIE', label: 'Torta', icon: Filter },
+                { id: 'SCATTER', label: 'Dispersión', icon: Activity }
               ].map(t => (
                 <button
                   key={t.id}
@@ -682,7 +684,8 @@ export default function DashboardView({
   exchangeRates,
   savedReports = [],
   onSaveReport,
-  userEmail
+  userEmail,
+  initialReport
 }: any) {
   const [activeTab, setActiveTab] = useState<'overview' | 'data'>('overview');
   const [sales, setSales] = useState<any[]>(data || []);
@@ -703,9 +706,9 @@ export default function DashboardView({
     return data && data.length === 1 && data[0].rawText;
   }, [data]);
 
-  // Date range state
-  const [startDate, setStartDate] = useState(format(subDays(new Date(), 10), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(subDays(new Date(), 1), 'yyyy-MM-dd'));
+  // Date range state — initialize from report if provided
+  const [startDate, setStartDate] = useState(initialReport?.filtros?.startDate || format(subDays(new Date(), 10), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(initialReport?.filtros?.endDate || format(subDays(new Date(), 1), 'yyyy-MM-dd'));
 
   const setDateRange = (type: 'current_month' | 'last_month' | 'last_quarter') => {
     const now = new Date();
@@ -731,6 +734,18 @@ export default function DashboardView({
     setStartDate(format(start, 'yyyy-MM-dd'));
     setEndDate(format(end, 'yyyy-MM-dd'));
   };
+
+  // Auto-fetch when opening from a saved report — only for API modules
+  const didAutoFetch = useRef(false);
+  useEffect(() => {
+    if (initialReport && moduleType === 'api' && onFetchData && moduleId && !didAutoFetch.current) {
+      didAutoFetch.current = true;
+      const from = initialReport.filtros?.startDate || startDate;
+      const to = initialReport.filtros?.endDate || endDate;
+      setLoading(true);
+      onFetchData(moduleId, from, to).catch(() => {}).finally(() => setLoading(false));
+    }
+  }, []);
 
   const handleFetch = async () => {
     if (!onFetchData || !moduleId) return;
@@ -760,69 +775,73 @@ export default function DashboardView({
   const [chartConfigs, setChartConfigs] = useState([
     { id: 'evolution', title: 'Evolución Temporal', type: 'AREA', dimension: '', metric: '', icon: TrendingUp },
     { id: 'distribution', title: 'Distribución de Datos', type: 'PIE', dimension: '', metric: '', icon: Filter },
-    { id: 'ranking', title: 'Ranking Comparativo', type: 'BAR', dimension: '', metric: '', icon: ShoppingBag }
+    { id: 'ranking', title: 'Ranking Comparativo', type: 'BAR', dimension: '', metric: '', icon: ShoppingBag },
+    { id: 'scatter', title: 'Dispersión', type: 'SCATTER', dimension: '', metric: '', icon: Activity }
   ]);
 
   const [filterSlots, setFilterSlots] = useState<{ field: string; values: string[] }[]>([]);
 
   useEffect(() => {
-    if (availableFields.length > 0) {
-      // Re-validate filter slots: keep only those that still exist in availableFields
-      const validSlots = filterSlots.filter(slot => availableFields.includes(slot.field));
-      
-      const numericField = availableFields.find(f => 
-        f.toLowerCase().includes('monto') || 
-        f.toLowerCase().includes('capital') || 
-        f.toLowerCase().includes('total') || 
+    if (availableFields.length === 0) return;
+
+    // Cards & charts auto-assign (skip if restored from report)
+    if (!restoredFromReport.current) {
+      const numericField = availableFields.find(f =>
+        f.toLowerCase().includes('monto') ||
+        f.toLowerCase().includes('capital') ||
+        f.toLowerCase().includes('total') ||
         f.toLowerCase().includes('k_mas_i') ||
         f.toLowerCase().includes('importe') ||
         f.toLowerCase().includes('valor')
       ) || availableFields[0];
 
-      const categoryField = availableFields.find(f => 
-        f.toLowerCase().includes('categoria') || 
-        f.toLowerCase().includes('producto') || 
-        f.toLowerCase().includes('tipo') || 
+      const categoryField = availableFields.find(f =>
+        f.toLowerCase().includes('categoria') ||
+        f.toLowerCase().includes('producto') ||
+        f.toLowerCase().includes('tipo') ||
         f.toLowerCase().includes('cliente') ||
         f.toLowerCase().includes('nombre') ||
         f.toLowerCase().includes('estado')
       ) || availableFields[0];
 
-      const dateField = availableFields.find(f => 
-        f.toLowerCase().includes('fecha') || 
+      const dateField = availableFields.find(f =>
+        f.toLowerCase().includes('fecha') ||
         f.toLowerCase().includes('date') ||
         f.toLowerCase().includes('periodo')
       ) || availableFields[0];
 
-      if (!restoredFromReport.current) {
-        setCardConfigs(prev => prev.map((c, i) => {
-          if (i === 0) return { ...c, field: numericField };
-          if (i === 2) return { ...c, field: numericField };
-          if (i === 3) return { ...c, field: categoryField };
-          return c;
-        }));
+      setCardConfigs(prev => prev.map((c, i) => {
+        if (i === 0) return { ...c, field: numericField };
+        if (i === 2) return { ...c, field: numericField };
+        if (i === 3) return { ...c, field: categoryField };
+        return c;
+      }));
 
-        setChartConfigs(prev => prev.map((c, i) => {
-          if (i === 0) return { ...c, dimension: dateField, metric: numericField };
-          if (i === 1) return { ...c, dimension: categoryField, metric: numericField };
-          if (i === 2) return { ...c, dimension: categoryField, metric: numericField };
-          return c;
-        }));
-      } else {
-        restoredFromReport.current = false;
-      }
+      setChartConfigs(prev => prev.map((c, i) => {
+        if (i === 0) return { ...c, dimension: dateField, metric: numericField };
+        if (i === 1) return { ...c, dimension: categoryField, metric: numericField };
+        if (i === 2) return { ...c, dimension: categoryField, metric: numericField };
+        if (i === 3) return { ...c, dimension: categoryField, metric: numericField };
+        return c;
+      }));
 
-      if (validSlots.length === 0) {
-        const statusField = availableFields.find(f => f.toLowerCase().includes('estado') || f.toLowerCase().includes('pago')) || availableFields[1] || availableFields[0];
-        const subField = availableFields.find(f => f.toLowerCase().includes('vendedor') || f.toLowerCase().includes('sucursal') || f.toLowerCase().includes('zona')) || availableFields[2] || availableFields[0];
-
+      // Filter slots: always 3 empty slots (user sets them manually)
+      if (filterSlots.length === 0) {
         setFilterSlots([
-          { field: categoryField, values: [] },
-          { field: statusField, values: [] },
-          { field: subField, values: [] }
-        ].filter(s => s.field !== undefined));
-      } else {
-        setFilterSlots(validSlots);
+          { field: '', values: [] },
+          { field: '', values: [] },
+          { field: '', values: [] },
+        ]);
+      }
+    } else {
+      restoredFromReport.current = false;
+      // If report had no filterSlots, init 3 empty editable slots
+      if (filterSlots.length === 0) {
+        setFilterSlots([
+          { field: '', values: [] },
+          { field: '', values: [] },
+          { field: '', values: [] },
+        ]);
       }
     }
   }, [availableFields]);
@@ -830,10 +849,32 @@ export default function DashboardView({
   useEffect(() => {
     if (data && data.length > 0) {
       setSales(data);
+      // Auto-apply report config when opening from saved reports
+      if (initialReport) {
+        // Only block auto-assignment if there are actually saved configs to restore
+        const hasCardConfigs = initialReport.filtros?.cardConfigs?.length > 0;
+        const hasChartConfigs = initialReport.filtros?.chartConfigs?.length > 0;
+        if (hasCardConfigs || hasChartConfigs) restoredFromReport.current = true;
+        // Only restore filterSlots if they were actually saved (non-empty)
+        if (initialReport.filtros?.filterSlots?.length > 0) setFilterSlots(initialReport.filtros.filterSlots);
+        if (initialReport.filtros?.cardConfigs) {
+          setCardConfigs(prev => prev.map((c, i) => {
+            const saved = initialReport.filtros.cardConfigs[i];
+            return saved ? { ...c, ...saved, icon: c.icon } : c;
+          }));
+        }
+        if (initialReport.filtros?.chartConfigs) {
+          setChartConfigs(prev => prev.map(c => {
+            const saved = initialReport.filtros.chartConfigs.find((s: any) => s.id === c.id);
+            return saved ? { ...c, ...saved, icon: c.icon } : c;
+          }));
+        }
+        setActiveReportName(initialReport.nombre);
+      }
       const fetchInsights = async () => {
         setInsightsLoading(true);
         try {
-          const aiInsights = await generateInsights(data, { from: startDate, to: endDate }, [], userEmail);
+          const aiInsights = await generateInsights(data, { from: startDate, to: endDate }, [], userEmail, moduleId);
           setInsights(aiInsights);
         } catch (e) {} finally { setInsightsLoading(false); }
       };
@@ -903,6 +944,16 @@ export default function DashboardView({
     return chartConfigs.map(config => {
       const { dimension, metric, type } = config;
       if (!dimension || !metric) return [];
+
+      // Scatter: one point per row with x=index, y=metric, name=dimension value
+      if (type === 'SCATTER') {
+        return filteredSales.map((s, i) => ({
+          x: i + 1,
+          y: parseNumericValue(s[metric]) || 0,
+          name: String(s[dimension] || 'N/A'),
+        }));
+      }
+
       const dataMap: any = {};
       filteredSales.forEach(s => {
         let dimVal = String(s[dimension] || 'N/A');
@@ -934,7 +985,7 @@ export default function DashboardView({
     if (filteredSales.length === 0) return;
     setInsightsLoading(true);
     try {
-      const aiInsights = await generateInsights(filteredSales, { from: startDate, to: endDate }, filterSlots, userEmail);
+      const aiInsights = await generateInsights(filteredSales, { from: startDate, to: endDate }, filterSlots, userEmail, moduleId);
       setInsights(aiInsights);
     } catch (e) {
       console.error('Error generating insights:', e);
@@ -948,7 +999,7 @@ export default function DashboardView({
     setChatMessages(prev => [...prev, userMsg]);
     setChatLoading(true);
     try {
-      const response = await chatWithData([...chatMessages, userMsg], filteredSales, filterSlots, userEmail);
+      const response = await chatWithData([...chatMessages, userMsg], filteredSales, filterSlots, userEmail, moduleId);
       setChatMessages(prev => [...prev, { role: 'model', content: response || 'No pude procesar tu solicitud.' }]);
     } catch (err) {
       setChatMessages(prev => [...prev, { role: 'model', content: 'Hubo un error al procesar tu pregunta.' }]);
@@ -995,7 +1046,8 @@ export default function DashboardView({
   const handleLoadReport = (report: any) => {
     setStartDate(report.filtros.startDate);
     setEndDate(report.filtros.endDate);
-    setFilterSlots(report.filtros.filterSlots || []);
+    // Only restore filterSlots if they were actually saved (non-empty)
+    if (report.filtros.filterSlots?.length > 0) setFilterSlots(report.filtros.filterSlots);
     // Restore card configs preserving icons from current state
     if (report.filtros.cardConfigs) {
       restoredFromReport.current = true;
@@ -1442,7 +1494,7 @@ export default function DashboardView({
                   <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-800/50 rounded-xl border border-slate-700">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase">Variable del Filtro</span>
-                      <select 
+                      <select
                         value={slot.field}
                         onChange={(e) => {
                           const newSlots = [...filterSlots];
@@ -1451,6 +1503,7 @@ export default function DashboardView({
                         }}
                         className="text-[10px] font-bold text-white bg-slate-950 hover:bg-slate-900 px-2 py-1 rounded-md transition-all focus:outline-none border border-slate-700"
                       >
+                        <option value="" className="bg-slate-900 text-zinc-500">— elegir campo —</option>
                         {availableFields.map(field => (
                           <option key={field} value={field} className="bg-slate-900 text-white">{(field || '').replace(/_/g, ' ').toUpperCase()}</option>
                         ))}
@@ -1538,7 +1591,7 @@ export default function DashboardView({
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {chartConfigs.map((config, idx) => (
-                <div key={config.id} className={cn(idx === 0 ? "lg:col-span-2" : "lg:col-span-1")}>
+                <div key={config.id} className={cn(idx === 0 || idx === 3 ? "lg:col-span-2" : "lg:col-span-1")}>
                   <ChartContainer 
                     title={config.title}
                     icon={config.icon}
@@ -1581,6 +1634,19 @@ export default function DashboardView({
                           />
                           <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         </BarChart>
+                      ) : config.type === 'SCATTER' ? (
+                        <ScatterChart>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                          <XAxis dataKey="x" type="number" name="índice" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
+                          <YAxis dataKey="y" type="number" name={config.metric} axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
+                          <ZAxis range={[40, 40]} />
+                          <Tooltip
+                            cursor={{ strokeDasharray: '3 3' }}
+                            contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f1f5f9' }}
+                            formatter={(value: any, name: any, props: any) => [value, props.payload.name || name]}
+                          />
+                          <Scatter data={processedChartData[idx]} fill="#06b6d4" fillOpacity={0.7} />
+                        </ScatterChart>
                       ) : (
                         <PieChart>
                           <Pie data={processedChartData[idx]} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
