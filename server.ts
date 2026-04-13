@@ -107,7 +107,7 @@ function getVal(row: any, ...possibleKeys: string[]) {
 
 const app = express();
 app.use(express.json());
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const MODULE_MAPPING: Record<string, string> = {
   'Ventas': 'sales',
