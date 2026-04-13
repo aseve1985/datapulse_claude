@@ -326,7 +326,8 @@ async function startServer() {
 
   // Route to be opened in a popup to trigger IAP login
   app.get("/auth/login", (req, res) => {
-    const origin = req.headers.origin || `${req.protocol}://${req.headers.host}`;
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const origin = req.headers.origin || `${proto}://${req.headers.host}`;
     res.send(`
       <html>
         <head><title>Autenticando...</title></head>
