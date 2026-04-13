@@ -643,7 +643,7 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
         <ContactGrid />
 
         <div className="text-center text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] pb-12 border-t border-slate-900/50 pt-8">
-          © 2026 Business Intelligence Suite - Punta de lanza tecnológica
+          © 2026 Business Intelligence Suite · Insights estratégicos para decisiones inteligentes
         </div>
       </footer>
 
