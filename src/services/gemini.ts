@@ -74,36 +74,124 @@ function formatPercent(val: number): string {
     maximumFractionDigits: 2 
   });
 }
+function detectDateColumns(headers: string[]): string[] {
+  return headers.filter(h => {
+    const l = h.toLowerCase();
+    return l.includes('fecha') || l.includes('date') || l.includes('periodo') || l.includes('period');
+  });
+}
+
+function describeDateColumns(salesData: any[], dateColumns: string[]): Record<string, { min: string; max: string; ejemplo: string }> {
+  const info: Record<string, { min: string; max: string; ejemplo: string }> = {};
+  for (const col of dateColumns) {
+    const dates = salesData
+      .map(s => s[col])
+      .filter(v => v != null && v !== '')
+      .map(v => { try { return new Date(v); } catch { return null; } })
+      .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
+    if (dates.length === 0) continue;
+    const min = new Date(Math.min(...dates.map(d => d.getTime())));
+    const max = new Date(Math.max(...dates.map(d => d.getTime())));
+    info[col] = {
+      min: min.toISOString().slice(0, 10),
+      max: max.toISOString().slice(0, 10),
+      ejemplo: String(salesData.find(s => s[col] != null)?.[col] ?? ''),
+    };
+  }
+  return info;
+}
+
+function toYearMonth(raw: any): string | null {
+  if (!raw) return null;
+  try {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return null;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  } catch { return null; }
+}
+
+function buildTemporalAnalysis(
+  data: any[],
+  dateCol: string,
+  numericColumns: string[],
+  rate: number
+): any {
+  const monthlyGroups: Record<string, any[]> = {};
+  data.forEach(s => {
+    const ym = toYearMonth(s[dateCol]);
+    if (!ym) return;
+    if (!monthlyGroups[ym]) monthlyGroups[ym] = [];
+    monthlyGroups[ym].push(s);
+  });
+
+  const amountCol = findAmountColumn(numericColumns.length ? numericColumns : [dateCol]);
+
+  const monthly = Object.entries(monthlyGroups)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mes, rows]) => {
+      const totals: Record<string, string> = {};
+      numericColumns.forEach(col => {
+        const sum = rows.reduce((acc, r) => acc + cleanNumber(r[col]), 0);
+        totals[col] = formatMoney(sum);
+        if (rate !== 1) totals[`${col}_usd`] = formatMoney(sum / rate);
+      });
+      const mainTotal = rows.reduce((acc, r) => acc + cleanNumber(r[amountCol]), 0);
+      return {
+        mes,
+        operaciones: rows.length,
+        principal_metrica: { campo: amountCol, total: formatMoney(mainTotal), usd: formatMoney(mainTotal / rate) },
+        todas_las_metricas: totals,
+      };
+    });
+
+  const sorted = [...monthly].sort((a, b) => b.principal_metrica.campo === amountCol
+    ? cleanNumber(b.principal_metrica.total.replace(/\./g, '')) - cleanNumber(a.principal_metrica.total.replace(/\./g, ''))
+    : 0);
+
+  return {
+    campo_fecha_usado: dateCol,
+    total_meses_con_datos: monthly.length,
+    desglose_mensual: monthly,
+    ranking_mejores_meses: monthly
+      .slice()
+      .sort((a, b) => {
+        const valA = Object.values(monthlyGroups[a.mes] || []).reduce((acc: number, r: any) => acc + cleanNumber(r[amountCol]), 0);
+        const valB = Object.values(monthlyGroups[b.mes] || []).reduce((acc: number, r: any) => acc + cleanNumber(r[amountCol]), 0);
+        return valB - valA;
+      })
+      .slice(0, 5)
+      .map(m => ({ mes: m.mes, operaciones: m.operaciones, ...m.principal_metrica })),
+  };
+}
+
 function createDataDigest(salesData: any[]) {
   if (!salesData || salesData.length === 0) return "No hay datos disponibles.";
 
   const headers = Object.keys(salesData[0] || {});
   const countryCol = headers.find(h => h.toLowerCase().trim().replace(/í/g, 'i') === 'pais') || 'pais';
-  
-  // DESPUÉS (correcto)
+  const dateColumns = detectDateColumns(headers);
+  const primaryDateCol = dateColumns[0] || null;
+
   const numericColumns = headers.filter(h => {
-  const lowerH = h.toLowerCase();
-  if (['id', 'index', 'timestamp', 'lat', 'lng', 'latitud', 'longitud'].includes(lowerH)) return false;
-  if (lowerH.includes('fecha') || lowerH.includes('date')) return false;
+    const lowerH = h.toLowerCase();
+    if (['id', 'index', 'timestamp', 'lat', 'lng', 'latitud', 'longitud'].includes(lowerH)) return false;
+    if (lowerH.includes('fecha') || lowerH.includes('date')) return false;
 
-  // Tomar hasta 5 muestras reales (no vacías)
-  const samples = salesData
-    .filter(s => s[h] !== undefined && s[h] !== null && s[h] !== '')
-    .slice(0, 5);
-  if (samples.length === 0) return false;
+    const samples = salesData
+      .filter(s => s[h] !== undefined && s[h] !== null && s[h] !== '')
+      .slice(0, 5);
+    if (samples.length === 0) return false;
 
-  // Una columna es numérica SOLO si sus valores contienen dígitos y parsean correctamente
-  const numericCount = samples.filter(s => {
-    const raw = s[h];
-    if (typeof raw === 'number') return true;
-    const str = String(raw).trim().replace(/[$\s]/g, '');
-    if (!/\d/.test(str)) return false; // sin dígitos → no es numérico
-    const parsed = parseFloat(str.replace(/\./g, '').replace(',', '.'));
-    return !isNaN(parsed);
-  }).length;
+    const numericCount = samples.filter(s => {
+      const raw = s[h];
+      if (typeof raw === 'number') return true;
+      const str = String(raw).trim().replace(/[$\s]/g, '');
+      if (!/\d/.test(str)) return false;
+      const parsed = parseFloat(str.replace(/\./g, '').replace(',', '.'));
+      return !isNaN(parsed);
+    }).length;
 
-  // Solo se considera numérica si al menos el 60% de las muestras son numéricas
-  return numericCount / samples.length >= 0.6;
+    return numericCount / samples.length >= 0.6;
   });
 
   const countryGroups: Record<string, any[]> = {};
@@ -114,9 +202,9 @@ function createDataDigest(salesData: any[]) {
   });
 
   const financialSummaryByCountry = Object.entries(countryGroups).map(([country, data]) => {
-    const currency = country.includes('ARGENTINA') ? 'ARS' : (country.includes('COLOMBIA') ? 'COP' : 'USD');
+    const currency = country.includes('ARGENTIN') ? 'ARS' : (country.includes('COLOMB') ? 'COP' : 'USD');
     const rate = currency === 'ARS' ? EXCHANGE_RATES.ARS : (currency === 'COP' ? EXCHANGE_RATES.COP : 1);
-    
+
     const globalTotals: Record<string, any> = {};
     numericColumns.forEach(col => {
       const sum = data.reduce((acc, s) => acc + cleanNumber(s[col]), 0);
@@ -129,8 +217,8 @@ function createDataDigest(salesData: any[]) {
 
     const categoricalStats: Record<string, any> = {};
     const excludeFromCategorical = [
-      ...numericColumns.map(c => c.toLowerCase()), 
-      countryCol.toLowerCase(), 
+      ...numericColumns.map(c => c.toLowerCase()),
+      countryCol.toLowerCase(),
       'fecha', 'id', 'index', 'timestamp', 'lat', 'lng', 'latitud', 'longitud', 'date'
     ];
 
@@ -138,7 +226,6 @@ function createDataDigest(salesData: any[]) {
       const lowerHeader = header.toLowerCase();
       if (!excludeFromCategorical.some(ex => lowerHeader.includes(ex)) && !numericColumns.includes(header)) {
         const valStats: Record<string, { count: number, metrics: Record<string, number> }> = {};
-        
         data.forEach(s => {
           const val = String(s[header] || 'N/A').trim();
           if (!valStats[val]) {
@@ -146,13 +233,11 @@ function createDataDigest(salesData: any[]) {
             numericColumns.forEach(col => valStats[val].metrics[col] = 0);
           }
           valStats[val].count++;
-          numericColumns.forEach(col => {
-            valStats[val].metrics[col] += cleanNumber(s[col]);
-          });
+          numericColumns.forEach(col => { valStats[val].metrics[col] += cleanNumber(s[col]); });
         });
 
         const segments = Object.entries(valStats)
-          .sort((a, b) => b[1].count - a[1].count) // Sort by volume
+          .sort((a, b) => b[1].count - a[1].count)
           .slice(0, 10)
           .map(([name, stats]) => {
             const metricsBreakdown: Record<string, any> = {};
@@ -163,19 +248,16 @@ function createDataDigest(salesData: any[]) {
                 valor_numerico_nominal: Math.round(stats.metrics[col])
               };
             });
-
-            return {
-              segmento: name,
-              cantidad_operaciones: stats.count,
-              metricas: metricsBreakdown
-            };
+            return { segmento: name, cantidad_operaciones: stats.count, metricas: metricsBreakdown };
           });
 
-        if (segments.length > 0) {
-          categoricalStats[header] = segments;
-        }
+        if (segments.length > 0) categoricalStats[header] = segments;
       }
     });
+
+    const temporal = primaryDateCol
+      ? buildTemporalAnalysis(data, primaryDateCol, numericColumns, rate)
+      : null;
 
     return {
       pais: country,
@@ -183,13 +265,21 @@ function createDataDigest(salesData: any[]) {
       cotizacion_usd: rate,
       total_operaciones: data.length,
       resumen_financiero_global: globalTotals,
-      desglose_por_dimensiones: categoricalStats
+      desglose_por_dimensiones: categoricalStats,
+      ...(temporal ? { analisis_temporal: temporal } : {}),
     };
   });
 
   return {
     total_registros_dataset: salesData.length,
-    analisis_por_pais: financialSummaryByCountry
+    campos_disponibles: {
+      todos: headers,
+      numericos: numericColumns,
+      fechas: dateColumns,
+      detalle_fechas: describeDateColumns(salesData, dateColumns),
+      categoricos: headers.filter(h => !numericColumns.includes(h) && !dateColumns.includes(h) && h !== 'id'),
+    },
+    analisis_por_pais: financialSummaryByCountry,
   };
 }
 
@@ -234,8 +324,9 @@ function buildDataPrompt(
       INSTRUCCIONES CRÍTICAS DE REPORTE:
       1. REPORTA POR PAÍS: No mezcles Argentina y Colombia en el análisis financiero.
       2. DESGLOSE POR DIMENSIONES: Usa los datos en "desglose_por_dimensiones" para analizar cada segmento con sus métricas numéricas.
-      3. PROMEDIO: Calcúlalo como [total métrica] / [cantidad_operaciones] del segmento.
-      4. AUDITORÍA: En "calculation_explanation", detalla cómo llegaste a los números.
+      3. ANÁLISIS TEMPORAL: Usa "analisis_temporal.ranking_mejores_meses" y "analisis_temporal.desglose_mensual" para destacar tendencias mensuales. Si hay varias fechas en "campos_disponibles.fechas", basá el análisis en la primera y mencioná que hay otras disponibles.
+      4. PROMEDIO: Calcúlalo como [total métrica] / [cantidad_operaciones] del segmento.
+      5. AUDITORÍA: En "calculation_explanation", detalla cómo llegaste a los números.
 
       Responde en formato JSON:
       {
@@ -373,7 +464,7 @@ export async function chatWithData(
 
     if (isApiModule) {
       systemInstruction = `
-        Eres un analista de negocios experto.
+        Eres un analista de negocios experto con capacidad de inferencia sobre datos estructurados.
 
         MÓDULO: ${MODULE_CONTEXTS[moduleId]}
 
@@ -382,14 +473,18 @@ export async function chatWithData(
 
         FILTROS ACTIVOS ACTUALMENTE: ${filtersDescription}
 
-        RESUMEN INTEGRAL DINÁMICO:
+        RESUMEN INTEGRAL DINÁMICO (incluye campos disponibles, análisis temporal y categórico):
         ${JSON.stringify(dataDigest, null, 2)}
 
         INSTRUCCIONES DE PRECISIÓN:
         1. REPORTE SEPARADO: Nunca sumes montos de ARS y COP.
-        2. DESGLOSE DINÁMICO: Usa "desglose_por_dimensiones" para responder sobre segmentos con sus métricas.
-        3. PROMEDIO: Usa [total métrica] / [cantidad_operaciones] del segmento.
-        4. TRANSPARENCIA: Muestra siempre el cálculo realizado.
+        2. DESGLOSE DINÁMICO: Usa "desglose_por_dimensiones" para responder sobre segmentos.
+        3. ANÁLISIS TEMPORAL: El digest incluye "analisis_temporal" con desglose mensual ("desglose_mensual") y ranking de mejores meses ("ranking_mejores_meses"). Úsalo siempre que el usuario pregunte por meses, trimestres, períodos, tendencias, "mejor mes", "peor mes", etc.
+        4. INFERENCIA DE CAMPOS: Si el usuario menciona "fecha", "mes", "período", "tiempo" o similar, buscá en "campos_disponibles.fechas" qué columnas de fecha existen y usá "analisis_temporal" para responder. No digas que no hay dimensión temporal si "campos_disponibles.fechas" no está vacío.
+        5. MÚLTIPLES FECHAS: Si "campos_disponibles.fechas" tiene MÁS DE UNA columna y el usuario hace una pregunta temporal SIN especificar qué fecha usar, NO respondas todavía. En cambio, preguntale al usuario en cuál fecha quiere basar el análisis, listando las opciones con su rango disponible (usando "campos_disponibles.detalle_fechas"). Ejemplo: "Tengo varias fechas disponibles: ¿en cuál querés basar el análisis? → fecha_desembolso (2022-01 a 2024-12) / fecha_vencimiento (2023-01 a 2025-06)". Si hay UNA SOLA fecha, usala directamente sin preguntar.
+        5. PROMEDIO: Usa [total métrica] / [cantidad_operaciones] del segmento.
+        6. TRANSPARENCIA: Muestra siempre el cálculo realizado.
+        7. SENTIDO COMÚN: Si el usuario hace una pregunta de negocio obvia (ej: "mejor mes", "top clientes", "país con más ventas"), respondé directamente usando los datos disponibles aunque el usuario no haya especificado el campo exacto.
       `;
     } else {
       systemInstruction = `

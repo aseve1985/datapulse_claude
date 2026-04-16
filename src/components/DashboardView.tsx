@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area, Cell, PieChart, Pie,
@@ -780,6 +780,8 @@ export default function DashboardView({
   ]);
 
   const [filterSlots, setFilterSlots] = useState<{ field: string; values: string[] }[]>([]);
+  const deferredFilterSlots = useDeferredValue(filterSlots);
+  const isFiltering = filterSlots !== deferredFilterSlots;
 
   useEffect(() => {
     if (availableFields.length === 0) return;
@@ -887,16 +889,19 @@ export default function DashboardView({
 
   const filteredSales = useMemo(() => {
     return sales.filter(s => {
-      return filterSlots.every(slot => {
+      return deferredFilterSlots.every(slot => {
         if (slot.values.length === 0) return true;
         return slot.values.includes(String(s[slot.field]));
       });
     });
-  }, [sales, filterSlots]);
+  }, [sales, deferredFilterSlots]);
 
+  // Only recompute options when the selected FIELDS change, not when values change
+  const filterFieldKey = filterSlots.map(s => s.field).join('|');
   const filterOptions = useMemo(() => {
     const options: Record<string, string[]> = {};
     filterSlots.forEach(slot => {
+      if (!slot.field) return;
       const values = new Set<string>();
       sales.forEach(s => {
         if (s[slot.field] !== undefined && s[slot.field] !== null && s[slot.field] !== '') {
@@ -906,7 +911,8 @@ export default function DashboardView({
       options[slot.field] = Array.from(values).sort();
     });
     return options;
-  }, [sales, filterSlots]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales, filterFieldKey]);
 
   const stats = useMemo(() => {
     if (!filteredSales.length) return cardConfigs.map(() => 'N/A');
@@ -947,11 +953,15 @@ export default function DashboardView({
 
       // Scatter: one point per row with x=index, y=metric, name=dimension value
       if (type === 'SCATTER') {
-        return filteredSales.map((s, i) => ({
-          x: i + 1,
-          y: parseNumericValue(s[metric]) || 0,
-          name: String(s[dimension] || 'N/A'),
-        }));
+        const MAX_SCATTER = 2000;
+        const step = filteredSales.length > MAX_SCATTER ? Math.ceil(filteredSales.length / MAX_SCATTER) : 1;
+        return filteredSales
+          .filter((_, i) => i % step === 0)
+          .map((s, i) => ({
+            x: i + 1,
+            y: parseNumericValue(s[metric]) || 0,
+            name: String(s[dimension] || 'N/A'),
+          }));
       }
 
       const dataMap: any = {};
@@ -1073,146 +1083,105 @@ export default function DashboardView({
 
   return (
     <div className="min-h-screen bg-slate-950 pb-12 flex flex-col text-zinc-100">
-      <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4 w-full lg:w-auto">
-            <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-xl text-zinc-500 transition-colors">
-              <ArrowLeft className="w-5 h-5" />
+      <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-6">
+
+        {/* Fila 1: título */}
+        <div className="max-w-7xl mx-auto flex items-center gap-3 pt-3 pb-2">
+          <button onClick={onBack} className="p-1.5 hover:bg-slate-800 rounded-lg text-zinc-500 transition-colors shrink-0">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <div className="leading-tight">
+            <h1 className="text-base font-bold text-white">DataPulse <span className="text-blue-400">Libgot</span></h1>
+            <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-widest">{title}</p>
+          </div>
+        </div>
+
+        {/* Fila 2: todos los controles alineados a la derecha */}
+        <div className="max-w-7xl mx-auto flex items-center justify-end gap-2 pb-2 flex-wrap">
+
+          {/* Shortcuts de período */}
+          {moduleType === 'api' && (
+            <div className="flex items-center gap-0.5 bg-slate-800/60 p-0.5 rounded-lg">
+              {(['current_month', 'last_month', 'last_quarter'] as const).map((key, i) => (
+                <button key={key} onClick={() => setDateRange(key)}
+                  className="px-2.5 py-1 text-[11px] font-semibold text-zinc-400 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all whitespace-nowrap">
+                  {['Mes Actual', 'Mes Anterior', 'Trimestre'][i]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Rango de fechas */}
+          {moduleType === 'api' && (
+            <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                className="text-xs font-bold text-white focus:outline-none bg-transparent w-[100px] [color-scheme:dark]" />
+              <span className="text-zinc-600 text-xs">→</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                className="text-xs font-bold text-white focus:outline-none bg-transparent w-[100px] [color-scheme:dark]" />
+            </div>
+          )}
+
+          {/* Separador visual */}
+          <div className="w-px h-5 bg-slate-700 mx-1" />
+
+          {/* Tabs Overview / Datos */}
+          <div className="flex bg-slate-800 p-0.5 rounded-lg">
+            <button onClick={() => setActiveTab('overview')}
+              className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'overview' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
+              Overview
             </button>
-            <div className="flex items-center gap-3">
-              <div>
-                <h1 className="text-xl font-bold tracking-tight text-white">DataPulse <span className="text-blue-500">Libgot</span></h1>
-                <div className="flex items-center gap-3">
-                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">{title}</p>
-                </div>
-              </div>
-            </div>
+            <button onClick={() => setActiveTab('data')}
+              className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'data' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
+              Datos
+            </button>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-end gap-4 w-full lg:w-auto">
-            {moduleType === 'api' && (
-              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-                <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg w-full sm:w-auto justify-center">
-                  <button 
-                    onClick={() => setDateRange('current_month')}
-                    className="flex-1 sm:flex-none px-2 py-1 text-[10px] font-bold text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all"
-                  >
-                    Mes Actual
-                  </button>
-                  <button 
-                    onClick={() => setDateRange('last_month')}
-                    className="flex-1 sm:flex-none px-2 py-1 text-[10px] font-bold text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all"
-                  >
-                    Mes Anterior
-                  </button>
-                  <button 
-                    onClick={() => setDateRange('last_quarter')}
-                    className="flex-1 sm:flex-none px-2 py-1 text-[10px] font-bold text-zinc-500 hover:text-blue-400 hover:bg-blue-500/10 rounded transition-all"
-                  >
-                    Trimestre
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-xl border border-slate-700 w-full sm:w-auto justify-center">
-                  <div className="flex items-center gap-2 px-3 py-1 bg-slate-950 rounded-lg shadow-sm border border-slate-700 transition-all">
-                    <input 
-                      type="date" 
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="text-xs font-bold text-white focus:outline-none bg-transparent w-[110px] [color-scheme:dark]"
-                    />
-                  </div>
-                  <span className="text-zinc-400 text-xs font-bold px-1">al</span>
-                  <div className="flex items-center gap-2 px-3 py-1 bg-slate-950 rounded-lg shadow-sm border border-slate-700 transition-all">
-                    <input 
-                      type="date" 
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="text-xs font-bold text-white focus:outline-none bg-transparent w-[110px] [color-scheme:dark]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+          {/* CTA Cargar/Actualizar */}
+          {moduleType === 'api' && (
+            <button onClick={handleFetch} disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors">
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+              {sales.length > 0 ? 'Actualizar' : 'Cargar Datos'}
+            </button>
+          )}
 
-            <div className="flex items-center gap-4 w-full sm:w-auto justify-center">
-              <div className="flex bg-slate-800 p-1 rounded-xl flex-1 sm:flex-none">
-                <button 
-                  onClick={() => setActiveTab('overview')}
-                  className={cn(
-                    "flex-1 sm:flex-none px-4 py-1.5 text-sm font-bold rounded-lg transition-all",
-                    activeTab === 'overview' ? "bg-slate-700 text-blue-400 shadow-sm" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  Overview
-                </button>
-                <button 
-                  onClick={() => setActiveTab('data')}
-                  className={cn(
-                    "flex-1 sm:flex-none px-4 py-1.5 text-sm font-bold rounded-lg transition-all",
-                    activeTab === 'data' ? "bg-slate-700 text-blue-400 shadow-sm" : "text-zinc-500 hover:text-zinc-300"
-                  )}
-                >
-                  Datos
-                </button>
-              </div>
+          {/* Guardar */}
+          {sales.length > 0 && (
+            <button onClick={() => setSaveModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-300 rounded-lg text-xs font-bold transition-colors">
+              <BookmarkPlus className="w-3.5 h-3.5" />
+              Guardar
+            </button>
+          )}
 
-              {moduleType === 'api' && (
-                <button
-                  onClick={handleFetch}
-                  disabled={loading}
-                  className="bg-zinc-900 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-zinc-800 transition-colors flex items-center gap-2 disabled:opacity-50 shadow-lg shadow-zinc-200 flex-1 sm:flex-none justify-center"
-                >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-                  <span className="hidden sm:inline">{sales.length > 0 ? 'Actualizar' : 'Cargar Datos'}</span>
-                </button>
-              )}
-              {sales.length > 0 && (
-                <div className="flex items-center gap-2 flex-1 sm:flex-none justify-center">
-                  <button
-                    onClick={() => setSaveModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-400 rounded-lg text-xs font-bold transition-colors"
-                    title="Guardar reporte"
-                  >
-                    <BookmarkPlus className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Guardar</span>
-                  </button>
-                  {savedReports.length > 0 && (
-                    <div className="relative">
-                      <button
-                        onClick={() => setLoadMenuOpen(v => !v)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-400 rounded-lg text-xs font-bold transition-colors"
-                        title="Cargar reporte"
-                      >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Mis reportes</span>
-                        {savedReports.length > 0 && (
-                          <span className="bg-blue-600 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{savedReports.length}</span>
-                        )}
-                      </button>
-                      {loadMenuOpen && (
-                        <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
-                          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-4 pt-3 pb-1">Mis Reportes</p>
-                          {savedReports.map((r: any) => (
-                            <button
-                              key={r.id}
-                              onClick={() => handleLoadReport(r)}
-                              className="w-full text-left px-4 py-2.5 hover:bg-slate-800 transition-colors flex items-center justify-between group"
-                            >
-                              <div>
-                                <p className="text-sm text-zinc-200 font-medium">{r.nombre}</p>
-                                <p className="text-[10px] text-zinc-500">{r.fecha}</p>
-                              </div>
-                              <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-blue-400 transition-colors" />
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+          {/* Mis reportes */}
+          {savedReports.length > 0 && (
+            <div className="relative">
+              <button onClick={() => setLoadMenuOpen(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-400 rounded-lg text-xs font-bold transition-colors">
+                <FolderOpen className="w-3.5 h-3.5" />
+                {activeReportName ?? 'Mis reportes'}
+                <span className="bg-blue-600 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{savedReports.length}</span>
+              </button>
+              {loadMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest px-4 pt-3 pb-1">Mis Reportes</p>
+                  {savedReports.map((r: any) => (
+                    <button key={r.id} onClick={() => handleLoadReport(r)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-slate-800 transition-colors flex items-center justify-between group">
+                      <div>
+                        <p className="text-sm text-zinc-200 font-medium">{r.nombre}</p>
+                        <p className="text-[10px] text-zinc-500">{r.fecha}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-blue-400 transition-colors" />
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
+          )}
+
         </div>
       </header>
 
@@ -1475,6 +1444,12 @@ export default function DashboardView({
                 <div className="flex items-center gap-2 text-zinc-400">
                   <Filter className="w-4 h-4" />
                   <span className="text-xs font-bold uppercase tracking-wider">Configuración de Filtros:</span>
+                  {isFiltering && (
+                    <span className="flex items-center gap-1 text-[10px] text-blue-400 animate-pulse">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Aplicando...
+                    </span>
+                  )}
                 </div>
                 {filterSlots.some(s => s.values.length > 0) && (
                   <button 

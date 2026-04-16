@@ -13,6 +13,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1030.0",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -23,6 +24,7 @@
     "express": "^4.21.2",
     "google-auth-library": "^10.6.2",
     "googleapis": "^171.4.0",
+    "hyparquet": "^1.25.6",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "papaparse": "^5.5.3",

@@ -5,6 +5,8 @@ import path from "path";
 import { GoogleAuth } from "google-auth-library";
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { parquetRead } from "hyparquet";
 
 dotenv.config();
 
@@ -719,6 +721,67 @@ async function startServer() {
     } catch (error: any) {
       console.error("Proxy Error:", error);
       res.status(500).json({ error: "Failed to fetch from external API", details: error.message });
+    }
+  });
+
+  // ── Sales S3 Parquet Endpoint ────────────────────────────────────────────────
+  let salesS3Cache: { data: any[]; fetchedAt: number } | null = null;
+  const SALES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+  app.get("/api/sales-s3", async (req, res) => {
+    const { fecha_desde, fecha_hasta } = req.query;
+
+    try {
+      const now = Date.now();
+      if (!salesS3Cache || now - salesS3Cache.fetchedAt > SALES_CACHE_TTL_MS) {
+        console.log("[S3] Downloading ventas_platinum.parquet...");
+        const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+        const cmd = new GetObjectCommand({
+          Bucket: "data-lake-libgot-externos",
+          Key: "platinum_ia/ventas_multipais/ventas_platinum.parquet",
+        });
+        const response = await s3.send(cmd);
+        const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
+
+        const asyncBuffer = {
+          byteLength: bytes.byteLength,
+          slice: async (start: number, end?: number): Promise<ArrayBuffer> =>
+            bytes.buffer.slice(bytes.byteOffset + start, bytes.byteOffset + (end ?? bytes.byteLength)) as ArrayBuffer,
+        };
+
+        let rows: any[] = [];
+        await parquetRead({
+          file: asyncBuffer,
+          rowFormat: "object",
+          onComplete: (data: any[]) => { rows = data; },
+        });
+
+        salesS3Cache = { data: rows, fetchedAt: now };
+        console.log(`[S3] Cached ${rows.length} records from parquet`);
+      } else {
+        console.log("[S3] Serving sales data from cache");
+      }
+
+      let data = salesS3Cache.data;
+
+      if (fecha_desde || fecha_hasta) {
+        const from = fecha_desde ? new Date(String(fecha_desde)) : null;
+        const to = fecha_hasta ? new Date(String(fecha_hasta) + "T23:59:59") : null;
+        data = data.filter((row: any) => {
+          const rawDate = row.fecha_desembolso || row.fecha || row.date || row.Date;
+          if (!rawDate) return true;
+          const d = new Date(rawDate);
+          if (from && d < from) return false;
+          if (to && d > to) return false;
+          return true;
+        });
+      }
+
+      const safe = JSON.parse(JSON.stringify(data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
+      res.json({ records: safe, total: safe.length, source: "s3" });
+    } catch (error: any) {
+      console.error("[S3] Error loading parquet:", error);
+      res.status(500).json({ error: "Failed to load data from S3", details: error.message });
     }
   });
 
