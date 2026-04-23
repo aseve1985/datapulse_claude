@@ -932,6 +932,15 @@ async function startServer() {
     });
   });
 
+  // Serve tools from tools_libgot (explicit route bypasses Vite's SPA html fallback)
+  app.get('/tools/:filename', (req, res) => {
+    const filename = path.basename(req.params.filename);
+    const filePath = path.resolve(process.cwd(), 'tools_libgot', filename);
+    res.sendFile(filePath, (err) => {
+      if (err) res.status(404).json({ error: 'Tool not found' });
+    });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     try {

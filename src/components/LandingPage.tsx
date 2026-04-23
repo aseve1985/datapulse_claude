@@ -30,7 +30,9 @@ import {
   Trash2,
   FolderOpen,
   CalendarDays,
-  Zap
+  Zap,
+  Wrench,
+  Calculator
 } from 'lucide-react';
 import { EXCHANGE_RATES } from '../constants';
 
@@ -455,6 +457,42 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
           </motion.button>
         ))}
       </div>
+
+      {/* Herramientas Útiles */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.25 }}
+        className="mb-16"
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-emerald-600/10 rounded-xl border border-emerald-500/20">
+            <Wrench className="w-4 h-4 text-emerald-400" />
+          </div>
+          <h2 className="text-lg font-bold text-white">Herramientas Útiles</h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <a
+            href="/tools/calculadora-breakeven.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex flex-col p-8 bg-slate-900/40 border border-slate-800/50 hover:border-emerald-500/40 hover:bg-slate-800/60 rounded-[2rem] transition-all shadow-xl text-left overflow-hidden relative"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl -mr-16 -mt-16 group-hover:bg-emerald-500/10 transition-colors" />
+            <div className="w-14 h-14 bg-emerald-700 rounded-2xl flex items-center justify-center text-white mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all shadow-lg shadow-black/20">
+              <Calculator size={28} />
+            </div>
+            <h3 className="text-xl font-bold text-white group-hover:text-emerald-400 transition-colors mb-3">Calculadora de Breakeven</h3>
+            <p className="text-zinc-500 text-sm leading-relaxed mb-8 group-hover:text-zinc-400 transition-colors">
+              Calculá el punto de equilibrio financiero de tu cartera o producto.
+            </p>
+            <div className="mt-auto flex items-center text-emerald-500/80 font-bold text-xs uppercase tracking-widest group-hover:text-emerald-400 transition-colors">
+              Abrir herramienta
+              <ExternalLink size={13} className="ml-1.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+        </div>
+      </motion.div>
 
       {savedReports.length > 0 && (
         <motion.div

@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculadora Break-Even — Cartera de Créditos</title>
+  <style>
+    /* ===== VARIABLES ===== */
+    :root {
+      --primary:        #1a56db;
+      --primary-dark:   #1344b8;
+      --primary-light:  #eff6ff;
+      --success:        #057a55;
+      --success-light:  #def7ec;
+      --warning:        #b45309;
+      --warning-light:  #fef3c7;
+      --danger:         #c81e1e;
+      --danger-light:   #fde8e8;
+      --purple:         #6d28d9;
+      --purple-light:   #ede9fe;
+      --gray-50:  #f9fafb;
+      --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb;
+      --gray-300: #d1d5db;
+      --gray-400: #9ca3af;
+      --gray-500: #6b7280;
+      --gray-600: #4b5563;
+      --gray-700: #374151;
+      --gray-800: #1f2937;
+      --gray-900: #111827;
+      --radius:   12px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+      --shadow-md: 0 4px 8px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.05);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--gray-50);
+      color: var(--gray-800);
+      line-height: 1.55;
+    }
+
+    /* ===== HEADER ===== */
+    .header {
+      background: linear-gradient(135deg, #1a56db 0%, #0e3fa3 100%);
+      color: #fff;
+      padding: 2rem 1.5rem 2.5rem;
+      text-align: center;
+    }
+    .header h1 { font-size: 1.75rem; font-weight: 800; margin-bottom: .4rem; }
+    .header p  { font-size: .95rem; opacity: .85; max-width: 640px; margin: 0 auto; }
+
+    .container { max-width: 1220px; margin: 0 auto; padding: 1.75rem 1.25rem 2.5rem; }
+
+    .section { margin-bottom: 2.25rem; }
+    .section-title {
+      font-size: 1.05rem; font-weight: 700; color: var(--gray-700);
+      margin-bottom: 1rem; padding-bottom: .5rem;
+      border-bottom: 2px solid var(--gray-200);
+      display: flex; align-items: center; gap: .45rem;
+    }
+
+    .card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.35rem; }
+
+    /* ===== INPUTS ===== */
+    .inputs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+    .input-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.2rem; }
+    .input-card-title {
+      font-size: .78rem; font-weight: 700; color: var(--primary);
+      text-transform: uppercase; letter-spacing: .08em; margin-bottom: .9rem;
+    }
+    .input-group { display: flex; flex-direction: column; gap: .22rem; margin-bottom: .8rem; }
+    .input-group:last-child { margin-bottom: 0; }
+    .input-group label {
+      font-size: .72rem; font-weight: 700; color: var(--gray-500);
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    .input-wrap { position: relative; display: flex; align-items: center; }
+    .i-pre, .i-suf {
+      position: absolute; font-size: .88rem; font-weight: 600;
+      color: var(--gray-400); pointer-events: none; user-select: none;
+    }
+    .i-pre { left: .72rem; }
+    .i-suf { right: .72rem; }
+    input[type="number"] {
+      width: 100%; padding: .55rem .75rem;
+      border: 1.5px solid var(--gray-200); border-radius: 8px;
+      font-size: .93rem; color: var(--gray-800); background: var(--gray-50);
+      transition: border-color .15s, box-shadow .15s;
+      -moz-appearance: textfield;
+    }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+    input[type="number"]:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(26,86,219,.12); background: #fff;
+    }
+    /* Special style for derived interés inputs */
+    input.derived {
+      border-color: var(--purple);
+      background: var(--purple-light);
+      color: var(--purple);
+      font-weight: 700;
+    }
+    input.derived:focus {
+      border-color: var(--purple);
+      box-shadow: 0 0 0 3px rgba(109,40,217,.15);
+      background: #fff;
+    }
+    input.has-pre  { padding-left: 1.8rem; }
+    input.has-suf  { padding-right: 2rem; }
+    .input-hint { font-size: .69rem; color: var(--gray-400); }
+
+    /* Interés derivado — dual display */
+    .interes-badge {
+      display: inline-flex; align-items: center; gap: .3rem;
+      font-size: .69rem; font-weight: 700; color: var(--purple);
+      background: var(--purple-light); border-radius: 5px;
+      padding: .12rem .45rem; margin-bottom: .3rem;
+    }
+    .interes-dual { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+    .interes-dual .i-pre, .interes-dual .i-suf { color: var(--purple); opacity: .7; }
+
+    /* ===== BUTTONS ===== */
+    .btn-row { display: flex; gap: .75rem; margin-top: 1.1rem; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .6rem 1.35rem; border-radius: 8px; font-size: .9rem;
+      font-weight: 600; cursor: pointer; transition: all .15s; border: none; line-height: 1;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); box-shadow: var(--shadow-md); }
+    .btn-ghost { background: var(--gray-100); color: var(--gray-700); border: 1.5px solid var(--gray-200); }
+    .btn-ghost:hover { background: var(--gray-200); }
+
+    .warn-box {
+      display: none; background: var(--warning-light);
+      border: 1px solid #fcd34d; border-radius: 8px;
+      padding: .65rem 1rem; font-size: .82rem; color: var(--warning); margin-top: .85rem;
+    }
+
+    /* ===== SEMÁFORO ===== */
+    .semaforo {
+      display: inline-flex; align-items: center; gap: .5rem;
+      padding: .42rem .9rem; border-radius: 999px; font-size: .82rem;
+      font-weight: 600; margin-bottom: 1rem;
+    }
+    .s-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .sem-verde  { background: var(--success-light); color: var(--success); }
+    .sem-verde  .s-dot { background: var(--success); }
+    .sem-amari  { background: var(--warning-light); color: var(--warning); }
+    .sem-amari  .s-dot { background: var(--warning); }
+    .sem-rojo   { background: var(--danger-light);  color: var(--danger);  }
+    .sem-rojo   .s-dot { background: var(--danger);  }
+
+    /* ===== RESULT CARDS ===== */
+    .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .9rem; }
+    .res-card {
+      background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm);
+      padding: 1.1rem 1.2rem; border-left: 4px solid var(--gray-200);
+    }
+    .res-card.hl    { border-left-color: var(--primary); background: linear-gradient(135deg,#fff,#f0f5ff); }
+    .res-card.ok    { border-left-color: var(--success); }
+    .res-card.bad   { border-left-color: var(--danger);  }
+    .res-label { font-size: .7rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .4rem; }
+    .res-value { font-size: 1.45rem; font-weight: 800; color: var(--gray-900); line-height: 1.15; }
+    .res-value.lg  { font-size: 1.65rem; }
+    .res-sub { font-size: .73rem; color: var(--gray-400); margin-top: .28rem; }
+    .pos { color: var(--success); }
+    .neg { color: var(--danger);  }
+
+    /* ===== INDICADORES DE TASA ===== */
+    .tasas-section {
+      background: linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%);
+      border: 1px solid #e9d5ff;
+      border-radius: var(--radius);
+      padding: 1.2rem;
+      margin-top: 1rem;
+    }
+    .tasas-header {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: .8rem; font-weight: 700; color: var(--purple);
+      text-transform: uppercase; letter-spacing: .07em;
+      margin-bottom: .9rem;
+    }
+    .tasas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: .7rem; }
+    .tasa-card {
+      background: #fff; border-radius: 10px; padding: .85rem;
+      border: 1px solid #e9d5ff; box-shadow: 0 1px 3px rgba(109,40,217,.06);
+    }
+    .tasa-label { font-size: .67rem; font-weight: 700; color: var(--purple); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .3rem; }
+    .tasa-value { font-size: 1.25rem; font-weight: 800; color: var(--gray-900); line-height: 1.2; }
+    .tasa-note  { font-size: .66rem; color: var(--gray-400); margin-top: .2rem; }
+    .tasas-disclaimer {
+      font-size: .69rem; color: var(--gray-400);
+      margin-top: .75rem; line-height: 1.5;
+      border-top: 1px solid #e9d5ff; padding-top: .65rem;
+    }
+
+    /* ===== AMORTIZACIÓN ===== */
+    .amort-toggle { display: flex; gap: .5rem; margin-bottom: .75rem; }
+    .amort-btn {
+      padding: .45rem 1rem; border-radius: 8px; border: 1.5px solid var(--gray-200);
+      font-size: .82rem; font-weight: 600; cursor: pointer; background: #fff; color: var(--gray-600);
+      transition: all .15s;
+    }
+    .amort-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .amort-desc {
+      font-size: .78rem; color: var(--gray-500); margin-bottom: .75rem;
+      padding: .5rem .75rem; background: var(--gray-50); border-radius: 6px;
+      border-left: 3px solid var(--primary);
+    }
+    #tbAmort tfoot tr { background: #eff6ff; font-weight: 700; }
+    #tbAmort tfoot td { border-top: 2px solid var(--primary); }
+
+    /* ===== TABLES ===== */
+    .tbl-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--gray-200); }
+    table { width: 100%; border-collapse: collapse; font-size: .84rem; }
+    thead tr { background: var(--gray-50); }
+    th { padding: .65rem 1rem; text-align: right; font-size: .7rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    th:first-child { text-align: left; }
+    td { padding: .6rem 1rem; text-align: right; color: var(--gray-700); border-top: 1px solid var(--gray-100); }
+    td:first-child { text-align: left; font-weight: 500; }
+    tbody tr:hover { background: var(--gray-50); }
+    tr.base-row { background: #eff6ff; font-weight: 700; }
+
+    /* ===== ESCALERA DE MORA ===== */
+    tr.mora-breakeven { background: #dbeafe; font-weight: 700; }
+    tr.mora-breakeven td { border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); }
+    .mora-badge {
+      display: inline-block; padding: .18rem .55rem; border-radius: 99px;
+      font-size: .72rem; font-weight: 700; white-space: nowrap;
+    }
+    .mora-badge.verde  { background: #dcfce7; color: #15803d; }
+    .mora-badge.amarillo { background: #fef9c3; color: #a16207; }
+    .mora-badge.rojo   { background: #fee2e2; color: #b91c1c; }
+
+    /* ===== SENSITIVITY ===== */
+    .sens-ctrl { display: flex; gap: .85rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+    .sens-ctrl label { font-size: .82rem; font-weight: 600; color: var(--gray-600); }
+    select {
+      padding: .48rem .75rem; border: 1.5px solid var(--gray-200); border-radius: 8px;
+      font-size: .88rem; color: var(--gray-800); background: #fff; cursor: pointer;
+    }
+    select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,86,219,.1); }
+
+    /* ===== CHART ===== */
+    .chart-box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.35rem; margin-top: 1rem; }
+    .chart-header { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .chart-header strong { font-size: .88rem; color: var(--gray-700); }
+    .badge { display: inline-flex; align-items: center; padding: .18rem .5rem; border-radius: 5px; font-size: .69rem; font-weight: 700; }
+    .badge-blue { background: #dbeafe; color: #1e40af; }
+    canvas { display: block; max-width: 100%; }
+
+    /* ===== SCENARIOS ===== */
+    .scen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1.1rem; }
+    .scen-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.2rem; border-top: 4px solid var(--gray-200); }
+    .scen-card.sc-base { border-top-color: var(--primary); }
+    .scen-card.sc-opt  { border-top-color: var(--success); }
+    .scen-card.sc-str  { border-top-color: var(--danger);  }
+    .scen-title { font-size: .88rem; font-weight: 700; margin-bottom: .6rem; }
+    .scen-title.sc-base { color: var(--primary); }
+    .scen-title.sc-opt  { color: var(--success); }
+    .scen-title.sc-str  { color: var(--danger);  }
+    .scen-note { font-size: .71rem; color: var(--gray-400); margin-bottom: .55rem; }
+    .scen-row { display: flex; justify-content: space-between; align-items: center; padding: .28rem 0; font-size: .82rem; border-bottom: 1px solid var(--gray-100); }
+    .scen-row:last-child { border-bottom: none; }
+    .scen-k { color: var(--gray-500); }
+    .scen-v { font-weight: 600; color: var(--gray-800); }
+
+    /* ===== FORMULAS ===== */
+    .formulas { background: var(--gray-50); border-radius: var(--radius); border: 1px solid var(--gray-200); padding: 1.35rem; }
+    .formula-list { display: grid; gap: .7rem; }
+    .formula-item { display: flex; gap: .75rem; align-items: flex-start; background: #fff; border: 1px solid var(--gray-200); border-radius: 8px; padding: .75rem; }
+    .f-num { background: var(--primary); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700; flex-shrink: 0; }
+    .f-num.purple { background: var(--purple); }
+    .f-name { font-size: .82rem; font-weight: 600; color: var(--gray-700); margin-bottom: .18rem; }
+    .f-eq { font-family: 'Courier New', monospace; font-size: .78rem; color: var(--primary); background: #eff6ff; padding: .18rem .4rem; border-radius: 4px; display: inline-block; }
+    .f-eq.purple { color: var(--purple); background: var(--purple-light); }
+    .f-note { font-size: .72rem; color: var(--gray-400); margin-top: .2rem; }
+
+    /* ===== GUIDE ===== */
+    .guide-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.35rem; }
+    .guide-card h3 { font-size: .95rem; font-weight: 700; color: var(--gray-700); margin-bottom: .5rem; margin-top: .9rem; }
+    .guide-card h3:first-child { margin-top: 0; }
+    .guide-card p { font-size: .84rem; color: var(--gray-600); margin-bottom: .5rem; line-height: 1.65; }
+    .tip { display: flex; gap: .7rem; background: #eff6ff; border-left: 3px solid var(--primary); padding: .7rem .9rem; border-radius: 0 8px 8px 0; margin: .6rem 0; font-size: .83rem; color: var(--gray-700); }
+    .tip-icon { font-size: 1rem; flex-shrink: 0; }
+
+    footer { text-align: center; padding: 1.5rem; font-size: .75rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); margin-top: 1.5rem; }
+
+    @media (max-width: 640px) {
+      .header h1 { font-size: 1.3rem; }
+      .res-value { font-size: 1.2rem; }
+      .res-value.lg { font-size: 1.4rem; }
+      .container { padding: 1rem .9rem 2rem; }
+      .interes-dual { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <h1>📊 Calculadora Break-Even — Cartera de Créditos</h1>
+  <p>Analizá cuánta mora podés soportar antes de llegar al punto de equilibrio y qué variable mueve más tu rentabilidad.</p>
+</header>
+
+<div class="container">
+
+  <!-- ====== INPUTS ====== -->
+  <div class="section">
+    <div class="section-title">⚙️ Variables de entrada</div>
+
+    <div class="inputs-grid">
+
+      <!-- Grupo: Cartera -->
+      <div class="input-card">
+        <div class="input-card-title">🏦 Cartera</div>
+
+        <div class="input-group">
+          <label for="cantCreditos">Cantidad de créditos</label>
+          <div class="input-wrap">
+            <span class="i-pre">#</span>
+            <input type="number" id="cantCreditos" value="1000" min="0" class="has-pre" />
+          </div>
+          <span class="input-hint">Total de créditos a otorgar</span>
+        </div>
+
+        <div class="input-group">
+          <label for="capitalCredito">Capital por crédito</label>
+          <div class="input-wrap">
+            <span class="i-pre">$</span>
+            <input type="number" id="capitalCredito" value="50000" min="0" class="has-pre" />
+          </div>
+          <span class="input-hint">Monto desembolsado por crédito</span>
+        </div>
+
+        <div class="input-group">
+          <label for="plazo">Plazo del crédito</label>
+          <div class="input-wrap">
+            <input type="number" id="plazo" value="12" min="1" max="360" class="has-suf" />
+            <span class="i-suf">m</span>
+          </div>
+          <span class="input-hint">Duración en meses</span>
+        </div>
+      </div>
+
+      <!-- Grupo: Ingresos -->
+      <div class="input-card">
+        <div class="input-card-title">💰 Ingresos</div>
+
+        <!-- INTERÉS DERIVADO — dual editable -->
+        <div class="input-group">
+          <label>Interés a devengar</label>
+          <div class="interes-badge">📐 Calculado: Tasa directa × (1 − Bonif.%/100)</div>
+          <div class="interes-dual">
+            <div class="input-wrap">
+              <input type="number" id="interesInputPct" value="14.85" step="0.01" min="0" class="has-suf derived" title="Editable: al cambiar, ajusta Tasa directa (bonif. → 0%)" />
+              <span class="i-suf" style="color:var(--purple);opacity:.7">%</span>
+            </div>
+            <div class="input-wrap">
+              <span class="i-pre" style="color:var(--purple);opacity:.7">$</span>
+              <input type="number" id="interesInputPeso" value="0" step="1" min="0" class="has-pre derived" title="Editable: al cambiar, recalcula % y ajusta Tasa directa" />
+            </div>
+          </div>
+          <span class="input-hint">✏️ Editá cualquiera de los dos → ajusta Tasa directa, Bonif. → 0%</span>
+        </div>
+
+        <div class="input-group">
+          <label for="crossSelling">Cuota cross selling / mes</label>
+          <div class="input-wrap">
+            <span class="i-pre">$</span>
+            <input type="number" id="crossSelling" value="500" min="0" class="has-pre" />
+          </div>
+          <span class="input-hint">Por crédito activo, por mes</span>
+        </div>
+
+        <div class="input-group">
+          <label for="punitorios">Punitorios promedio</label>
+          <div class="input-wrap">
+            <span class="i-pre">$</span>
+            <input type="number" id="punitorios" value="1000" min="0" class="has-pre" />
+          </div>
+          <span class="input-hint">Monto total por crédito durante el plazo</span>
+        </div>
+      </div>
+
+      <!-- Grupo: Costos -->
+      <div class="input-card">
+        <div class="input-card-title">💸 Costos y tasa</div>
+
+        <div class="input-group">
+          <label for="costoAdq">Costo de adquisición</label>
+          <div class="input-wrap">
+            <span class="i-pre">$</span>
+            <input type="number" id="costoAdq" value="2000" min="0" class="has-pre" />
+          </div>
+          <span class="input-hint">Por crédito otorgado (originación)</span>
+        </div>
+
+        <div class="input-group">
+          <label for="tasaDirecta">Tasa directa (pricing bruto)</label>
+          <div class="input-wrap">
+            <input type="number" id="tasaDirecta" value="15" min="0" max="500" step="0.01" class="has-suf" />
+            <span class="i-suf">%</span>
+          </div>
+          <span class="input-hint">Tasa total ofrecida al cliente sobre el capital</span>
+        </div>
+
+        <div class="input-group">
+          <label for="bonificacion">Bonificación de tasa</label>
+          <div class="input-wrap">
+            <input type="number" id="bonificacion" value="1" min="0" max="100" step="0.01" class="has-suf" />
+            <span class="i-suf">%</span>
+          </div>
+          <span class="input-hint">Rebate multiplicativo → Interés = Tasa × (1 − Bonif%/100)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="calcular()">🔄 Recalcular</button>
+      <button class="btn btn-ghost"   onclick="resetear()">↩️ Valores por defecto</button>
+    </div>
+
+    <div class="warn-box" id="warnBox">⚠️ <span id="warnMsg"></span></div>
+  </div>
+
+  <!-- ====== RESULTADOS PRINCIPALES ====== -->
+  <div class="section">
+    <div class="section-title">📈 Resultados principales</div>
+
+    <div id="semaforo" class="semaforo sem-verde">
+      <div class="s-dot"></div>
+      <span id="semaforoTxt">✅ Negocio rentable</span>
+    </div>
+
+    <div class="results-grid">
+      <div class="res-card hl">
+        <div class="res-label">💼 Capital total desembolsado</div>
+        <div class="res-value lg" id="r-capitalTotal">—</div>
+        <div class="res-sub" id="r-capitalSub">—</div>
+      </div>
+      <div class="res-card">
+        <div class="res-label">📥 Ingresos totales</div>
+        <div class="res-value" id="r-ingresoTotal">—</div>
+        <div class="res-sub">Intereses + Cross selling + Punitorios</div>
+      </div>
+      <div class="res-card">
+        <div class="res-label">📤 Costos totales</div>
+        <div class="res-value" id="r-costoTotal">—</div>
+        <div class="res-sub">Costo de adquisición total</div>
+      </div>
+      <div class="res-card">
+        <div class="res-label">💜 Interés neto devengado</div>
+        <div class="res-value" id="r-interesPct">—</div>
+        <div class="res-sub" id="r-interesMonto">—</div>
+      </div>
+      <div class="res-card" id="r-cardResultado">
+        <div class="res-label">💵 Flujo libre antes de mora</div>
+        <div class="res-value lg" id="r-resultado">—</div>
+        <div class="res-sub">Ingresos − Costos − IVA − IIBB</div>
+      </div>
+      <div class="res-card hl">
+        <div class="res-label">🛡️ Mora máxima tolerable ($)</div>
+        <div class="res-value lg" id="r-moraMax$">—</div>
+        <div class="res-sub">Capital + intereses irrecuperables soportables</div>
+      </div>
+      <div class="res-card hl">
+        <div class="res-label">📉 Mora máxima tolerable (%)</div>
+        <div class="res-value lg" id="r-moraMax%">—</div>
+        <div class="res-sub">Sobre capital total desembolsado</div>
+      </div>
+    </div>
+
+    <!-- Indicadores de tasa -->
+    <div class="tasas-section">
+      <div class="tasas-header">📐 Indicadores de tasa — por crédito</div>
+      <div class="tasas-grid">
+        <div class="tasa-card">
+          <div class="tasa-label">TIR mensual</div>
+          <div class="tasa-value" id="t-tir">—</div>
+          <div class="tasa-note">Rendimiento interno mensual del producto</div>
+        </div>
+        <div class="tasa-card">
+          <div class="tasa-label">TNA s/ IVA</div>
+          <div class="tasa-value" id="t-tna-siva">—</div>
+          <div class="tasa-note">TIR × (365/30), nominal anual sin IVA</div>
+        </div>
+        <div class="tasa-card">
+          <div class="tasa-label">TNA c/ IVA</div>
+          <div class="tasa-value" id="t-tna-civa">—</div>
+          <div class="tasa-note">TNA × 1,21 (21% IVA Argentina)</div>
+        </div>
+        <div class="tasa-card">
+          <div class="tasa-label">TEA</div>
+          <div class="tasa-value" id="t-tea">—</div>
+          <div class="tasa-note">Tasa Efectiva Anual = (1+TIR)^(365/30) − 1</div>
+        </div>
+        <div class="tasa-card">
+          <div class="tasa-label">CFT anual</div>
+          <div class="tasa-value" id="t-cft">—</div>
+          <div class="tasa-note">CFTEA = TEA × 1,21 (convención BCRA)</div>
+        </div>
+      </div>
+      <div class="tasas-disclaimer">
+        ⚠️ <strong>Modelo de cálculo:</strong> Se asume crédito de cuotas iguales (capital + interés total) / plazo. TIR = IRR mensual por Newton-Raphson.
+        TNA s/IVA = (TIR/1,21)×(365/30). TNA c/IVA = TIR×(365/30). TEA = (1+TIR_sinIVA)^(365/30)−1. CFTEA = TEA×1,21 (convención BCRA).
+        Estos son indicadores por crédito individual, no de la cartera consolidada.
+      </div>
+    </div>
+
+    <!-- Desglose detallado -->
+    <div class="card" style="margin-top:1rem;">
+      <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">📋 Desglose detallado</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Concepto</th>
+              <th>Monto total</th>
+              <th>Por crédito</th>
+              <th>% del capital</th>
+            </tr>
+          </thead>
+          <tbody id="tbDesglose"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== ESCALERA DE MORA ====== -->
+  <div class="section">
+    <div class="section-title">📉 Resultado según nivel de mora</div>
+    <div class="card">
+      <div style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem;">
+        Impacto sobre el resultado final asumiendo distintos niveles de mora de capital sobre la cartera.
+        La mora se descuenta directamente del resultado antes de mora.
+        <strong>La fila marcada en azul es el punto de break-even.</strong>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left">Mora % capital</th>
+              <th>Mora ($)</th>
+              <th>Resultado antes mora</th>
+              <th>Resultado después mora</th>
+              <th>Margen s/ capital</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody id="tbEscaleraMora"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== ANÁLISIS DE SENSIBILIDAD ====== -->
+  <div class="section">
+    <div class="section-title">🎛️ Análisis de sensibilidad</div>
+    <div class="card">
+      <div class="sens-ctrl">
+        <label for="sensVar">Variable a analizar:</label>
+        <select id="sensVar" onchange="actualizarSens()">
+          <option value="tasaDirecta">Tasa directa (afecta interés y fondeo)</option>
+          <option value="bonificacion">Bonificación de tasa</option>
+          <option value="costoAdq">Costo de adquisición</option>
+          <option value="plazo">Plazo</option>
+          <option value="punitorios">Punitorios promedio</option>
+          <option value="crossSelling">Cross selling mensual</option>
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Variación</th>
+              <th>Valor</th>
+              <th>Interés devengado</th>
+              <th>Resultado antes mora</th>
+              <th>Mora máx. $</th>
+              <th>Mora máx. %</th>
+              <th>Δ vs base</th>
+            </tr>
+          </thead>
+          <tbody id="tbSens"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="chart-box">
+      <div class="chart-header">
+        <strong>Mora tolerable por variación de:</strong>
+        <span class="badge badge-blue" id="chartBadge">Tasa directa</span>
+      </div>
+      <canvas id="chart" height="290"></canvas>
+    </div>
+  </div>
+
+  <!-- ====== ESCENARIOS ====== -->
+  <div class="section">
+    <div class="section-title">🎭 Comparación de escenarios</div>
+
+    <div class="scen-grid">
+      <div class="scen-card sc-base">
+        <div class="scen-title sc-base">📋 Escenario Base</div>
+        <div class="scen-note">Inputs tal como los ingresaste</div>
+        <div id="scBase"></div>
+      </div>
+      <div class="scen-card sc-opt">
+        <div class="scen-title sc-opt">🚀 Escenario Optimista</div>
+        <div class="scen-note">+20% tasa directa · −20% costo adq. · +20% cross selling</div>
+        <div id="scOpt"></div>
+      </div>
+      <div class="scen-card sc-str">
+        <div class="scen-title sc-str">⚠️ Escenario Estresado</div>
+        <div class="scen-note">−20% tasa directa · +30% costo adq. · −20% cross selling</div>
+        <div id="scStr"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">📊 Tabla comparativa</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Métrica</th>
+              <th>Base</th>
+              <th>Optimista</th>
+              <th>Estresado</th>
+            </tr>
+          </thead>
+          <tbody id="tbEscenarios"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== TABLA DE AMORTIZACIÓN ====== -->
+  <div class="section">
+    <div class="section-title">📅 Tabla de cuotas — crédito modelo</div>
+    <div class="card">
+      <div style="font-size:.82rem;color:var(--gray-600);margin-bottom:.75rem;">
+        Muestra la cuotificación de <strong>un único crédito modelo</strong> del universo ingresado.
+      </div>
+      <div class="amort-toggle">
+        <button id="btnUnif" class="amort-btn active" onclick="setAmortMode('uniforme')">Sistema uniforme (flat)</button>
+        <button id="btnFrances" class="amort-btn" onclick="setAmortMode('frances')">Sistema francés (TIR)</button>
+      </div>
+      <div id="amortDesc" class="amort-desc"></div>
+      <div class="tbl-wrap">
+        <table id="tbAmort">
+          <thead>
+            <tr>
+              <th>Período</th>
+              <th>Saldo inicial</th>
+              <th>Capital</th>
+              <th>Interés</th>
+              <th>Cuota total</th>
+              <th>Saldo final</th>
+            </tr>
+          </thead>
+          <tbody id="tbAmortBody"></tbody>
+          <tfoot id="tbAmortFoot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== SUPUESTOS Y FÓRMULAS ====== -->
+  <div class="section">
+    <div class="section-title">📐 Supuestos y fórmulas</div>
+    <div class="formulas">
+      <div class="formula-list">
+        <div class="formula-item">
+          <div class="f-num">1</div>
+          <div>
+            <div class="f-name">Capital total desembolsado</div>
+            <span class="f-eq">Capital total = Cantidad de créditos × Capital por crédito</span>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num purple">2</div>
+          <div>
+            <div class="f-name">Interés a devengar — derivado de tasa y bonificación</div>
+            <span class="f-eq purple">Interés% = Tasa directa × (1 − Bonificación% / 100)</span>
+            <div class="f-note">
+              Modelo multiplicativo: la bonificación es un factor de descuento sobre la tasa bruta.
+              Ej: Tasa=50%, Bonif=50% → Interés = 50% × (1−0,50) = <strong>25%</strong>.
+              Bidireccional: si editás el % o el $ de interés, la calculadora setea Tasa directa = ese valor y Bonif = 0%.
+            </div>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num">3</div>
+          <div>
+            <div class="f-name">Ingresos por intereses</div>
+            <span class="f-eq">Interés total = Capital total × Interés%</span>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num">4</div>
+          <div>
+            <div class="f-name">Ingresos por cross selling / servicio</div>
+            <span class="f-eq">Cross selling = Cantidad créditos × Cuota mensual × Plazo (meses)</span>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num">5</div>
+          <div>
+            <div class="f-name">Ingresos por punitorios</div>
+            <span class="f-eq">Punitorios = Cantidad créditos × Punitorios promedio por crédito</span>
+            <div class="f-note">Monto total esperado durante el plazo, promediado sobre la cartera.</div>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num">6</div>
+          <div>
+            <div class="f-name">Resultado antes de mora</div>
+            <span class="f-eq">Resultado = Intereses + Cross selling + Punitorios − Costo adquisición</span>
+            <div class="f-note">El costo financiero de fondeo no se incluye en esta versión — se incorporará cuando se definan los gastos de estructura y flujo libre de impuestos.</div>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num">7</div>
+          <div>
+            <div class="f-name">Mora máxima tolerable para break-even</div>
+            <span class="f-eq">Mora máx. = max(0, Resultado antes de mora)</span>
+            <div class="f-note">Monto de capital + intereses irrecuperables que el negocio puede absorber sin entrar en pérdida.</div>
+          </div>
+        </div>
+        <div class="formula-item">
+          <div class="f-num purple">8</div>
+          <div>
+            <div class="f-name">TIR mensual y métricas de tasa (por crédito)</div>
+            <span class="f-eq purple">cuota = capitalCredito × (1 + Interés%) / plazo  →  IRR de CFs → TNA / TEA / CFT</span>
+            <div class="f-note">
+              Se modela como crédito en cuotas iguales. TIR = IRR mensual (Newton-Raphson).
+              TNA s/IVA = TIR×(365/30). TNA c/IVA = TNA×1,21. TEA = (1+TIR)^(365/30)−1. CFTEA = (1+IRR_cft)^(365/30)−1)×1,21.
+              CFT = IRR con costo de adquisición incluido como cargo upfront (convención BCRA).
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== GUÍA ====== -->
+  <div class="section">
+    <div class="section-title">📖 Cómo leer los resultados</div>
+    <div class="guide-card">
+      <h3>Interés a devengar — campo derivado y bidireccional</h3>
+      <p>El interés ya no es un input libre: se calcula como <strong>Tasa directa × (1 − Bonificación%/100)</strong>. Podés verlo en % y en pesos. Si lo editás directamente (en cualquiera de sus dos formas), la calculadora ajusta automáticamente la Tasa directa y deja la Bonificación en 0%.</p>
+      <div class="tip">
+        <div class="tip-icon">💜</div>
+        <div>Ejemplo: Tasa = 50%, Bonif. = 50% → Interés = 50% × (1−0,5) = <strong>25%</strong>. Si luego cambiás Bonif. a 20% → Interés = 50% × 0,8 = <strong>40%</strong>. Si editás directamente el interés a 30%, la calculadora pone Tasa = 30%, Bonif. = 0%.</div>
+      </div>
+
+      <h3>¿Qué es la mora máxima tolerable?</h3>
+      <p>Es el monto máximo de capital + intereses que podés perder por incumplimiento antes de que la cartera deje de ser rentable. Si la mora real supera ese monto, el negocio entra en pérdida.</p>
+
+      <h3>Indicadores de tasa</h3>
+      <p>Son métricas por crédito individual, útiles para comparar el producto con el mercado. La TIR representa el rendimiento real mensual del crédito asumiendo cuotas iguales. El CFT incluye el costo de adquisición, por lo que siempre es mayor o igual a la TNA.</p>
+
+      <h3>Semáforo de rentabilidad</h3>
+      <p>🟢 <strong>Verde:</strong> El resultado antes de mora supera el 10% del capital. Margen cómodo.<br/>
+         🟡 <strong>Amarillo:</strong> El resultado está entre 0% y 10% del capital. Margen ajustado.<br/>
+         🔴 <strong>Rojo:</strong> El resultado es negativo o cero. Pérdida sin mora.</p>
+
+      <div class="tip">
+        <div class="tip-icon">⚠️</div>
+        <div><strong>Limitaciones:</strong> Modelo simplificado. Asume distribución lineal de ingresos y costos, sin cronograma de cuotas real ni capitalización. Para decisiones de alta inversión, complementá con un modelo financiero completo.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Calculadora Break-Even de Cartera de Créditos &middot; Modelo simplificado &middot; Solo para uso interno
+</footer>
+
+<!-- ========== JAVASCRIPT ========== -->
+<script>
+"use strict";
+
+// ──────────────────────────────────────────
+// DEFAULTS
+// ──────────────────────────────────────────
+const DEFAULTS = {
+  cantCreditos:   1000,
+  capitalCredito: 50000,
+  plazo:          12,
+  crossSelling:   500,
+  punitorios:     1000,
+  costoAdq:       2000,
+  tasaDirecta:    15,
+  bonificacion:   1
+};
+
+// Sensibilidad: variables analizables y sus metadatos
+const VAR_META = {
+  tasaDirecta:  { label: 'Tasa directa',          unit: '%' },
+  bonificacion: { label: 'Bonificación de tasa',   unit: '%' },
+  costoAdq:     { label: 'Costo de adquisición',   unit: '$' },
+  plazo:        { label: 'Plazo',                  unit: 'm' },
+  punitorios:   { label: 'Punitorios promedio',    unit: '$' },
+  crossSelling: { label: 'Cross selling mensual',  unit: '$' }
+};
+
+// Flag anti-recursión para binding bidireccional
+let _syncing = false;
+
+// ──────────────────────────────────────────
+// FORMATEO
+// ──────────────────────────────────────────
+function fmt$(n, dec = 0) {
+  if (!isFinite(n)) return '—';
+  return new Intl.NumberFormat('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec }).format(n);
+}
+function fmtM(n, dec = 0) {
+  if (!isFinite(n)) return '—';
+  return '$ ' + fmt$(n, dec);
+}
+function fmtP(n, dec = 2) {
+  if (!isFinite(n)) return '—';
+  return n.toFixed(dec) + '%';
+}
+function fmtShort(n) {
+  if (n >= 1e9) return '$ ' + (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return '$ ' + (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$ ' + (n / 1e3).toFixed(0) + 'K';
+  return '$ ' + Math.round(n);
+}
+function fmtVar(varName, val) {
+  const u = (VAR_META[varName] || {}).unit;
+  if (u === '$') return fmtM(val);
+  if (u === '%') return fmtP(val, 2);
+  if (u === 'm') return Math.round(val) + ' m';
+  return String(val);
+}
+function r2(n) { return Math.round(n * 100) / 100; }
+
+// ──────────────────────────────────────────
+// LECTURA DE INPUTS
+// ──────────────────────────────────────────
+function gv(id) {
+  const v = parseFloat(document.getElementById(id).value);
+  return isNaN(v) ? 0 : v;
+}
+
+function getInputs() {
+  return {
+    cantCreditos:   gv('cantCreditos'),
+    capitalCredito: gv('capitalCredito'),
+    plazo:          gv('plazo'),
+    crossSelling:   gv('crossSelling'),
+    punitorios:     gv('punitorios'),
+    costoAdq:       gv('costoAdq'),
+    tasaDirecta:    gv('tasaDirecta'),
+    bonificacion:   gv('bonificacion')
+  };
+}
+
+// ──────────────────────────────────────────
+// CÁLCULO CENTRAL
+// ──────────────────────────────────────────
+function calcRes(inp) {
+  const { cantCreditos, capitalCredito, plazo,
+          crossSelling, punitorios,
+          costoAdq, tasaDirecta, bonificacion } = inp;
+
+  const capitalTotal = cantCreditos * capitalCredito;
+
+  // Interés devengado: modelo MULTIPLICATIVO
+  // interés% = tasaDirecta × (1 − bonificacion/100)
+  const interesPct       = tasaDirecta * (1 - bonificacion / 100);
+  const ingresoIntereses = capitalTotal * (interesPct / 100);
+  const ingresoCS        = cantCreditos * crossSelling * plazo;
+  const ingresoPun       = cantCreditos * punitorios;
+  const ingresoTotal     = ingresoIntereses + ingresoCS + ingresoPun;
+
+  const costoAdqTotal = cantCreditos * costoAdq;
+  const costoTotal    = costoAdqTotal;
+
+  const resultado = ingresoTotal - costoTotal;
+
+  // Impuestos sobre el interés devengado
+  const iva            = ingresoIntereses * 0.21;          // IVA 21% sobre interés
+  const iibb           = iva * 0.03;                       // IIBB 3% del IVA
+  const impuestosTotal = iva + iibb;
+
+  // Flujo libre = resultado antes de mora − impuestos
+  const flujoLibre   = resultado - impuestosTotal;
+  const moraMaxMonto = flujoLibre;
+  const moraMaxPct   = capitalTotal > 0 ? (moraMaxMonto / capitalTotal) * 100 : 0;
+
+  return {
+    capitalTotal, interesPct, ingresoIntereses, ingresoCS, ingresoPun, ingresoTotal,
+    costoAdqTotal, costoTotal,
+    resultado, iva, iibb, impuestosTotal, flujoLibre,
+    moraMaxMonto, moraMaxPct
+  };
+}
+
+// ──────────────────────────────────────────
+// IRR — Newton-Raphson
+// ──────────────────────────────────────────
+function calcIRR(cfs, guess) {
+  // Determinar guess inicial automático si no se provee
+  if (guess === undefined) {
+    // Suma positiva de CFs vs CF[0]
+    const pos = cfs.slice(1).reduce((s, v) => s + Math.max(0, v), 0);
+    guess = pos > 0 ? (pos / -cfs[0] - 1) / cfs.length : 0.01;
+    guess = Math.max(0.0001, Math.min(guess, 1));
+  }
+  let r = guess;
+  for (let iter = 0; iter < 300; iter++) {
+    let f = 0, df = 0;
+    for (let t = 0; t < cfs.length; t++) {
+      const denom = Math.pow(1 + r, t);
+      f  += cfs[t] / denom;
+      df -= t * cfs[t] / (denom * (1 + r));
+    }
+    if (Math.abs(df) < 1e-14) break;
+    const r1 = r - f / df;
+    if (!isFinite(r1) || isNaN(r1)) break;
+    const delta = Math.abs(r1 - r);
+    r = Math.max(-0.9999, r1);
+    if (delta < 1e-10) break;
+  }
+  return r;
+}
+
+// ──────────────────────────────────────────
+// MÉTRICAS DE TASA
+// ──────────────────────────────────────────
+function calcTasas(inp, interesPct) {
+  const { capitalCredito, plazo, costoAdq } = inp;
+  if (!capitalCredito || !plazo || interesPct <= 0) return null;
+
+  // Cuota mensual (amortización uniforme del total)
+  const totalADevolver = capitalCredito * (1 + interesPct / 100);
+  const cuota = totalADevolver / plazo;
+
+  // CFs del crédito (sin costo de adquisición)
+  const cfs = [-capitalCredito];
+  for (let t = 0; t < plazo; t++) cfs.push(cuota);
+
+  // CFs del crédito (con costo de adquisición como cargo upfront)
+  // El cliente recibe el capital, pero la empresa tiene un gasto extra
+  // → para el cálculo del CFT, el capital neto que "ponemos" es capitalCredito + costoAdq
+  const cfsCFT = [-(capitalCredito + costoAdq)];
+  for (let t = 0; t < plazo; t++) cfsCFT.push(cuota);
+
+  const tirM = calcIRR(cfs);
+  const cftM = costoAdq > 0 ? calcIRR(cfsCFT) : tirM;
+
+  if (!isFinite(tirM) || tirM <= -1) return null;
+
+  // Convención BCRA Argentina: factor de anualización 365/30
+  const FACTOR    = 365.0 / 30.0;
+  const tirSinIVA = tirM / 1.21;                                    // TIR neta sin IVA
+  const tnaSIVA   = tirSinIVA * FACTOR * 100;                       // TNA s/IVA
+  const tnaCIVA   = tirM * FACTOR * 100;                            // TNA c/IVA (TIR ya incluye IVA)
+  const tea       = (Math.pow(1 + tirSinIVA, FACTOR) - 1) * 100;   // TEA sobre TIR sin IVA
+  const cftea     = tea * 1.21;                                      // CFTEA = TEA × 1,21
+
+  return { tirMensual: tirM * 100, tnaSIVA, tnaCIVA, tea, cftea };
+}
+
+// ──────────────────────────────────────────
+// VALIDACIÓN
+// ──────────────────────────────────────────
+function validar(inp) {
+  const warns = [];
+  if (inp.cantCreditos <= 0)   warns.push('Cantidad de créditos debe ser mayor a 0.');
+  if (inp.capitalCredito <= 0) warns.push('Capital por crédito debe ser mayor a 0.');
+  if (inp.plazo <= 0)          warns.push('El plazo debe ser mayor a 0 meses.');
+  if (inp.tasaDirecta < 0)     warns.push('La tasa directa no puede ser negativa.');
+  if (inp.bonificacion >= 100) warns.push('La bonificación no puede ser ≥ 100% (interés quedaría en 0).');
+  return warns;
+}
+
+// ──────────────────────────────────────────
+// SYNC INTERÉS BIDIRECCIONAL
+// ──────────────────────────────────────────
+
+// Se llama cuando tasaDirecta o bonificacion cambian → actualiza los displays de interés
+function syncInteresDesdeTaska() {
+  if (_syncing) return;
+  _syncing = true;
+  const inp = getInputs();
+  const pct = inp.tasaDirecta * (1 - inp.bonificacion / 100);
+  const capitalTotal = inp.cantCreditos * inp.capitalCredito;
+  const monto = capitalTotal * pct / 100;
+  document.getElementById('interesInputPct').value  = r2(pct);
+  document.getElementById('interesInputPeso').value = Math.round(monto);
+  _syncing = false;
+}
+
+// Se llama cuando el usuario edita el % de interés directamente
+function onInteressPctChange() {
+  if (_syncing) return;
+  _syncing = true;
+  const pct = gv('interesInputPct');
+  const inp = getInputs();
+  const capitalTotal = inp.cantCreditos * inp.capitalCredito;
+  // Back-propagate: set tasaDirecta = pct, bonificacion = 0
+  document.getElementById('tasaDirecta').value   = r2(pct);
+  document.getElementById('bonificacion').value  = 0;
+  document.getElementById('interesInputPeso').value = Math.round(capitalTotal * pct / 100);
+  _syncing = false;
+  calcular();
+}
+
+// Se llama cuando el usuario edita el monto $ de interés directamente
+function onInteressPesoChange() {
+  if (_syncing) return;
+  _syncing = true;
+  const monto = gv('interesInputPeso');
+  const inp = getInputs();
+  const capitalTotal = inp.cantCreditos * inp.capitalCredito;
+  const pct = capitalTotal > 0 ? (monto / capitalTotal) * 100 : 0;
+  // Back-propagate: set tasaDirecta = pct, bonificacion = 0
+  document.getElementById('tasaDirecta').value  = r2(pct);
+  document.getElementById('bonificacion').value = 0;
+  document.getElementById('interesInputPct').value = r2(pct);
+  _syncing = false;
+  calcular();
+}
+
+// Se llama cuando cambia el capital (afecta el display del monto $)
+function onCapitalChange() {
+  if (_syncing) return;
+  syncInteresDesdeTaska();
+  calcular();
+}
+
+// ──────────────────────────────────────────
+// RENDER RESULTADOS PRINCIPALES
+// ──────────────────────────────────────────
+function renderPrincipal(inp, res) {
+  const { cantCreditos, capitalCredito } = inp;
+
+  setText('r-capitalTotal', fmtM(res.capitalTotal));
+  setText('r-capitalSub',   `${fmt$(cantCreditos)} créditos × ${fmtM(capitalCredito)}`);
+  setText('r-ingresoTotal', fmtM(res.ingresoTotal));
+  setText('r-costoTotal',   fmtM(res.costoTotal));
+  setText('r-interesPct',   fmtP(res.interesPct) + ' sobre capital');
+  setText('r-interesMonto', fmtM(res.ingresoIntereses) + ' en intereses totales');
+  setText('r-resultado',    fmtM(res.flujoLibre));
+  setText('r-moraMax$',     fmtM(Math.max(0, res.moraMaxMonto)));
+  setText('r-moraMax%',     fmtP(Math.max(0, res.moraMaxPct)));
+
+  // Color resultado — basado en flujo libre
+  const resEl   = document.getElementById('r-resultado');
+  const resCard = document.getElementById('r-cardResultado');
+  resEl.className   = 'res-value lg ' + (res.flujoLibre >= 0 ? 'pos' : 'neg');
+  resCard.className = 'res-card '     + (res.flujoLibre >= 0 ? 'ok'  : 'bad');
+
+  // Semáforo — basado en flujo libre (después de impuestos)
+  const sem    = document.getElementById('semaforo');
+  const semTxt = document.getElementById('semaforoTxt');
+  const ratio  = res.capitalTotal > 0 ? res.flujoLibre / res.capitalTotal : 0;
+  sem.className = 'semaforo ';
+  if (res.flujoLibre <= 0) {
+    sem.className += 'sem-rojo';
+    semTxt.textContent = '⛔ El negocio ya opera en pérdida después de impuestos (sin considerar mora)';
+  } else if (ratio < 0.10) {
+    sem.className += 'sem-amari';
+    semTxt.textContent = `⚡ Margen ajustado — Flujo libre ${fmtP(ratio * 100)} del capital. Cerca del break-even`;
+  } else {
+    sem.className += 'sem-verde';
+    semTxt.textContent = `✅ Negocio rentable — Flujo libre del ${fmtP(ratio * 100)} del capital después de impuestos`;
+  }
+
+  // Tabla desglose
+  const ct   = res.capitalTotal || 1;
+  const cred = cantCreditos || 1;
+
+  const rowsIngresos = [
+    { label: '✅ Ingresos por intereses',   val: res.ingresoIntereses, sign: +1 },
+    { label: '✅ Cross selling / servicio', val: res.ingresoCS,        sign: +1 },
+    { label: '✅ Punitorios',               val: res.ingresoPun,       sign: +1 },
+  ];
+  const rowsCostos = [
+    { label: '❌ Costo de adquisición',     val: -res.costoAdqTotal,   sign: -1 },
+  ];
+  const rowsImpuestos = [
+    { label: '🧾 IVA (21% s/ interés)',     val: -res.iva,             sign: -1 },
+    { label: '🧾 IIBB (3% del IVA)',        val: -res.iibb,            sign: -1 },
+  ];
+
+  const fmtRow = (r, style='') => `
+    <tr${style}>
+      <td>${r.label}</td>
+      <td class="${r.sign > 0 ? 'pos' : 'neg'}">${fmtM(r.sign > 0 ? r.val : -r.val)}</td>
+      <td>${fmtM(Math.abs(r.val / cred))}</td>
+      <td>${fmtP(Math.abs(r.val / ct) * 100)}</td>
+    </tr>`;
+
+  const resClass  = res.resultado   >= 0 ? 'pos' : 'neg';
+  const flujClass = res.flujoLibre  >= 0 ? 'pos' : 'neg';
+
+  let html = '';
+  html += rowsIngresos.map(r => fmtRow(r)).join('');
+  html += rowsCostos.map(r => fmtRow(r)).join('');
+  html += `<tr style="font-weight:700;background:#eff6ff">
+    <td>📊 Resultado antes de mora e impuestos</td>
+    <td class="${resClass}">${fmtM(res.resultado)}</td>
+    <td class="${resClass}">${fmtM(res.resultado / cred)}</td>
+    <td class="${resClass}">${fmtP(res.resultado / ct * 100)}</td>
+  </tr>`;
+  html += `<tr><td colspan="4" style="padding:.3rem 1rem;font-size:.72rem;font-weight:600;color:var(--gray-400);background:var(--gray-50);text-transform:uppercase;letter-spacing:.05em">Impuestos</td></tr>`;
+  html += rowsImpuestos.map(r => fmtRow(r)).join('');
+  html += `<tr style="font-weight:800;background:#f0fdf4;border-top:2px solid #16a34a">
+    <td style="color:#15803d">💵 Flujo libre (antes de mora)</td>
+    <td class="${flujClass}" style="font-size:1.05rem">${fmtM(res.flujoLibre)}</td>
+    <td class="${flujClass}">${fmtM(res.flujoLibre / cred)}</td>
+    <td class="${flujClass}">${fmtP(res.flujoLibre / ct * 100)}</td>
+  </tr>`;
+  document.getElementById('tbDesglose').innerHTML = html;
+}
+
+// ──────────────────────────────────────────
+// RENDER MÉTRICAS DE TASA
+// ──────────────────────────────────────────
+function renderTasas(inp, interesPct) {
+  const t = calcTasas(inp, interesPct);
+  if (!t) {
+    ['t-tir','t-tna-siva','t-tna-civa','t-tea','t-cft'].forEach(id => setText(id, 'N/D'));
+    return;
+  }
+  setText('t-tir',      fmtP(t.tirMensual, 2));
+  setText('t-tna-siva', fmtP(t.tnaSIVA,    2));
+  setText('t-tna-civa', fmtP(t.tnaCIVA,    2));
+  setText('t-tea',      fmtP(t.tea,         2));
+  setText('t-cft',      fmtP(t.cftea,       2));
+}
+
+// ──────────────────────────────────────────
+// TABLA DE AMORTIZACIÓN
+// ──────────────────────────────────────────
+let _amortMode = 'uniforme';
+
+function setAmortMode(mode) {
+  _amortMode = mode;
+  document.getElementById('btnUnif').classList.toggle('active', mode === 'uniforme');
+  document.getElementById('btnFrances').classList.toggle('active', mode === 'frances');
+  renderAmort();
+}
+
+function renderAmort() {
+  const inp        = getInputs();
+  const capital    = inp.capitalCredito;
+  const plazo      = inp.plazo;
+  const interesPct = inp.tasaDirecta * (1 - inp.bonificacion / 100);
+
+  if (!capital || !plazo || interesPct < 0) {
+    document.getElementById('tbAmortBody').innerHTML =
+      '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">Completá capital y plazo para ver la tabla.</td></tr>';
+    document.getElementById('tbAmortFoot').innerHTML = '';
+    document.getElementById('amortDesc').textContent = '';
+    return;
+  }
+
+  let rows = [];
+
+  if (_amortMode === 'uniforme') {
+    // Cuotas iguales: capital e interés se reparten proporcionalmente
+    const interesTotal  = capital * (interesPct / 100);
+    const capitalCuota  = capital / plazo;
+    const interesCuota  = interesTotal / plazo;
+    const cuotaTotal    = capitalCuota + interesCuota;
+    let saldo = capital;
+    for (let i = 1; i <= plazo; i++) {
+      const saldoInicial = saldo;
+      saldo -= capitalCuota;
+      rows.push({ n: i, saldoIni: saldoInicial, cap: capitalCuota, int: interesCuota, cuota: cuotaTotal, saldoFin: Math.max(0, saldo) });
+    }
+    document.getElementById('amortDesc').textContent =
+      `Sistema uniforme (flat): interés total = capital × ${r2(interesPct)}% = ${fmtM(interesTotal)}. ` +
+      `Cada cuota = ${fmtM(cuotaTotal)} (capital ${fmtM(capitalCuota)} + interés ${fmtM(interesCuota)}, montos fijos).`;
+
+  } else {
+    // Sistema francés: cuota fija calculada con la TIR mensual como tasa de descuento
+    const cfs   = [-capital];
+    const cuotaFlat = capital * (1 + interesPct / 100) / plazo;
+    for (let t = 0; t < plazo; t++) cfs.push(cuotaFlat);
+    const tirM  = calcIRR(cfs);
+
+    if (!isFinite(tirM) || tirM <= 0) {
+      document.getElementById('tbAmortBody').innerHTML =
+        '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">No se pudo calcular la TIR para el sistema francés.</td></tr>';
+      document.getElementById('tbAmortFoot').innerHTML = '';
+      document.getElementById('amortDesc').textContent = '';
+      return;
+    }
+
+    // Cuota fija francesa: R = PV × r / (1 − (1+r)^−n)
+    const cuotaFrancesa = capital * tirM / (1 - Math.pow(1 + tirM, -plazo));
+    let saldo = capital;
+    for (let i = 1; i <= plazo; i++) {
+      const saldoInicial = saldo;
+      const intPeriodo   = saldoInicial * tirM;
+      const capPeriodo   = cuotaFrancesa - intPeriodo;
+      saldo -= capPeriodo;
+      rows.push({ n: i, saldoIni: saldoInicial, cap: capPeriodo, int: intPeriodo, cuota: cuotaFrancesa, saldoFin: Math.max(0, saldo) });
+    }
+    document.getElementById('amortDesc').textContent =
+      `Sistema francés: TIR mensual = ${r2(tirM * 100)}%. Cuota fija = ${fmtM(cuotaFrancesa)}. ` +
+      `En cada período el interés se calcula sobre el saldo, aumentando la porción de capital amortizado.`;
+  }
+
+  // Totales
+  const totCap  = rows.reduce((s, r) => s + r.cap,   0);
+  const totInt  = rows.reduce((s, r) => s + r.int,   0);
+  const totCuota = rows.reduce((s, r) => s + r.cuota, 0);
+
+  document.getElementById('tbAmortBody').innerHTML = rows.map(r => `
+    <tr>
+      <td style="text-align:center;font-weight:600;color:var(--primary)">${r.n}</td>
+      <td>${fmtM(r.saldoIni)}</td>
+      <td style="color:var(--primary)">${fmtM(r.cap)}</td>
+      <td style="color:#b45309">${fmtM(r.int)}</td>
+      <td style="font-weight:700">${fmtM(r.cuota)}</td>
+      <td style="color:var(--gray-500)">${fmtM(r.saldoFin)}</td>
+    </tr>`).join('');
+
+  document.getElementById('tbAmortFoot').innerHTML = `
+    <tr>
+      <td colspan="2">📊 Totales</td>
+      <td style="color:var(--primary)">${fmtM(totCap)}</td>
+      <td style="color:#b45309">${fmtM(totInt)}</td>
+      <td style="font-weight:700">${fmtM(totCuota)}</td>
+      <td>—</td>
+    </tr>`;
+}
+
+// ──────────────────────────────────────────
+// ESCALERA DE MORA
+// ──────────────────────────────────────────
+function renderEscaleraMora() {
+  const inp          = getInputs();
+  const res          = calcRes(inp);
+  const capitalTotal = res.capitalTotal;
+  const resultBase   = res.resultado;
+  const moraMaxPct   = res.moraMaxPct;
+
+  if (!capitalTotal) {
+    document.getElementById('tbEscaleraMora').innerHTML =
+      '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">Completá los datos para ver la escalera.</td></tr>';
+    return;
+  }
+
+  const be = Math.round(moraMaxPct * 100) / 100;  // break-even redondeado a 2 dec
+
+  // Rango dinámico: ±15pp alrededor del break-even, mínimo 0%
+  const rangoMin = Math.max(0, be - 15);
+  const rangoMax = be + 15;
+
+  // Paso adaptativo según tamaño del rango
+  // Siempre generamos ~30 filas; el paso se redondea a un valor "limpio"
+  const stepRaw = (rangoMax - rangoMin) / 30;
+  const step = stepRaw <= 0.5 ? 0.5 : stepRaw <= 1 ? 1 : Math.ceil(stepRaw);
+
+  // Generamos la grilla de pasos regulares
+  const steps = [];
+  for (let p = rangoMin; p <= rangoMax + step * 0.01; p = Math.round((p + step) * 100) / 100) {
+    steps.push(Math.round(p * 100) / 100);
+  }
+
+  // Insertamos el break-even exacto si no coincide con un paso ya existente
+  if (!steps.some(s => Math.abs(s - be) < 0.01)) {
+    steps.push(be);
+    steps.sort((a, b) => a - b);
+  }
+
+  const rows = steps.map(pct => {
+    const moraMonto     = capitalTotal * pct / 100;
+    const resultDespues = resultBase - moraMonto;
+    const margenPct     = capitalTotal > 0 ? (resultDespues / capitalTotal) * 100 : 0;
+    const esBreakeven   = Math.abs(pct - be) < 0.01;
+
+    let badge, estado;
+    if (resultDespues > capitalTotal * 0.10)  { badge = 'verde';    estado = '🟢 Rentable'; }
+    else if (resultDespues > 0)               { badge = 'amarillo'; estado = '🟡 Ajustado'; }
+    else if (Math.abs(resultDespues) < 1)     { badge = 'amarillo'; estado = '⚖️ Break-even'; }
+    else                                       { badge = 'rojo';     estado = '🔴 Pérdida'; }
+
+    const rowClass = esBreakeven ? ' class="mora-breakeven"' : '';
+    const beLabel  = esBreakeven ? ' <span style="font-size:.68rem;color:var(--primary)">(break-even)</span>' : '';
+    const pctLabel = Number.isInteger(pct) ? pct : pct.toFixed(2);
+
+    return `<tr${rowClass}>
+      <td style="text-align:left;font-weight:${esBreakeven?'700':'500'}">${pctLabel}%${beLabel}</td>
+      <td>${fmtM(moraMonto)}</td>
+      <td style="color:var(--gray-500)">${fmtM(resultBase)}</td>
+      <td class="${resultDespues >= 0 ? 'pos' : 'neg'}" style="font-weight:${esBreakeven?'700':'400'}">${fmtM(resultDespues)}</td>
+      <td class="${margenPct >= 0 ? 'pos' : 'neg'}">${fmtP(margenPct)}</td>
+      <td><span class="mora-badge ${badge}">${estado}</span></td>
+    </tr>`;
+  });
+
+  document.getElementById('tbEscaleraMora').innerHTML = rows.join('');
+}
+
+// ──────────────────────────────────────────
+// SENSIBILIDAD
+// ──────────────────────────────────────────
+const VARIATIONS = [-0.30, -0.20, -0.10, 0, 0.10, 0.20, 0.30];
+const VAR_LABELS = ['-30%', '-20%', '-10%', 'Base', '+10%', '+20%', '+30%'];
+
+function actualizarSens() {
+  const varName = document.getElementById('sensVar').value;
+  const inp     = getInputs();
+  const base    = calcRes(inp);
+  const baseVal = inp[varName];
+
+  const chartLabels = [], chartValues = [], chartColors = [];
+  let html = '';
+
+  VARIATIONS.forEach((v, i) => {
+    const modInp    = { ...inp };
+    modInp[varName] = baseVal * (1 + v);
+    const res       = calcRes(modInp);
+    const isBase    = v === 0;
+    const delta     = res.resultado - base.resultado;
+    const dCls      = delta > 0 ? 'pos' : delta < 0 ? 'neg' : '';
+    const moraShow  = Math.max(0, res.moraMaxMonto);
+    const rCls      = res.resultado >= 0 ? 'pos' : 'neg';
+
+    html += `<tr${isBase ? ' class="base-row"' : ''}>
+      <td>${VAR_LABELS[i]}${isBase ? ' <span class="badge badge-blue">BASE</span>' : ''}</td>
+      <td>${fmtVar(varName, modInp[varName])}</td>
+      <td>${fmtP(res.interesPct)}</td>
+      <td class="${rCls}">${fmtM(res.resultado)}</td>
+      <td>${fmtM(moraShow)}</td>
+      <td>${fmtP(Math.max(0, res.moraMaxPct))}</td>
+      <td class="${dCls}">${delta >= 0 ? '+' : ''}${fmtM(delta)}</td>
+    </tr>`;
+
+    chartLabels.push(VAR_LABELS[i]);
+    chartValues.push(moraShow);
+    chartColors.push(isBase ? '#1a56db' : v > 0 ? '#057a55' : '#c81e1e');
+  });
+
+  document.getElementById('tbSens').innerHTML = html;
+  document.getElementById('chartBadge').textContent = VAR_META[varName].label;
+  renderChart(chartLabels, chartValues, chartColors, VAR_META[varName].label);
+}
+
+// ──────────────────────────────────────────
+// GRÁFICO CANVAS
+// ──────────────────────────────────────────
+function renderChart(labels, values, colors, title) {
+  const canvas = document.getElementById('chart');
+  const ctx    = canvas.getContext('2d');
+  const dpr    = window.devicePixelRatio || 1;
+  const W      = canvas.parentElement.clientWidth - 44;
+  const H      = 270;
+
+  canvas.width         = W * dpr;
+  canvas.height        = H * dpr;
+  canvas.style.width   = W + 'px';
+  canvas.style.height  = H + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const pad  = { t: 36, r: 20, b: 48, l: 84 };
+  const cW   = W - pad.l - pad.r;
+  const cH   = H - pad.t - pad.b;
+  const maxV = Math.max(...values, 1);
+
+  // Grid
+  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.t + cH - (i / 5) * cH;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cW, y); ctx.stroke();
+    ctx.fillStyle = '#9ca3af'; ctx.font = '10px -apple-system,sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(fmtShort(maxV * i / 5), pad.l - 6, y + 4);
+  }
+
+  // Ejes
+  ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t + cH); ctx.lineTo(pad.l + cW, pad.t + cH);
+  ctx.stroke();
+
+  // Barras
+  const slotW = cW / labels.length;
+  const barW  = slotW * 0.58;
+  const barX0 = (slotW - barW) / 2;
+
+  labels.forEach((lbl, i) => {
+    const x    = pad.l + i * slotW + barX0;
+    const barH = Math.max(2, (values[i] / maxV) * cH);
+    const y    = pad.t + cH - barH;
+    const isB  = i === 3;
+
+    // Sombra
+    ctx.fillStyle = 'rgba(0,0,0,.06)';
+    ctx.fillRect(x + 2, y + 2, barW, barH);
+
+    // Barra
+    const grad = ctx.createLinearGradient(x, y, x, y + barH);
+    grad.addColorStop(0, colors[i]);
+    grad.addColorStop(1, colors[i] + 'cc');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, [5, 5, 0, 0]);
+    else ctx.rect(x, y, barW, barH);
+    ctx.fill();
+
+    // Valor
+    ctx.fillStyle = '#374151'; ctx.font = 'bold 9px -apple-system,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(fmtShort(values[i]), x + barW / 2, y - 5);
+
+    // Etiqueta X
+    ctx.fillStyle = isB ? '#1a56db' : '#6b7280';
+    ctx.font = (isB ? 'bold ' : '') + '10px -apple-system,sans-serif';
+    ctx.fillText(lbl, x + barW / 2, pad.t + cH + 17);
+  });
+
+  // Título
+  ctx.fillStyle = '#374151'; ctx.font = 'bold 11px -apple-system,sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Mora tolerable según variación de: ' + title, W / 2, 16);
+}
+
+// ──────────────────────────────────────────
+// ESCENARIOS
+// ──────────────────────────────────────────
+function renderEscenarios(inp, base) {
+  // Optimista: tasa directa +20%, costo adq −20%, cross selling +20%
+  const optInp = { ...inp,
+    tasaDirecta:  inp.tasaDirecta  * 1.20,
+    costoAdq:     inp.costoAdq     * 0.80,
+    crossSelling: inp.crossSelling * 1.20,
+    punitorios:   inp.punitorios   * 1.20
+  };
+  // Estresado: tasa directa −20%, costo adq +30%, cross selling −20%
+  const strInp = { ...inp,
+    tasaDirecta:  inp.tasaDirecta  * 0.80,
+    costoAdq:     inp.costoAdq     * 1.30,
+    crossSelling: inp.crossSelling * 0.80,
+    punitorios:   inp.punitorios   * 0.80
+  };
+
+  const opt = calcRes(optInp);
+  const str = calcRes(strInp);
+
+  buildScenCard('scBase', base);
+  buildScenCard('scOpt',  opt);
+  buildScenCard('scStr',  str);
+
+  const metrics = [
+    { k: 'interesPct',    l: 'Interés devengado %',    f: 'P', clamp: false, color: false },
+    { k: 'capitalTotal',  l: 'Capital total',           f: 'M', clamp: false, color: false },
+    { k: 'ingresoTotal',  l: 'Ingresos totales',        f: 'M', clamp: false, color: false },
+    { k: 'costoTotal',    l: 'Costos totales',          f: 'M', clamp: false, color: false },
+    { k: 'resultado',     l: 'Resultado antes mora',    f: 'M', clamp: false, color: true  },
+    { k: 'moraMaxMonto',  l: 'Mora máx. tolerable $',  f: 'M', clamp: true,  color: true  },
+    { k: 'moraMaxPct',    l: 'Mora máx. tolerable %',  f: 'P', clamp: true,  color: true  }
+  ];
+
+  let html = '';
+  metrics.forEach(m => {
+    const vals = [base, opt, str].map(r => {
+      const raw  = m.clamp ? Math.max(0, r[m.k]) : r[m.k];
+      const disp = m.f === 'P' ? fmtP(raw) : fmtM(raw);
+      const cls  = m.color ? (r[m.k] >= 0 ? 'pos' : 'neg') : '';
+      return `<td class="${cls}">${disp}</td>`;
+    }).join('');
+    html += `<tr><td>${m.l}</td>${vals}</tr>`;
+  });
+  document.getElementById('tbEscenarios').innerHTML = html;
+}
+
+function buildScenCard(id, res) {
+  const items = [
+    { k: 'Interés devengado',    v: fmtP(res.interesPct) },
+    { k: 'Resultado antes mora', v: fmtM(res.resultado),              cls: res.resultado >= 0 ? 'pos' : 'neg' },
+    { k: 'Mora máx. ($)',        v: fmtM(Math.max(0, res.moraMaxMonto)) },
+    { k: 'Mora máx. (%)',        v: fmtP(Math.max(0, res.moraMaxPct)) },
+    { k: 'Ingresos totales',     v: fmtM(res.ingresoTotal) },
+    { k: 'Costos totales',       v: fmtM(res.costoTotal) }
+  ];
+  document.getElementById(id).innerHTML = items.map(i =>
+    `<div class="scen-row">
+      <span class="scen-k">${i.k}</span>
+      <span class="scen-v ${i.cls || ''}">${i.v}</span>
+    </div>`).join('');
+}
+
+// ──────────────────────────────────────────
+// HELPERS
+// ──────────────────────────────────────────
+function setText(id, txt) {
+  document.getElementById(id).textContent = txt;
+}
+
+// ──────────────────────────────────────────
+// CALCULAR — punto de entrada principal
+// ──────────────────────────────────────────
+function calcular() {
+  const inp   = getInputs();
+  const warns = validar(inp);
+  const wBox  = document.getElementById('warnBox');
+
+  if (warns.length) {
+    wBox.style.display = 'block';
+    document.getElementById('warnMsg').textContent = warns.join(' | ');
+  } else {
+    wBox.style.display = 'none';
+  }
+
+  const res = calcRes(inp);
+  renderPrincipal(inp, res);
+  renderTasas(inp, res.interesPct);
+  actualizarSens();
+  renderEscenarios(inp, res);
+  renderEscaleraMora();
+  renderAmort();
+}
+
+// ──────────────────────────────────────────
+// RESETEAR
+// ──────────────────────────────────────────
+function resetear() {
+  _syncing = true;
+  Object.entries(DEFAULTS).forEach(([k, v]) => {
+    const el = document.getElementById(k);
+    if (el) el.value = v;
+  });
+  _syncing = false;
+  syncInteresDesdeTaska();
+  calcular();
+}
+
+// ──────────────────────────────────────────
+// EVENTOS
+// ──────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Tasa y bonificación → actualizar interés display + recalcular
+  ['tasaDirecta', 'bonificacion'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      if (_syncing) return;
+      syncInteresDesdeTaska();
+      calcular();
+    });
+  });
+
+  // Capital o cantidad → recalcular $ display de interés + calcular
+  ['cantCreditos', 'capitalCredito'].forEach(id => {
+    document.getElementById(id).addEventListener('input', onCapitalChange);
+  });
+
+  // Plazo y otros → calcular directamente
+  ['plazo', 'crossSelling', 'punitorios', 'costoAdq'].forEach(id => {
+    document.getElementById(id).addEventListener('input', calcular);
+  });
+
+  // Interés editado directamente — propagación inversa (change = al salir del campo, no en cada tecla)
+  document.getElementById('interesInputPct').addEventListener('change', onInteressPctChange);
+  document.getElementById('interesInputPeso').addEventListener('change', onInteressPesoChange);
+
+  // Sensibilidad dropdown
+  document.getElementById('sensVar').addEventListener('change', actualizarSens);
+
+  // Init
+  calcular();
+});
+
+window.addEventListener('resize', () => actualizarSens());
+</script>
+
+</body>
+</html>
