@@ -28,47 +28,50 @@ async function getGoogleAuthClient() {
   }
 }
 
+// Detect which row is the actual table header by finding the first "dense" row
+function detectTableStart(rows: any[][]): number {
+  const limit = Math.min(rows.length, 40);
+  const counts = rows.slice(0, limit).map(r =>
+    r.filter(c => c !== null && c !== undefined && String(c).trim() !== '').length
+  );
+  const max = Math.max(...counts, 0);
+  if (max < 2) return 0;
+  const threshold = Math.max(2, Math.floor(max * 0.6));
+  const idx = counts.findIndex(c => c >= threshold);
+  return idx < 0 ? 0 : idx;
+}
+
 // Helper to fetch Google Sheet CSV (handles both public and private)
-async function fetchGoogleSheetCsv(spreadsheetId: string, gid?: string) {
+async function fetchGoogleSheetCsv(spreadsheetId: string, gid?: string, sheetName?: string) {
   const auth = await getGoogleAuthClient();
-  
+
   if (auth) {
     console.log(`[Sheets] Using Service Account for spreadsheet: ${spreadsheetId}`);
     try {
       const sheets = google.sheets({ version: 'v4', auth: auth as any });
-      
-      // If gid is provided, we need to find the sheet name first
-      let range = 'A1:ZZ10000'; // Reasonable default range
-      
-      if (gid) {
-        const spreadsheet = await sheets.spreadsheets.get({
-          spreadsheetId,
-        });
+      let range = 'A1:ZZ10000';
+
+      if (sheetName) {
+        range = `'${sheetName}'!A1:ZZ10000`;
+      } else if (gid) {
+        const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId });
         const sheet = spreadsheet.data.sheets?.find(s => s.properties?.sheetId?.toString() === gid);
-        if (sheet && sheet.properties?.title) {
+        if (sheet?.properties?.title) {
           range = `'${sheet.properties.title}'!A1:ZZ10000`;
         } else {
           console.warn(`[Sheets] GID ${gid} not found, falling back to first sheet`);
         }
       }
 
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range,
-      });
-
+      const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
       const values = response.data.values;
-      if (!values || values.length === 0) {
-        console.warn(`[Sheets] No data found in range ${range}`);
-        return "";
-      }
-      
-      // Convert 2D array to CSV
-      return Papa.unparse(values);
+      if (!values || values.length === 0) return "";
+
+      const headerRow = detectTableStart(values);
+      console.log(`[Sheets] Smart detection: header starts at row ${headerRow}`);
+      return Papa.unparse(values.slice(headerRow));
     } catch (err: any) {
       console.error(`[Sheets] API Error: ${err.message}`);
-      // If API fails, we might want to fallback to public fetch if it's a public sheet
-      // but usually if auth is configured, we expect it to work.
       throw err;
     }
   }
@@ -76,20 +79,24 @@ async function fetchGoogleSheetCsv(spreadsheetId: string, gid?: string) {
   // Fallback for public sheets (no Service Account configured)
   console.log(`[Sheets] Using public fetch for spreadsheet: ${spreadsheetId}`);
   let exportUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
-  if (gid) {
-    exportUrl += `&gid=${gid}`;
-  }
+  if (gid) exportUrl += `&gid=${gid}`;
 
   const headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   };
-
   const response = await fetch(exportUrl, { headers });
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Google Sheets returned ${response.status}: ${errorText.substring(0, 100)}`);
   }
-  return await response.text();
+  const csvText = await response.text();
+
+  // Apply smart detection to public CSV too
+  const parsed = Papa.parse(csvText, { header: false });
+  const rows = parsed.data as any[][];
+  if (rows.length === 0) return csvText;
+  const headerRow = detectTableStart(rows);
+  return headerRow > 0 ? Papa.unparse(rows.slice(headerRow)) : csvText;
 }
 
 // Helper to find a value in a row regardless of BOM or minor header variations
@@ -108,7 +115,7 @@ function getVal(row: any, ...possibleKeys: string[]) {
 }
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const MODULE_MAPPING: Record<string, string> = {
@@ -579,23 +586,48 @@ async function startServer() {
   });
   // ── End Reports API ─────────────────────────────────────────────────────────
 
-  // Google Sheets Proxy Route
+  // Google Sheets — list all tabs
+  app.get("/api/sheets/list", async (req, res) => {
+    const { spreadsheetId } = req.query;
+    if (!spreadsheetId) return res.status(400).json({ error: "Missing spreadsheetId" });
+    try {
+      const auth = await getGoogleAuthClient();
+      if (!auth) return res.json({ sheets: [], canList: false, title: '' });
+      const sheetsApi = google.sheets({ version: 'v4', auth: auth as any });
+      const meta = await sheetsApi.spreadsheets.get({ spreadsheetId: String(spreadsheetId) });
+      const sheets = (meta.data.sheets || []).map(s => ({
+        title: s.properties?.title || '',
+        sheetId: s.properties?.sheetId ?? 0,
+        index: s.properties?.index ?? 0,
+      }));
+      res.json({ sheets, canList: true, title: meta.data.properties?.title || '' });
+    } catch (error: any) {
+      console.error("[Sheets List] Error:", error.message);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Google Sheets — fetch data from a specific tab (smart header detection)
   app.get("/api/sheets/fetch", async (req, res) => {
-    const { spreadsheetId, gid } = req.query;
-    
+    const { spreadsheetId, gid, sheetName } = req.query;
+
     if (!spreadsheetId) {
       return res.status(400).json({ error: "Missing spreadsheetId parameter" });
     }
 
-    console.log(`[Sheets Proxy] Requesting: ${spreadsheetId}${gid ? ` (gid: ${gid})` : ''}`);
+    console.log(`[Sheets Proxy] Requesting: ${spreadsheetId} sheet="${sheetName || ''}" gid="${gid || ''}"`);
 
     try {
-      const csvText = await fetchGoogleSheetCsv(String(spreadsheetId), gid ? String(gid) : undefined);
+      const csvText = await fetchGoogleSheetCsv(
+        String(spreadsheetId),
+        gid ? String(gid) : undefined,
+        sheetName ? String(sheetName) : undefined
+      );
       res.send(csvText);
     } catch (error: any) {
       console.error("[Sheets Proxy] Error:", error.message);
-      res.status(500).json({ 
-        error: "Failed to fetch Google Sheet", 
+      res.status(500).json({
+        error: "Failed to fetch Google Sheet",
         details: error.message,
         hint: "If the sheet is private, ensure you have configured GOOGLE_SERVICE_ACCOUNT_KEY and shared the sheet with the service account email."
       });

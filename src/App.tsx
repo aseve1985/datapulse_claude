@@ -32,6 +32,13 @@ export default function App() {
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [tokenUsage, setTokenUsage] = useState<{ total: number; sesiones: number } | null>(null);
   const [initialReport, setInitialReport] = useState<any>(null);
+  const [sheetPicker, setSheetPicker] = useState<{
+    spreadsheetId: string;
+    sheetUrl: string;
+    sheets: Array<{ title: string; sheetId: number; index: number }>;
+    spreadsheetTitle: string;
+  } | null>(null);
+  const [sheetPickerLoading, setSheetPickerLoading] = useState(false);
   const isMounted = useRef(true);
 
   const showError = (msg: string) => {
@@ -225,6 +232,79 @@ export default function App() {
     if (res.ok) setSavedReports(prev => prev.filter(r => r.id !== id));
   };
 
+  const loadSheetData = useCallback(async (
+    spreadsheetId: string,
+    sheetUrl: string,
+    sheetName?: string,
+    gid?: string,
+    reportToLoad?: any,
+    sheets?: Array<{ title: string; sheetId: number; index: number }>,
+    isSwitch?: boolean
+  ) => {
+    const params = new URLSearchParams({ spreadsheetId });
+    if (sheetName) params.set('sheetName', sheetName);
+    else if (gid) params.set('gid', gid);
+
+    const response = await fetch(`/api/sheets/fetch?${params}`);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.details || 'Sin acceso al Google Sheet. Verificá que esté compartido con la cuenta de servicio.');
+    }
+
+    const csvText = await response.text();
+    return new Promise<void>((resolve, reject) => {
+      Papa.parse(csvText, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: 'greedy',
+        complete: (results: any) => {
+          const title = sheetName || `Google Sheet: ${spreadsheetId.substring(0, 8)}...`;
+          setInitialReport(reportToLoad || null);
+          setModuleData(results.data);
+          setActiveModule({ id: title, title, type: 'sheet', sheetUrl, sheets: sheets || [] });
+          setCurrentView('dashboard');
+          if (!isSwitch) {
+            window.history.pushState({ view: 'dashboard' }, '');
+            window.scrollTo({ top: 0, behavior: 'instant' });
+          }
+          setLoading(false);
+          resolve();
+        },
+        error: (err: any) => {
+          reject(new Error(`Error al procesar los datos del Sheet: ${err.message}`));
+        }
+      });
+    });
+  }, []);
+
+  const handleSheetSelect = useCallback(async (sheetTitle: string) => {
+    if (!sheetPicker) return;
+    setSheetPickerLoading(true);
+    setLoading(true);
+    try {
+      await loadSheetData(sheetPicker.spreadsheetId, sheetPicker.sheetUrl, sheetTitle, undefined, undefined, sheetPicker.sheets);
+      setSheetPicker(null);
+    } catch (err: any) {
+      showError(err.message);
+      setLoading(false);
+    } finally {
+      setSheetPickerLoading(false);
+    }
+  }, [sheetPicker, loadSheetData]);
+
+  const handleSwitchSheet = useCallback(async (sheetTitle: string) => {
+    if (!activeModule?.sheetUrl) return;
+    const spreadsheetId = activeModule.sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)?.[1];
+    if (!spreadsheetId) return;
+    setLoading(true);
+    try {
+      await loadSheetData(spreadsheetId, activeModule.sheetUrl, sheetTitle, undefined, undefined, activeModule.sheets, true);
+    } catch (err: any) {
+      showError(err.message);
+      setLoading(false);
+    }
+  }, [activeModule, loadSheetData]);
+
   const handleSelectModule = async (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => {
     // Helper to finalize module selection
     const finalizeSelection = (data: any[], moduleInfo: any) => {
@@ -239,40 +319,31 @@ export default function App() {
     if (type === 'sheet' && sheetUrl) {
       setLoading(true);
       try {
-        // Extract spreadsheet ID from URL
         const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
         if (!match) throw new Error('El link de Google Sheet no parece válido. Asegúrate de copiar la URL completa.');
-        
         const spreadsheetId = match[1];
-        
-        // Extract GID if present
-        const gidMatch = sheetUrl.match(/[#&]gid=([0-9]+)/);
-        const gid = gidMatch ? gidMatch[1] : null;
-        
-        const proxyUrl = `/api/sheets/fetch?spreadsheetId=${spreadsheetId}${gid ? `&gid=${gid}` : ''}`;
-        
-        console.log(`[App] Fetching Google Sheet via proxy: ${proxyUrl}`);
-        const response = await fetch(proxyUrl);
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.details || 'Sin acceso al Google Sheet. Es posible que los permisos hayan sido revocados — verificá que el Sheet esté compartido con la cuenta de servicio.');
+
+        // Fetch available sheet tabs first
+        const listRes = await fetch(`/api/sheets/list?spreadsheetId=${spreadsheetId}`);
+        const listData = await listRes.json();
+
+        if (listData.canList && listData.sheets.length > 1) {
+          // Multiple sheets — show picker, don't navigate yet
+          setSheetPicker({
+            spreadsheetId,
+            sheetUrl,
+            sheets: listData.sheets,
+            spreadsheetTitle: listData.title || spreadsheetId.substring(0, 8),
+          });
+          setLoading(false);
+          return;
         }
-        
-        const csvText = await response.text();
-        Papa.parse(csvText, {
-          header: true,
-          dynamicTyping: true,
-          skipEmptyLines: 'greedy',
-          complete: (results) => {
-            const sheetTitle = `Google Sheet: ${spreadsheetId.substring(0, 8)}...`;
-            finalizeSelection(results.data, { id: sheetTitle, title: sheetTitle, type: 'sheet', sheetUrl });
-            setLoading(false);
-          },
-          error: (err) => {
-            throw new Error(`Error al procesar los datos del Sheet: ${err.message}`);
-          }
-        });
+
+        // Single sheet or no service account — load directly
+        const gidMatch = sheetUrl.match(/[#&]gid=([0-9]+)/);
+        const gid = gidMatch ? gidMatch[1] : undefined;
+        const firstName = listData.sheets?.[0]?.title;
+        await loadSheetData(spreadsheetId, sheetUrl, firstName, gid, reportToLoad, listData.sheets || []);
       } catch (err: any) {
         console.error('Google Sheet Error:', err);
         showError(err.message);
@@ -434,6 +505,10 @@ export default function App() {
               savedReports={savedReports}
               onDeleteReport={handleDeleteReport}
               tokenUsage={tokenUsage}
+              sheetPicker={sheetPicker}
+              onSheetSelect={handleSheetSelect}
+              onSheetPickerClose={() => setSheetPicker(null)}
+              sheetPickerLoading={sheetPickerLoading}
             />
           </motion.div>
         ) : (
@@ -449,6 +524,8 @@ export default function App() {
               moduleId={activeModule?.id}
               moduleType={activeModule?.type}
               moduleSheetUrl={activeModule?.sheetUrl}
+              sheetsList={activeModule?.sheets}
+              onSwitchSheet={handleSwitchSheet}
               data={moduleData}
               onBack={() => window.history.back()}
               loading={loading}

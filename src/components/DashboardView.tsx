@@ -676,6 +676,8 @@ export default function DashboardView({
   moduleId,
   moduleType,
   moduleSheetUrl,
+  sheetsList,
+  onSwitchSheet,
   data,
   onBack,
   loading: initialLoading,
@@ -1095,6 +1097,31 @@ export default function DashboardView({
             <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-widest">{title}</p>
           </div>
         </div>
+
+        {/* Hojas del Google Sheet — solo cuando hay múltiples */}
+        {moduleType === 'sheet' && sheetsList && sheetsList.length > 1 && (
+          <div className="max-w-7xl mx-auto flex items-center gap-1 pb-2 overflow-x-auto no-scrollbar">
+            {sheetsList.map((sheet: any) => {
+              const isActive = sheet.title === title;
+              return (
+                <button
+                  key={sheet.sheetId}
+                  onClick={() => !isActive && onSwitchSheet?.(sheet.title)}
+                  disabled={loading || isActive}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap shrink-0',
+                    isActive
+                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 cursor-default'
+                      : 'text-zinc-500 hover:text-zinc-200 hover:bg-slate-800 border border-transparent'
+                  )}
+                >
+                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />}
+                  {sheet.title}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Fila 2: todos los controles alineados a la derecha */}
         <div className="max-w-7xl mx-auto flex items-center justify-end gap-2 pb-2 flex-wrap">

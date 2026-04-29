@@ -36,6 +36,12 @@ import {
 } from 'lucide-react';
 import { EXCHANGE_RATES } from '../constants';
 
+interface SheetTab {
+  title: string;
+  sheetId: number;
+  index: number;
+}
+
 interface LandingPageProps {
   onSelectModule: (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => void;
   onOpenTerms: () => void;
@@ -46,6 +52,10 @@ interface LandingPageProps {
   savedReports?: any[];
   onDeleteReport?: (id: string) => void;
   tokenUsage?: { total: number; sesiones: number } | null;
+  sheetPicker?: { spreadsheetId: string; sheetUrl: string; sheets: SheetTab[]; spreadsheetTitle: string } | null;
+  onSheetSelect?: (sheetTitle: string) => void;
+  onSheetPickerClose?: () => void;
+  sheetPickerLoading?: boolean;
 }
 
 const modules = [
@@ -147,7 +157,7 @@ const WELCOME_PHRASES_GUEST = [
   'Todo listo. ¿Qué necesitás?',
 ];
 
-export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRates, authStatus, isLoading, exchangeRates, savedReports = [], onDeleteReport, tokenUsage }: LandingPageProps) {
+export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRates, authStatus, isLoading, exchangeRates, savedReports = [], onDeleteReport, tokenUsage, sheetPicker, onSheetSelect, onSheetPickerClose, sheetPickerLoading }: LandingPageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deniedModule, setDeniedModule] = React.useState<string | null>(null);
   const [sheetUrl, setSheetUrl] = React.useState('');
@@ -684,6 +694,73 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
           © 2026 Business Intelligence Suite · Insights estratégicos para decisiones inteligentes
         </div>
       </footer>
+
+      {/* Sheet Picker Modal */}
+      <AnimatePresence>
+        {sheetPicker && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-950/85 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 24 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 24 }}
+              transition={{ duration: 0.22 }}
+              className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-48 h-48 bg-blue-600/5 blur-3xl -mr-24 -mt-24 pointer-events-none" />
+
+              <button
+                onClick={onSheetPickerClose}
+                className="absolute top-5 right-5 p-2 text-zinc-500 hover:text-white hover:bg-slate-800 rounded-full transition-all"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-emerald-600/15 rounded-xl flex items-center justify-center">
+                  <ExternalLink className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Google Sheet</p>
+                  <p className="text-sm font-bold text-white truncate max-w-xs">{sheetPicker.spreadsheetTitle}</p>
+                </div>
+              </div>
+
+              <p className="text-zinc-400 text-sm mb-6 mt-4">
+                Este archivo tiene <span className="text-white font-bold">{sheetPicker.sheets.length} hojas</span>. ¿Cuál querés analizar?
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
+                {sheetPicker.sheets.map((sheet, i) => (
+                  <motion.button
+                    key={sheet.sheetId}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    onClick={() => onSheetSelect?.(sheet.title)}
+                    disabled={sheetPickerLoading}
+                    className="group flex items-center gap-3 p-4 bg-slate-800/60 hover:bg-slate-700/80 border border-slate-700/60 hover:border-emerald-500/40 rounded-2xl transition-all text-left disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <div className="w-8 h-8 bg-emerald-700/30 group-hover:bg-emerald-600/40 rounded-xl flex items-center justify-center shrink-0 transition-colors">
+                      <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+                    </div>
+                    <span className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors truncate">
+                      {sheet.title}
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-emerald-400 ml-auto shrink-0 transition-colors group-hover:translate-x-0.5" />
+                  </motion.button>
+                ))}
+              </div>
+
+              {sheetPickerLoading && (
+                <div className="mt-5 flex items-center justify-center gap-3">
+                  <div className="w-4 h-4 border-2 border-blue-900/40 border-t-blue-400 rounded-full animate-spin" />
+                  <span className="text-xs text-zinc-400 font-bold uppercase tracking-widest">Cargando datos...</span>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
