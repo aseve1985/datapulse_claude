@@ -5,75 +5,90 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Calculadora Break-Even — Cartera de Créditos</title>
   <style>
-    /* ===== VARIABLES ===== */
+    /* ===== VARIABLES — DARK THEME ===== */
     :root {
-      --primary:        #1a56db;
-      --primary-dark:   #1344b8;
-      --primary-light:  #eff6ff;
-      --success:        #057a55;
-      --success-light:  #def7ec;
-      --warning:        #b45309;
-      --warning-light:  #fef3c7;
-      --danger:         #c81e1e;
-      --danger-light:   #fde8e8;
-      --purple:         #6d28d9;
-      --purple-light:   #ede9fe;
-      --gray-50:  #f9fafb;
-      --gray-100: #f3f4f6;
-      --gray-200: #e5e7eb;
-      --gray-300: #d1d5db;
-      --gray-400: #9ca3af;
-      --gray-500: #6b7280;
-      --gray-600: #4b5563;
-      --gray-700: #374151;
-      --gray-800: #1f2937;
-      --gray-900: #111827;
-      --radius:   12px;
-      --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
-      --shadow-md: 0 4px 8px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.05);
+      --primary:        #63b3ed;
+      --primary-dark:   #4a9fd4;
+      --primary-light:  #1e3a5f;
+      --success:        #68d391;
+      --success-light:  #1a3028;
+      --warning:        #f6ad55;
+      --warning-light:  #2d200a;
+      --danger:         #fc8181;
+      --danger-light:   #2d1515;
+      --purple:         #b794f4;
+      --purple-light:   #2d1f5e;
+      --bg:             #0f1117;
+      --surface:        #1a1f35;
+      --surface-2:      #13192b;
+      --border:         #2d3748;
+      --border-light:   #1a2035;
+      --gray-50:  #13192b;
+      --gray-100: #1a2035;
+      --gray-200: #2d3748;
+      --gray-300: #3d4f68;
+      --gray-400: #4a5568;
+      --gray-500: #718096;
+      --gray-600: #a0aec0;
+      --gray-700: #cbd5e0;
+      --gray-800: #e2e8f0;
+      --gray-900: #ffffff;
+      --radius:   10px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.3);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.4), 0 2px 4px rgba(0,0,0,.3);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--gray-50);
+      background: var(--bg);
       color: var(--gray-800);
       line-height: 1.55;
     }
 
     /* ===== HEADER ===== */
     .header {
-      background: linear-gradient(135deg, #1a56db 0%, #0e3fa3 100%);
+      background: linear-gradient(135deg, #1a1f35 0%, #12172a 100%);
+      border-bottom: 1px solid var(--border);
       color: #fff;
-      padding: 2rem 1.5rem 2.5rem;
-      text-align: center;
+      padding: 1.25rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
     }
-    .header h1 { font-size: 1.75rem; font-weight: 800; margin-bottom: .4rem; }
-    .header p  { font-size: .95rem; opacity: .85; max-width: 640px; margin: 0 auto; }
+    .header-left { display: flex; align-items: center; gap: 1rem; }
+    .header-logo { height: 36px; width: auto; object-fit: contain; filter: brightness(0) invert(1); opacity: .9; }
+    .header-divider { width: 1px; height: 32px; background: var(--border); }
+    .header-text h1 { font-size: 1.15rem; font-weight: 800; color: #fff; letter-spacing: -.2px; }
+    .header-text p  { font-size: .72rem; color: var(--gray-500); margin-top: 2px; }
+    .header-badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .hbadge { padding: 4px 12px; border-radius: 20px; font-size: .65rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+    .hbadge-blue { background: #1e3a5f; color: #63b3ed; border: 1px solid #2b4f80; }
+    .hbadge-green { background: #1a3028; color: #68d391; border: 1px solid #276749; }
 
     .container { max-width: 1220px; margin: 0 auto; padding: 1.75rem 1.25rem 2.5rem; }
 
     .section { margin-bottom: 2.25rem; }
     .section-title {
-      font-size: 1.05rem; font-weight: 700; color: var(--gray-700);
+      font-size: .72rem; font-weight: 700; color: var(--gray-500);
+      text-transform: uppercase; letter-spacing: 1px;
       margin-bottom: 1rem; padding-bottom: .5rem;
-      border-bottom: 2px solid var(--gray-200);
+      border-bottom: 1px solid var(--border);
       display: flex; align-items: center; gap: .45rem;
     }
 
-    .card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.35rem; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.35rem; }
 
     /* ===== INPUTS ===== */
     .inputs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
-    .input-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.2rem; }
+    .input-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; }
     .input-card-title {
-      font-size: .78rem; font-weight: 700; color: var(--primary);
+      font-size: .67rem; font-weight: 700; color: var(--primary);
       text-transform: uppercase; letter-spacing: .08em; margin-bottom: .9rem;
     }
     .input-group { display: flex; flex-direction: column; gap: .22rem; margin-bottom: .8rem; }
     .input-group:last-child { margin-bottom: 0; }
     .input-group label {
-      font-size: .72rem; font-weight: 700; color: var(--gray-500);
+      font-size: .67rem; font-weight: 700; color: var(--gray-500);
       text-transform: uppercase; letter-spacing: .06em;
     }
     .input-wrap { position: relative; display: flex; align-items: center; }
@@ -85,8 +100,8 @@
     .i-suf { right: .72rem; }
     input[type="number"] {
       width: 100%; padding: .55rem .75rem;
-      border: 1.5px solid var(--gray-200); border-radius: 8px;
-      font-size: .93rem; color: var(--gray-800); background: var(--gray-50);
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: .88rem; color: var(--gray-800); background: var(--surface-2);
       transition: border-color .15s, box-shadow .15s;
       -moz-appearance: textfield;
     }
@@ -94,25 +109,23 @@
     input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
     input[type="number"]:focus {
       outline: none; border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(26,86,219,.12); background: #fff;
+      box-shadow: 0 0 0 3px rgba(99,179,237,.15); background: #1a2035;
     }
-    /* Special style for derived interés inputs */
     input.derived {
       border-color: var(--purple);
-      background: var(--purple-light);
+      background: #1e1040;
       color: var(--purple);
       font-weight: 700;
     }
     input.derived:focus {
       border-color: var(--purple);
-      box-shadow: 0 0 0 3px rgba(109,40,217,.15);
-      background: #fff;
+      box-shadow: 0 0 0 3px rgba(183,148,244,.15);
+      background: #1e1040;
     }
     input.has-pre  { padding-left: 1.8rem; }
     input.has-suf  { padding-right: 2rem; }
     .input-hint { font-size: .69rem; color: var(--gray-400); }
 
-    /* Interés derivado — dual display */
     .interes-badge {
       display: inline-flex; align-items: center; gap: .3rem;
       font-size: .69rem; font-weight: 700; color: var(--purple);
@@ -126,17 +139,17 @@
     .btn-row { display: flex; gap: .75rem; margin-top: 1.1rem; flex-wrap: wrap; }
     .btn {
       display: inline-flex; align-items: center; gap: .4rem;
-      padding: .6rem 1.35rem; border-radius: 8px; font-size: .9rem;
+      padding: .55rem 1.2rem; border-radius: 6px; font-size: .82rem;
       font-weight: 600; cursor: pointer; transition: all .15s; border: none; line-height: 1;
     }
-    .btn-primary { background: var(--primary); color: #fff; }
-    .btn-primary:hover { background: var(--primary-dark); box-shadow: var(--shadow-md); }
-    .btn-ghost { background: var(--gray-100); color: var(--gray-700); border: 1.5px solid var(--gray-200); }
-    .btn-ghost:hover { background: var(--gray-200); }
+    .btn-primary { background: #2b6cb0; color: #fff; }
+    .btn-primary:hover { background: #2c7be5; }
+    .btn-ghost { background: transparent; color: var(--gray-600); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--surface-2); }
 
     .warn-box {
       display: none; background: var(--warning-light);
-      border: 1px solid #fcd34d; border-radius: 8px;
+      border: 1px solid #744210; border-radius: 8px;
       padding: .65rem 1rem; font-size: .82rem; color: var(--warning); margin-top: .85rem;
     }
 
@@ -157,153 +170,240 @@
     /* ===== RESULT CARDS ===== */
     .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .9rem; }
     .res-card {
-      background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm);
-      padding: 1.1rem 1.2rem; border-left: 4px solid var(--gray-200);
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 1.1rem 1.2rem; border-left: 4px solid var(--border);
     }
-    .res-card.hl    { border-left-color: var(--primary); background: linear-gradient(135deg,#fff,#f0f5ff); }
-    .res-card.ok    { border-left-color: var(--success); }
-    .res-card.bad   { border-left-color: var(--danger);  }
-    .res-label { font-size: .7rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .4rem; }
-    .res-value { font-size: 1.45rem; font-weight: 800; color: var(--gray-900); line-height: 1.15; }
-    .res-value.lg  { font-size: 1.65rem; }
-    .res-sub { font-size: .73rem; color: var(--gray-400); margin-top: .28rem; }
+    .res-card.hl  { border-left-color: var(--primary); background: linear-gradient(135deg,#1a1f35,#1e3a5f); }
+    .res-card.ok  { border-left-color: var(--success); }
+    .res-card.bad { border-left-color: var(--danger);  }
+    .res-label { font-size: .67rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .4rem; }
+    .res-value { font-size: 1.35rem; font-weight: 800; color: var(--gray-900); line-height: 1.15; }
+    .res-value.lg  { font-size: 1.55rem; }
+    .res-sub { font-size: .71rem; color: var(--gray-400); margin-top: .28rem; }
     .pos { color: var(--success); }
     .neg { color: var(--danger);  }
 
     /* ===== INDICADORES DE TASA ===== */
     .tasas-section {
-      background: linear-gradient(135deg, #fdf4ff 0%, #f5f3ff 100%);
-      border: 1px solid #e9d5ff;
+      background: linear-gradient(135deg, #1a1530 0%, #1a1f35 100%);
+      border: 1px solid #3d2d6e;
       border-radius: var(--radius);
       padding: 1.2rem;
       margin-top: 1rem;
     }
     .tasas-header {
       display: flex; align-items: center; gap: .5rem;
-      font-size: .8rem; font-weight: 700; color: var(--purple);
+      font-size: .72rem; font-weight: 700; color: var(--purple);
       text-transform: uppercase; letter-spacing: .07em;
       margin-bottom: .9rem;
     }
     .tasas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: .7rem; }
     .tasa-card {
-      background: #fff; border-radius: 10px; padding: .85rem;
-      border: 1px solid #e9d5ff; box-shadow: 0 1px 3px rgba(109,40,217,.06);
+      background: var(--surface-2); border-radius: 8px; padding: .85rem;
+      border: 1px solid #3d2d6e;
     }
-    .tasa-label { font-size: .67rem; font-weight: 700; color: var(--purple); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .3rem; }
-    .tasa-value { font-size: 1.25rem; font-weight: 800; color: var(--gray-900); line-height: 1.2; }
-    .tasa-note  { font-size: .66rem; color: var(--gray-400); margin-top: .2rem; }
+    .tasa-label { font-size: .63rem; font-weight: 700; color: var(--purple); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .3rem; }
+    .tasa-value { font-size: 1.2rem; font-weight: 800; color: #fff; line-height: 1.2; }
+    .tasa-note  { font-size: .63rem; color: var(--gray-400); margin-top: .2rem; }
     .tasas-disclaimer {
-      font-size: .69rem; color: var(--gray-400);
+      font-size: .66rem; color: var(--gray-400);
       margin-top: .75rem; line-height: 1.5;
-      border-top: 1px solid #e9d5ff; padding-top: .65rem;
+      border-top: 1px solid #3d2d6e; padding-top: .65rem;
     }
 
     /* ===== AMORTIZACIÓN ===== */
     .amort-toggle { display: flex; gap: .5rem; margin-bottom: .75rem; }
     .amort-btn {
-      padding: .45rem 1rem; border-radius: 8px; border: 1.5px solid var(--gray-200);
-      font-size: .82rem; font-weight: 600; cursor: pointer; background: #fff; color: var(--gray-600);
+      padding: .45rem 1rem; border-radius: 6px; border: 1px solid var(--border);
+      font-size: .78rem; font-weight: 600; cursor: pointer; background: var(--surface-2); color: var(--gray-600);
       transition: all .15s;
     }
-    .amort-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .amort-btn.active { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
     .amort-desc {
-      font-size: .78rem; color: var(--gray-500); margin-bottom: .75rem;
-      padding: .5rem .75rem; background: var(--gray-50); border-radius: 6px;
+      font-size: .75rem; color: var(--gray-500); margin-bottom: .75rem;
+      padding: .5rem .75rem; background: var(--surface-2); border-radius: 6px;
       border-left: 3px solid var(--primary);
     }
-    #tbAmort tfoot tr { background: #eff6ff; font-weight: 700; }
+    #tbAmort tfoot tr { background: #1e3a5f; font-weight: 700; }
     #tbAmort tfoot td { border-top: 2px solid var(--primary); }
 
     /* ===== TABLES ===== */
-    .tbl-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--gray-200); }
-    table { width: 100%; border-collapse: collapse; font-size: .84rem; }
-    thead tr { background: var(--gray-50); }
-    th { padding: .65rem 1rem; text-align: right; font-size: .7rem; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+    .tbl-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    thead tr { background: var(--surface-2); }
+    th { padding: .65rem 1rem; text-align: right; font-size: .63rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .07em; white-space: nowrap; border-bottom: 1px solid var(--border); }
     th:first-child { text-align: left; }
-    td { padding: .6rem 1rem; text-align: right; color: var(--gray-700); border-top: 1px solid var(--gray-100); }
+    td { padding: .6rem 1rem; text-align: right; color: var(--gray-700); border-top: 1px solid var(--border-light); }
     td:first-child { text-align: left; font-weight: 500; }
-    tbody tr:hover { background: var(--gray-50); }
-    tr.base-row { background: #eff6ff; font-weight: 700; }
+    tbody tr:hover { background: #1a2035; }
+    tr.base-row { background: #1e3a5f; font-weight: 700; color: #fff; }
 
     /* ===== ESCALERA DE MORA ===== */
-    tr.mora-breakeven { background: #dbeafe; font-weight: 700; }
+    tr.mora-breakeven { background: #1e3a5f; font-weight: 700; }
     tr.mora-breakeven td { border-top: 2px solid var(--primary); border-bottom: 2px solid var(--primary); }
     .mora-badge {
       display: inline-block; padding: .18rem .55rem; border-radius: 99px;
-      font-size: .72rem; font-weight: 700; white-space: nowrap;
+      font-size: .7rem; font-weight: 700; white-space: nowrap;
     }
-    .mora-badge.verde  { background: #dcfce7; color: #15803d; }
-    .mora-badge.amarillo { background: #fef9c3; color: #a16207; }
-    .mora-badge.rojo   { background: #fee2e2; color: #b91c1c; }
+    .mora-badge.verde    { background: #1a3028; color: #68d391; }
+    .mora-badge.amarillo { background: #2d200a; color: #f6ad55; }
+    .mora-badge.rojo     { background: #2d1515; color: #fc8181; }
 
     /* ===== SENSITIVITY ===== */
     .sens-ctrl { display: flex; gap: .85rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
-    .sens-ctrl label { font-size: .82rem; font-weight: 600; color: var(--gray-600); }
+    .sens-ctrl label { font-size: .78rem; font-weight: 600; color: var(--gray-600); }
     select {
-      padding: .48rem .75rem; border: 1.5px solid var(--gray-200); border-radius: 8px;
-      font-size: .88rem; color: var(--gray-800); background: #fff; cursor: pointer;
+      padding: .45rem .75rem; border: 1px solid var(--border); border-radius: 6px;
+      font-size: .82rem; color: var(--gray-800); background: var(--surface-2); cursor: pointer;
     }
-    select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,86,219,.1); }
+    select:focus { outline: none; border-color: var(--primary); }
 
     /* ===== CHART ===== */
-    .chart-box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.35rem; margin-top: 1rem; }
+    .chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.35rem; margin-top: 1rem; }
     .chart-header { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; flex-wrap: wrap; }
-    .chart-header strong { font-size: .88rem; color: var(--gray-700); }
-    .badge { display: inline-flex; align-items: center; padding: .18rem .5rem; border-radius: 5px; font-size: .69rem; font-weight: 700; }
-    .badge-blue { background: #dbeafe; color: #1e40af; }
+    .chart-header strong { font-size: .85rem; color: var(--gray-700); }
+    .badge { display: inline-flex; align-items: center; padding: .18rem .5rem; border-radius: 5px; font-size: .67rem; font-weight: 700; }
+    .badge-blue { background: #1e3a5f; color: #63b3ed; }
     canvas { display: block; max-width: 100%; }
 
     /* ===== SCENARIOS ===== */
     .scen-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin-bottom: 1.1rem; }
-    .scen-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.2rem; border-top: 4px solid var(--gray-200); }
+    .scen-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.2rem; border-top: 3px solid var(--border); }
     .scen-card.sc-base { border-top-color: var(--primary); }
     .scen-card.sc-opt  { border-top-color: var(--success); }
     .scen-card.sc-str  { border-top-color: var(--danger);  }
-    .scen-title { font-size: .88rem; font-weight: 700; margin-bottom: .6rem; }
+    .scen-title { font-size: .85rem; font-weight: 700; margin-bottom: .6rem; }
     .scen-title.sc-base { color: var(--primary); }
     .scen-title.sc-opt  { color: var(--success); }
     .scen-title.sc-str  { color: var(--danger);  }
-    .scen-note { font-size: .71rem; color: var(--gray-400); margin-bottom: .55rem; }
-    .scen-row { display: flex; justify-content: space-between; align-items: center; padding: .28rem 0; font-size: .82rem; border-bottom: 1px solid var(--gray-100); }
+    .scen-note { font-size: .69rem; color: var(--gray-400); margin-bottom: .55rem; }
+    .scen-row { display: flex; justify-content: space-between; align-items: center; padding: .28rem 0; font-size: .8rem; border-bottom: 1px solid var(--border-light); }
     .scen-row:last-child { border-bottom: none; }
     .scen-k { color: var(--gray-500); }
     .scen-v { font-weight: 600; color: var(--gray-800); }
 
     /* ===== FORMULAS ===== */
-    .formulas { background: var(--gray-50); border-radius: var(--radius); border: 1px solid var(--gray-200); padding: 1.35rem; }
+    .formulas { background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); padding: 1.35rem; }
     .formula-list { display: grid; gap: .7rem; }
-    .formula-item { display: flex; gap: .75rem; align-items: flex-start; background: #fff; border: 1px solid var(--gray-200); border-radius: 8px; padding: .75rem; }
-    .f-num { background: var(--primary); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700; flex-shrink: 0; }
-    .f-num.purple { background: var(--purple); }
-    .f-name { font-size: .82rem; font-weight: 600; color: var(--gray-700); margin-bottom: .18rem; }
-    .f-eq { font-family: 'Courier New', monospace; font-size: .78rem; color: var(--primary); background: #eff6ff; padding: .18rem .4rem; border-radius: 4px; display: inline-block; }
+    .formula-item { display: flex; gap: .75rem; align-items: flex-start; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: .75rem; }
+    .f-num { background: #2b6cb0; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700; flex-shrink: 0; }
+    .f-num.purple { background: #553c9a; }
+    .f-name { font-size: .8rem; font-weight: 600; color: var(--gray-700); margin-bottom: .18rem; }
+    .f-eq { font-family: 'Courier New', monospace; font-size: .76rem; color: var(--primary); background: #1e3a5f; padding: .18rem .4rem; border-radius: 4px; display: inline-block; }
     .f-eq.purple { color: var(--purple); background: var(--purple-light); }
-    .f-note { font-size: .72rem; color: var(--gray-400); margin-top: .2rem; }
+    .f-note { font-size: .7rem; color: var(--gray-400); margin-top: .2rem; }
 
     /* ===== GUIDE ===== */
-    .guide-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 1.35rem; }
-    .guide-card h3 { font-size: .95rem; font-weight: 700; color: var(--gray-700); margin-bottom: .5rem; margin-top: .9rem; }
+    .guide-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.35rem; }
+    .guide-card h3 { font-size: .9rem; font-weight: 700; color: var(--gray-700); margin-bottom: .5rem; margin-top: .9rem; }
     .guide-card h3:first-child { margin-top: 0; }
-    .guide-card p { font-size: .84rem; color: var(--gray-600); margin-bottom: .5rem; line-height: 1.65; }
-    .tip { display: flex; gap: .7rem; background: #eff6ff; border-left: 3px solid var(--primary); padding: .7rem .9rem; border-radius: 0 8px 8px 0; margin: .6rem 0; font-size: .83rem; color: var(--gray-700); }
+    .guide-card p { font-size: .82rem; color: var(--gray-600); margin-bottom: .5rem; line-height: 1.65; }
+    .tip { display: flex; gap: .7rem; background: #1e3a5f; border-left: 3px solid var(--primary); padding: .7rem .9rem; border-radius: 0 8px 8px 0; margin: .6rem 0; font-size: .81rem; color: var(--gray-700); }
     .tip-icon { font-size: 1rem; flex-shrink: 0; }
 
-    footer { text-align: center; padding: 1.5rem; font-size: .75rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); margin-top: 1.5rem; }
+    /* ===== STRESS COMBINADO ===== */
+    .stress-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: .85rem;
+      margin-bottom: 1.25rem;
+    }
+    .stress-var {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: .9rem 1rem;
+      transition: border-color .2s;
+    }
+    .stress-var.active { border-color: var(--primary); }
+    .stress-var-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: .55rem;
+    }
+    .stress-var-name { font-size: .72rem; font-weight: 700; color: var(--gray-600); text-transform: uppercase; letter-spacing: .06em; }
+    .stress-pct-badge {
+      font-size: .72rem; font-weight: 800; padding: .15rem .45rem;
+      border-radius: 5px; min-width: 52px; text-align: center;
+      transition: background .15s, color .15s;
+    }
+    .stress-pct-badge.pos  { background: #1a3028; color: #68d391; }
+    .stress-pct-badge.neg  { background: #2d1515; color: #fc8181; }
+    .stress-pct-badge.zero { background: var(--border); color: var(--gray-500); }
+    .stress-values {
+      display: flex; gap: .4rem; align-items: center;
+      font-size: .75rem; margin-bottom: .55rem;
+    }
+    .stress-val-base  { color: var(--gray-500); }
+    .stress-arrow     { color: var(--gray-400); font-size: .65rem; }
+    .stress-val-new   { color: #fff; font-weight: 700; }
+    input[type="range"] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 4px; border-radius: 2px;
+      background: var(--border); outline: none; cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px;
+      border-radius: 50%; background: var(--primary);
+      border: 2px solid #0f1117; cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    input[type="range"]::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--primary); border: 2px solid #0f1117;
+      cursor: pointer;
+    }
+    .stress-reset {
+      margin-top: .45rem; font-size: .65rem; color: var(--gray-400);
+      background: none; border: none; cursor: pointer; padding: 0;
+      text-decoration: underline; text-underline-offset: 2px;
+    }
+    .stress-reset:hover { color: var(--primary); }
+
+    .stress-summary {
+      background: #12172a; border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.25rem;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: .75rem; align-items: center;
+    }
+    .stress-kpi { }
+    .stress-kpi-label { font-size: .63rem; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .2rem; }
+    .stress-kpi-val { font-size: 1.15rem; font-weight: 800; }
+    .stress-kpi-delta { font-size: .7rem; margin-top: .15rem; }
+    .stress-reset-all {
+      padding: .5rem 1rem; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--gray-600); font-size: .75rem;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+      transition: all .15s;
+    }
+    .stress-reset-all:hover { background: var(--surface-2); color: var(--gray-800); }
+
+    footer { text-align: center; padding: 1.5rem; font-size: .73rem; color: var(--gray-400); border-top: 1px solid var(--border); margin-top: 1.5rem; }
 
     @media (max-width: 640px) {
-      .header h1 { font-size: 1.3rem; }
-      .res-value { font-size: 1.2rem; }
-      .res-value.lg { font-size: 1.4rem; }
+      .header { padding: 1rem; }
+      .header-text h1 { font-size: .95rem; }
+      .res-value { font-size: 1.1rem; }
+      .res-value.lg { font-size: 1.3rem; }
       .container { padding: 1rem .9rem 2rem; }
       .interes-dual { grid-template-columns: 1fr; }
+      .header-badges { display: none; }
     }
   </style>
 </head>
 <body>
 
 <header class="header">
-  <h1>📊 Calculadora Break-Even — Cartera de Créditos</h1>
-  <p>Analizá cuánta mora podés soportar antes de llegar al punto de equilibrio y qué variable mueve más tu rentabilidad.</p>
+  <div class="header-left">
+    <img src="Logo-Libgot-Azul-Logo-completo.png" alt="Libgot" class="header-logo" />
+    <div class="header-divider"></div>
+    <div class="header-text">
+      <h1>Calculadora Break-Even — Cartera de Créditos</h1>
+      <p>Analizá cuánta mora podés soportar antes del punto de equilibrio y qué variable mueve más tu rentabilidad</p>
+    </div>
+  </div>
+  <div class="header-badges">
+    <span class="hbadge hbadge-blue">📊 Análisis</span>
+    <span class="hbadge hbadge-green">⚡ Tiempo real</span>
+  </div>
 </header>
 
 <div class="container">
@@ -431,6 +531,17 @@
   <div class="section">
     <div class="section-title">📈 Resultados principales</div>
 
+    <div id="stressBanner" style="display:none;margin-bottom:.85rem;padding:.55rem 1rem;
+         background:#2d200a;border:1px solid #744210;border-radius:8px;
+         font-size:.78rem;color:#f6ad55;font-weight:600;display:none;
+         align-items:center;gap:.5rem;">
+      ⚡ <span id="stressBannerTxt">Modo stress activo — resultados reflejan el escenario combinado del slider</span>
+      <button onclick="resetAllStress()" style="margin-left:auto;background:none;border:1px solid #744210;
+              color:#f6ad55;border-radius:5px;padding:.2rem .6rem;cursor:pointer;font-size:.72rem;font-weight:700">
+        ↺ Limpiar stress
+      </button>
+    </div>
+
     <div id="semaforo" class="semaforo sem-verde">
       <div class="s-dot"></div>
       <span id="semaforoTxt">✅ Negocio rentable</span>
@@ -545,8 +656,8 @@
             <tr>
               <th style="text-align:left">Mora % capital</th>
               <th>Mora ($)</th>
-              <th>Resultado antes mora</th>
-              <th>Resultado después mora</th>
+              <th>Flujo libre base</th>
+              <th>Flujo libre post-mora</th>
               <th>Margen s/ capital</th>
               <th>Estado</th>
             </tr>
@@ -596,6 +707,18 @@
         <span class="badge badge-blue" id="chartBadge">Tasa directa</span>
       </div>
       <canvas id="chart" height="290"></canvas>
+    </div>
+  </div>
+
+  <!-- ====== STRESS COMBINADO ====== -->
+  <div class="section">
+    <div class="section-title">🧪 Combinador de stress — todas las variables</div>
+    <div class="card">
+      <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:1.1rem;">
+        Mové cada slider para estresar o mejorar una variable en forma independiente. El resultado se recalcula en tiempo real con la combinación de todos los ajustes.
+      </div>
+      <div class="stress-grid" id="stressGrid"></div>
+      <div class="stress-summary" id="stressSummary"></div>
     </div>
   </div>
 
@@ -779,7 +902,8 @@
 </div>
 
 <footer>
-  Calculadora Break-Even de Cartera de Créditos &middot; Modelo simplificado &middot; Solo para uso interno
+  <img src="Logo-Libgot-Azul-Logo-completo.png" alt="Libgot" style="height:18px;opacity:.35;filter:brightness(0) invert(1);vertical-align:middle;margin-right:.5rem" />
+  Libgot &middot; Calculadora Break-Even — Cartera de Créditos &middot; Uso interno
 </footer>
 
 <!-- ========== JAVASCRIPT ========== -->
@@ -862,6 +986,20 @@ function getInputs() {
     tasaDirecta:    gv('tasaDirecta'),
     bonificacion:   gv('bonificacion')
   };
+}
+
+// Inputs con stress del combinador aplicado encima
+function getEffectiveInputs() {
+  const base = getInputs();
+  const out  = { ...base };
+  if (typeof stressState === 'undefined') return out;
+  STRESS_VARS.forEach(v => {
+    const pct = stressState[v.key] || 0;
+    out[v.key] = base[v.key] * (1 + pct / 100);
+    if (v.key === 'plazo' || v.key === 'cantCreditos')
+      out[v.key] = Math.max(1, Math.round(out[v.key]));
+  });
+  return out;
 }
 
 // ──────────────────────────────────────────
@@ -1154,7 +1292,7 @@ function setAmortMode(mode) {
 }
 
 function renderAmort() {
-  const inp        = getInputs();
+  const inp        = getEffectiveInputs();
   const capital    = inp.capitalCredito;
   const plazo      = inp.plazo;
   const interesPct = inp.tasaDirecta * (1 - inp.bonificacion / 100);
@@ -1244,10 +1382,10 @@ function renderAmort() {
 // ESCALERA DE MORA
 // ──────────────────────────────────────────
 function renderEscaleraMora() {
-  const inp          = getInputs();
+  const inp          = getEffectiveInputs();
   const res          = calcRes(inp);
   const capitalTotal = res.capitalTotal;
-  const resultBase   = res.resultado;
+  const resultBase   = res.flujoLibre;   // base = flujo libre (post impuestos), igual que moraMaxPct
   const moraMaxPct   = res.moraMaxPct;
 
   if (!capitalTotal) {
@@ -1309,6 +1447,142 @@ function renderEscaleraMora() {
 }
 
 // ──────────────────────────────────────────
+// STRESS COMBINADO
+// ──────────────────────────────────────────
+const STRESS_VARS = [
+  { key: 'tasaDirecta',  label: 'Tasa directa',         fmt: v => r2(v) + '%',  min: -50, max: 50 },
+  { key: 'bonificacion', label: 'Bonificación de tasa',  fmt: v => r2(v) + '%',  min: -50, max: 50 },
+  { key: 'crossSelling', label: 'Cross selling mensual', fmt: v => fmtM(v),       min: -80, max: 100 },
+  { key: 'punitorios',   label: 'Punitorios promedio',   fmt: v => fmtM(v),       min: -80, max: 100 },
+  { key: 'costoAdq',     label: 'Costo de adquisición',  fmt: v => fmtM(v),       min: -80, max: 100 },
+  { key: 'plazo',        label: 'Plazo (meses)',          fmt: v => Math.round(v) + ' m', min: -50, max: 50 },
+  { key: 'cantCreditos', label: 'Cantidad de créditos',  fmt: v => Math.round(v).toLocaleString('es-AR'), min: -50, max: 50 },
+  { key: 'capitalCredito',label: 'Capital por crédito',  fmt: v => fmtM(v),       min: -50, max: 50 },
+];
+
+// Estado de los sliders (variación % por variable)
+const stressState = {};
+STRESS_VARS.forEach(v => stressState[v.key] = 0);
+
+function buildStressGrid() {
+  const grid = document.getElementById('stressGrid');
+  grid.innerHTML = STRESS_VARS.map(v => `
+    <div class="stress-var" id="sv-${v.key}">
+      <div class="stress-var-header">
+        <span class="stress-var-name">${v.label}</span>
+        <span class="stress-pct-badge zero" id="sb-${v.key}">0%</span>
+      </div>
+      <div class="stress-values">
+        <span class="stress-val-base" id="svbase-${v.key}">—</span>
+        <span class="stress-arrow">→</span>
+        <span class="stress-val-new"  id="svnew-${v.key}">—</span>
+      </div>
+      <input type="range" min="${v.min}" max="${v.max}" step="1" value="0"
+             id="slider-${v.key}"
+             oninput="onStressSlider('${v.key}', this.value)" />
+      <div style="display:flex;justify-content:space-between;font-size:.6rem;color:var(--gray-400);margin-top:.2rem">
+        <span>${v.min}%</span><span>0</span><span>+${v.max}%</span>
+      </div>
+      <button class="stress-reset" onclick="resetStressVar('${v.key}')">Resetear</button>
+    </div>`).join('');
+  refreshStressDisplay();
+}
+
+function onStressSlider(key, val) {
+  stressState[key] = parseFloat(val);
+  calcular();   // propaga a todos los módulos
+}
+
+function resetStressVar(key) {
+  stressState[key] = 0;
+  document.getElementById('slider-' + key).value = 0;
+  calcular();
+}
+
+function resetAllStress() {
+  STRESS_VARS.forEach(v => {
+    stressState[v.key] = 0;
+    const el = document.getElementById('slider-' + v.key);
+    if (el) el.value = 0;
+  });
+  calcular();
+}
+
+function refreshStressDisplay() {
+  const baseInp = getInputs();
+  const baseRes = calcRes(baseInp);
+
+  // Construir inputs estresados
+  const stressInp = { ...baseInp };
+  STRESS_VARS.forEach(v => {
+    const pct = stressState[v.key];
+    stressInp[v.key] = baseInp[v.key] * (1 + pct / 100);
+    if (v.key === 'plazo' || v.key === 'cantCreditos')
+      stressInp[v.key] = Math.max(1, Math.round(stressInp[v.key]));
+  });
+
+  const stressRes = calcRes(stressInp);
+
+  // Actualizar cada tarjeta
+  STRESS_VARS.forEach(v => {
+    const pct   = stressState[v.key];
+    const badge = document.getElementById('sb-' + v.key);
+    const card  = document.getElementById('sv-' + v.key);
+    const bBase = document.getElementById('svbase-' + v.key);
+    const bNew  = document.getElementById('svnew-' + v.key);
+    if (!badge) return;
+
+    badge.textContent = (pct > 0 ? '+' : '') + pct + '%';
+    badge.className   = 'stress-pct-badge ' + (pct > 0 ? 'pos' : pct < 0 ? 'neg' : 'zero');
+    card.classList.toggle('active', pct !== 0);
+    bBase.textContent = v.fmt(baseInp[v.key]);
+    bNew.textContent  = v.fmt(stressInp[v.key]);
+    bNew.style.color  = pct === 0 ? 'var(--gray-700)' : (pct > 0 ? 'var(--success)' : 'var(--danger)');
+  });
+
+  // Summary
+  const delta      = stressRes.flujoLibre - baseRes.flujoLibre;
+  const deltaColor = delta >= 0 ? 'var(--success)' : 'var(--danger)';
+  const moraColor  = stressRes.moraMaxPct >= baseRes.moraMaxPct ? 'var(--success)' : 'var(--danger)';
+  const anyActive  = STRESS_VARS.some(v => stressState[v.key] !== 0);
+
+  document.getElementById('stressSummary').innerHTML = `
+    <div class="stress-kpi">
+      <div class="stress-kpi-label">💵 Flujo libre estresado</div>
+      <div class="stress-kpi-val" style="color:${stressRes.flujoLibre >= 0 ? 'var(--success)' : 'var(--danger)'}">${fmtM(stressRes.flujoLibre)}</div>
+      <div class="stress-kpi-delta" style="color:${deltaColor}">${delta >= 0 ? '+' : ''}${fmtM(delta)} vs base</div>
+    </div>
+    <div class="stress-kpi">
+      <div class="stress-kpi-label">📊 Mora máx. tolerable</div>
+      <div class="stress-kpi-val" style="color:${moraColor}">${fmtP(stressRes.moraMaxPct)}</div>
+      <div class="stress-kpi-delta" style="color:${moraColor}">${(stressRes.moraMaxPct - baseRes.moraMaxPct) >= 0 ? '+' : ''}${fmtP(stressRes.moraMaxPct - baseRes.moraMaxPct)} vs base</div>
+    </div>
+    <div class="stress-kpi">
+      <div class="stress-kpi-label">🏦 Capital total estresado</div>
+      <div class="stress-kpi-val" style="color:var(--gray-700)">${fmtM(stressRes.capitalTotal)}</div>
+      <div class="stress-kpi-delta" style="color:var(--gray-500)">${fmtM(stressRes.capitalTotal - baseRes.capitalTotal)} vs base</div>
+    </div>
+    <div class="stress-kpi">
+      <div class="stress-kpi-label">📈 Ingresos estresados</div>
+      <div class="stress-kpi-val" style="color:var(--gray-700)">${fmtM(stressRes.ingresoTotal)}</div>
+      <div class="stress-kpi-delta" style="color:${stressRes.ingresoTotal >= baseRes.ingresoTotal ? 'var(--success)' : 'var(--danger)'}">${fmtM(stressRes.ingresoTotal - baseRes.ingresoTotal)} vs base</div>
+    </div>
+    <div style="display:flex;align-items:center">
+      <button class="stress-reset-all" onclick="resetAllStress()" ${!anyActive ? 'style="opacity:.4;cursor:default"' : ''}>↺ Resetear todo</button>
+    </div>`;
+
+  // Banner de stress activo en la sección de resultados
+  const banner = document.getElementById('stressBanner');
+  if (banner) {
+    banner.style.display = anyActive ? 'flex' : 'none';
+    const activeVars = STRESS_VARS.filter(v => stressState[v.key] !== 0)
+      .map(v => `${v.label} ${stressState[v.key] > 0 ? '+' : ''}${stressState[v.key]}%`).join(' · ');
+    const txt = document.getElementById('stressBannerTxt');
+    if (txt) txt.textContent = `⚡ Stress activo: ${activeVars}`;
+  }
+}
+
+// ──────────────────────────────────────────
 // SENSIBILIDAD
 // ──────────────────────────────────────────
 const VARIATIONS = [-0.30, -0.20, -0.10, 0, 0.10, 0.20, 0.30];
@@ -1316,7 +1590,7 @@ const VAR_LABELS = ['-30%', '-20%', '-10%', 'Base', '+10%', '+20%', '+30%'];
 
 function actualizarSens() {
   const varName = document.getElementById('sensVar').value;
-  const inp     = getInputs();
+  const inp     = getEffectiveInputs();
   const base    = calcRes(inp);
   const baseVal = inp[varName];
 
@@ -1506,8 +1780,8 @@ function setText(id, txt) {
 // CALCULAR — punto de entrada principal
 // ──────────────────────────────────────────
 function calcular() {
-  const inp   = getInputs();
-  const warns = validar(inp);
+  const inp   = getEffectiveInputs();   // incluye stress del combinador si está activo
+  const warns = validar(getInputs());   // validar sobre inputs crudos
   const wBox  = document.getElementById('warnBox');
 
   if (warns.length) {
@@ -1524,6 +1798,7 @@ function calcular() {
   renderEscenarios(inp, res);
   renderEscaleraMora();
   renderAmort();
+  if (document.getElementById('stressGrid').children.length) refreshStressDisplay();
 }
 
 // ──────────────────────────────────────────
@@ -1571,6 +1846,7 @@ window.addEventListener('load', () => {
   document.getElementById('sensVar').addEventListener('change', actualizarSens);
 
   // Init
+  buildStressGrid();
   calcular();
 });
 
