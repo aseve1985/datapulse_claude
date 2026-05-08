@@ -422,7 +422,7 @@
           <label for="cantCreditos">Cantidad de créditos</label>
           <div class="input-wrap">
             <span class="i-pre">#</span>
-            <input type="number" id="cantCreditos" value="1000" min="0" class="has-pre" />
+            <input type="number" id="cantCreditos" value="1" min="0" class="has-pre" />
           </div>
           <span class="input-hint">Total de créditos a otorgar</span>
         </div>
@@ -431,7 +431,7 @@
           <label for="capitalCredito">Capital por crédito</label>
           <div class="input-wrap">
             <span class="i-pre">$</span>
-            <input type="number" id="capitalCredito" value="50000" min="0" class="has-pre" />
+            <input type="number" id="capitalCredito" value="60000" min="0" class="has-pre" />
           </div>
           <span class="input-hint">Monto desembolsado por crédito</span>
         </div>
@@ -439,7 +439,7 @@
         <div class="input-group">
           <label for="plazo">Plazo del crédito</label>
           <div class="input-wrap">
-            <input type="number" id="plazo" value="12" min="1" max="360" class="has-suf" />
+            <input type="number" id="plazo" value="1" min="1" max="360" class="has-suf" />
             <span class="i-suf">m</span>
           </div>
           <span class="input-hint">Duración en meses</span>
@@ -471,7 +471,7 @@
           <label for="crossSelling">Cuota cross selling / mes</label>
           <div class="input-wrap">
             <span class="i-pre">$</span>
-            <input type="number" id="crossSelling" value="500" min="0" class="has-pre" />
+            <input type="number" id="crossSelling" value="19900" min="0" class="has-pre" />
           </div>
           <span class="input-hint">Por crédito activo, por mes</span>
         </div>
@@ -480,7 +480,7 @@
           <label for="punitorios">Punitorios promedio</label>
           <div class="input-wrap">
             <span class="i-pre">$</span>
-            <input type="number" id="punitorios" value="1000" min="0" class="has-pre" />
+            <input type="number" id="punitorios" value="0" min="0" class="has-pre" />
           </div>
           <span class="input-hint">Monto total por crédito durante el plazo</span>
         </div>
@@ -494,7 +494,7 @@
           <label for="costoAdq">Costo de adquisición</label>
           <div class="input-wrap">
             <span class="i-pre">$</span>
-            <input type="number" id="costoAdq" value="2000" min="0" class="has-pre" />
+            <input type="number" id="costoAdq" value="30000" min="0" class="has-pre" />
           </div>
           <span class="input-hint">Por crédito otorgado (originación)</span>
         </div>
@@ -502,7 +502,7 @@
         <div class="input-group">
           <label for="tasaDirecta">Tasa directa (pricing bruto)</label>
           <div class="input-wrap">
-            <input type="number" id="tasaDirecta" value="15" min="0" max="500" step="0.01" class="has-suf" />
+            <input type="number" id="tasaDirecta" value="50" min="0" max="500" step="0.01" class="has-suf" />
             <span class="i-suf">%</span>
           </div>
           <span class="input-hint">Tasa total ofrecida al cliente sobre el capital</span>
@@ -511,7 +511,7 @@
         <div class="input-group">
           <label for="bonificacion">Bonificación de tasa</label>
           <div class="input-wrap">
-            <input type="number" id="bonificacion" value="1" min="0" max="100" step="0.01" class="has-suf" />
+            <input type="number" id="bonificacion" value="50" min="0" max="100" step="0.01" class="has-suf" />
             <span class="i-suf">%</span>
           </div>
           <span class="input-hint">Rebate multiplicativo → Interés = Tasa × (1 − Bonif%/100)</span>
@@ -622,6 +622,18 @@
       </div>
     </div>
 
+    <!-- Combinador de stress -->
+    <div style="margin-top:1rem;">
+      <div class="section-title" style="margin-bottom:.75rem;">🧪 Combinador de stress — todas las variables</div>
+      <div class="card">
+        <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:1.1rem;">
+          Mové cada slider para estresar o mejorar una variable en forma independiente. El resultado se recalcula en tiempo real con la combinación de todos los ajustes.
+        </div>
+        <div class="stress-grid" id="stressGrid"></div>
+        <div class="stress-summary" id="stressSummary"></div>
+      </div>
+    </div>
+
     <!-- Desglose detallado -->
     <div class="card" style="margin-top:1rem;">
       <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">📋 Desglose detallado</div>
@@ -707,18 +719,6 @@
         <span class="badge badge-blue" id="chartBadge">Tasa directa</span>
       </div>
       <canvas id="chart" height="290"></canvas>
-    </div>
-  </div>
-
-  <!-- ====== STRESS COMBINADO ====== -->
-  <div class="section">
-    <div class="section-title">🧪 Combinador de stress — todas las variables</div>
-    <div class="card">
-      <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:1.1rem;">
-        Mové cada slider para estresar o mejorar una variable en forma independiente. El resultado se recalcula en tiempo real con la combinación de todos los ajustes.
-      </div>
-      <div class="stress-grid" id="stressGrid"></div>
-      <div class="stress-summary" id="stressSummary"></div>
     </div>
   </div>
 
@@ -914,14 +914,14 @@
 // DEFAULTS
 // ──────────────────────────────────────────
 const DEFAULTS = {
-  cantCreditos:   1000,
-  capitalCredito: 50000,
-  plazo:          12,
-  crossSelling:   500,
-  punitorios:     1000,
-  costoAdq:       2000,
-  tasaDirecta:    15,
-  bonificacion:   1
+  cantCreditos:   1,
+  capitalCredito: 60000,
+  plazo:          1,
+  crossSelling:   19900,
+  punitorios:     0,
+  costoAdq:       30000,
+  tasaDirecta:    50,
+  bonificacion:   50
 };
 
 // Sensibilidad: variables analizables y sus metadatos
