@@ -477,6 +477,15 @@
         </div>
 
         <div class="input-group">
+          <label for="aceptacionCS">Aceptación cross selling</label>
+          <div class="input-wrap">
+            <input type="number" id="aceptacionCS" value="70" min="0" max="100" step="1" class="has-suf" />
+            <span class="i-suf">%</span>
+          </div>
+          <span class="input-hint">% de créditos que toman el servicio</span>
+        </div>
+
+        <div class="input-group">
           <label for="punitorios">Punitorios promedio</label>
           <div class="input-wrap">
             <span class="i-pre">$</span>
@@ -828,7 +837,7 @@
           <div class="f-num">4</div>
           <div>
             <div class="f-name">Ingresos por cross selling / servicio</div>
-            <span class="f-eq">Cross selling = Cantidad créditos × Cuota mensual × Plazo (meses)</span>
+            <span class="f-eq">Cross selling = Cantidad créditos × Aceptación% × Cuota mensual × Plazo (meses)</span>
           </div>
         </div>
         <div class="formula-item">
@@ -918,6 +927,7 @@ const DEFAULTS = {
   capitalCredito: 60000,
   plazo:          1,
   crossSelling:   19900,
+  aceptacionCS:   70,
   punitorios:     0,
   costoAdq:       30000,
   tasaDirecta:    50,
@@ -981,6 +991,7 @@ function getInputs() {
     capitalCredito: gv('capitalCredito'),
     plazo:          gv('plazo'),
     crossSelling:   gv('crossSelling'),
+    aceptacionCS:   gv('aceptacionCS'),
     punitorios:     gv('punitorios'),
     costoAdq:       gv('costoAdq'),
     tasaDirecta:    gv('tasaDirecta'),
@@ -1007,7 +1018,7 @@ function getEffectiveInputs() {
 // ──────────────────────────────────────────
 function calcRes(inp) {
   const { cantCreditos, capitalCredito, plazo,
-          crossSelling, punitorios,
+          crossSelling, aceptacionCS, punitorios,
           costoAdq, tasaDirecta, bonificacion } = inp;
 
   const capitalTotal = cantCreditos * capitalCredito;
@@ -1016,7 +1027,8 @@ function calcRes(inp) {
   // interés% = tasaDirecta × (1 − bonificacion/100)
   const interesPct       = tasaDirecta * (1 - bonificacion / 100);
   const ingresoIntereses = capitalTotal * (interesPct / 100);
-  const ingresoCS        = cantCreditos * crossSelling * plazo;
+  const creditosCS       = cantCreditos * (Math.min(Math.max(aceptacionCS, 0), 100) / 100);
+  const ingresoCS        = creditosCS * crossSelling * plazo;
   const ingresoPun       = cantCreditos * punitorios;
   const ingresoTotal     = ingresoIntereses + ingresoCS + ingresoPun;
 
@@ -1834,7 +1846,7 @@ window.addEventListener('load', () => {
   });
 
   // Plazo y otros → calcular directamente
-  ['plazo', 'crossSelling', 'punitorios', 'costoAdq'].forEach(id => {
+  ['plazo', 'crossSelling', 'aceptacionCS', 'punitorios', 'costoAdq'].forEach(id => {
     document.getElementById(id).addEventListener('input', calcular);
   });
 
