@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Calculadora Break-Even — Cartera de Créditos</title>
+  <title>Calculadora Break-Even</title>
   <style>
     /* ===== VARIABLES — DARK THEME ===== */
     :root {
@@ -57,6 +57,10 @@
     }
     .header-left { display: flex; align-items: center; gap: 1rem; }
     .header-logo { height: 36px; width: auto; object-fit: contain; filter: brightness(0) invert(1); opacity: .9; }
+    .header-logo-text {
+      font-size: 1.05rem; font-weight: 900; color: #fff; letter-spacing: 3px;
+      opacity: .85; line-height: 1; font-style: italic;
+    }
     .header-divider { width: 1px; height: 32px; background: var(--border); }
     .header-text h1 { font-size: 1.15rem; font-weight: 800; color: #fff; letter-spacing: -.2px; }
     .header-text p  { font-size: .72rem; color: var(--gray-500); margin-top: 2px; }
@@ -391,7 +395,7 @@
     /* ===== LAYOUT DOS COLUMNAS ===== */
     .main-layout {
       display: grid;
-      grid-template-columns: 1fr 310px;
+      grid-template-columns: 1fr 420px;
       gap: 1.4rem;
       align-items: start;
     }
@@ -404,34 +408,58 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 1.1rem 1rem;
+      padding: .9rem .8rem;
       max-height: calc(100vh - 2rem);
       overflow-y: auto;
     }
     .sidebar-title {
-      font-size: .72rem;
+      font-size: .68rem;
       font-weight: 700;
       color: var(--gray-600);
       text-transform: uppercase;
       letter-spacing: .08em;
-      margin-bottom: .85rem;
+      margin-bottom: .7rem;
+    }
+    /* Compact table styles inside sidebar */
+    .sidebar-desglose .tbl-wrap {
+      border: none;
+      border-radius: 0;
+    }
+    .sidebar-desglose table {
+      font-size: .62rem;
+    }
+    .sidebar-desglose th {
+      padding: .3rem .4rem;
+      font-size: .57rem;
+      white-space: nowrap;
+    }
+    .sidebar-desglose td {
+      padding: .28rem .4rem;
+    }
+    .sidebar-desglose td:first-child {
+      max-width: 110px;
+    }
+    .sidebar-desglose td:not(:first-child) {
+      white-space: nowrap;
     }
 
     /* ===== TABS ===== */
     .tab-nav {
       display: flex;
       gap: .25rem;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
       margin-bottom: 1.2rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: .3rem;
     }
+    .tab-nav::-webkit-scrollbar { display: none; }
     .tab-btn {
-      flex: 1;
-      min-width: 70px;
-      padding: .42rem .6rem;
+      flex: 0 0 auto;
+      padding: .42rem .85rem;
       border: none;
       background: transparent;
       color: var(--gray-500);
@@ -454,16 +482,107 @@
       .main-layout { grid-template-columns: 1fr; }
       .sidebar-desglose { position: static; max-height: none; }
     }
+
+  /* ══════════════════════════════════════════
+     TAB 6: CICLO DE VIDA
+  ═══════════════════════════════════════════ */
+  .cv-header { display:flex; align-items:center; gap:.6rem; margin-bottom:1rem; }
+  .cv-header h3 { font-size:1rem; font-weight:700; color:var(--gray-900); margin:0; }
+  .cv-header .cv-mode-toggle { margin-left:auto; display:flex; gap:.4rem; }
+  .cv-mode-toggle button {
+    padding:.3rem .7rem; border:1px solid var(--border); border-radius:6px;
+    background:var(--surface-2); color:var(--gray-400); font-size:.72rem;
+    font-weight:700; cursor:pointer; transition:.15s;
+  }
+  .cv-mode-toggle button.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+  .cv-block {
+    border:1.5px solid var(--border); border-radius:12px;
+    margin-bottom:.8rem; overflow:hidden;
+  }
+  .cv-block-header {
+    display:flex; align-items:center; gap:.6rem;
+    padding:.6rem .9rem; cursor:pointer; user-select:none;
+    background:var(--surface-2);
+  }
+  .cv-block-header .cv-dot {
+    width:10px; height:10px; border-radius:50%; flex-shrink:0;
+  }
+  .cv-block-header .cv-title { font-size:.82rem; font-weight:700; flex:1; }
+  .cv-block-header .cv-summary { font-size:.72rem; color:var(--gray-400); margin-left:auto; }
+  .cv-block-header .cv-chevron { font-size:.7rem; color:var(--gray-500); transition:.2s; }
+  .cv-block-header .cv-chevron.open { transform:rotate(90deg); }
+  .cv-reset-btn {
+    padding:.15rem .4rem; border:1px solid var(--border); border-radius:5px;
+    background:var(--surface); color:var(--gray-400); font-size:.72rem;
+    cursor:pointer; line-height:1; transition:.15s;
+  }
+  .cv-reset-btn:hover { background:var(--danger); color:#fff; border-color:var(--danger); }
+  .cv-readonly-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:.5rem; padding:.8rem .9rem; }
+
+  /* credit color accents */
+  .cv-block-c1 { border-color:#3b82f6; }
+  .cv-block-c1 .cv-block-header { border-bottom:1px solid #3b82f6; }
+  .cv-block-c1 .cv-dot { background:#3b82f6; }
+  .cv-block-c2 { border-color:var(--success); }
+  .cv-block-c2 .cv-block-header { border-bottom:1px solid var(--success); }
+  .cv-block-c2 .cv-dot { background:var(--success); }
+  .cv-block-c3 { border-color:var(--warning); }
+  .cv-block-c3 .cv-block-header { border-bottom:1px solid var(--warning); }
+  .cv-block-c3 .cv-dot { background:var(--warning); }
+  .cv-block-c4 { border-color:var(--purple); }
+  .cv-block-c4 .cv-block-header { border-bottom:1px solid var(--purple); }
+  .cv-block-c4 .cv-dot { background:var(--purple); }
+  .cv-block-c5 { border-color:var(--danger); }
+  .cv-block-c5 .cv-block-header { border-bottom:1px solid var(--danger); }
+  .cv-block-c5 .cv-dot { background:var(--danger); }
+
+  .cv-block-body { padding:.8rem .9rem; display:none; }
+  .cv-block-body.open { display:block; }
+
+  /* C1 read-only grid */
+  .cv-ro-item { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.4rem .6rem; }
+  .cv-ro-item .cv-ro-label { font-size:.58rem; text-transform:uppercase; letter-spacing:.05em; color:var(--gray-500); }
+  .cv-ro-item .cv-ro-val { font-size:.82rem; font-weight:700; color:var(--gray-900); margin-top:.1rem; }
+
+  /* C2-C5 input form */
+  .cv-form-grid {
+    display:grid; grid-template-columns:repeat(3,1fr); gap:.5rem; margin-bottom:.7rem;
+  }
+  .cv-form-grid .input-group { margin:0; }
+  .cv-form-grid label { font-size:.6rem; }
+  .cv-form-grid input { font-size:.78rem; padding:.3rem .5rem; }
+
+  /* Desglose 2 acumulado */
+  .cv-desglose { margin-top:1.2rem; }
+  .cv-desglose h4 { font-size:.78rem; font-weight:700; color:var(--gray-300); margin-bottom:.5rem; }
+  .cv-desglose table { width:100%; border-collapse:collapse; font-size:.68rem; }
+  .cv-desglose th {
+    background:var(--surface-2); color:var(--gray-400); font-size:.6rem;
+    text-transform:uppercase; letter-spacing:.04em;
+    padding:.35rem .5rem; text-align:right; white-space:nowrap;
+    border-bottom:1px solid var(--border);
+  }
+  .cv-desglose th:first-child { text-align:left; }
+  .cv-desglose td { padding:.32rem .5rem; border-bottom:1px solid var(--border); text-align:right; }
+  .cv-desglose td:first-child { text-align:left; font-weight:600; }
+  .cv-row-c1 td:first-child { color:#3b82f6; }
+  .cv-row-c2 td:first-child { color:var(--success); }
+  .cv-row-c3 td:first-child { color:var(--warning); }
+  .cv-row-c4 td:first-child { color:var(--purple); }
+  .cv-row-c5 td:first-child { color:var(--danger); }
+  .cv-row-total td { font-weight:800; background:var(--surface-2); border-top:2px solid var(--border); }
+  .cv-row-total td:first-child { color:var(--gray-900); }
   </style>
 </head>
 <body>
 
 <header class="header">
   <div class="header-left">
-    <img src="Logo-Libgot-Azul-Logo-completo.png" alt="Libgot" class="header-logo" />
+    <img src="/favicon.png" class="header-logo" alt="Libgot">
     <div class="header-divider"></div>
     <div class="header-text">
-      <h1>Calculadora Break-Even — Cartera de Créditos</h1>
+      <h1>Calculadora Break-Even</h1>
       <p>Analizá cuánta mora podés soportar antes del punto de equilibrio y qué variable mueve más tu rentabilidad</p>
     </div>
   </div>
@@ -480,11 +599,12 @@
 
       <!-- Tab Navigation -->
       <nav class="tab-nav">
-        <button class="tab-btn active" onclick="switchTab(1)">📊 Variables &amp; Resultados</button>
+        <button class="tab-btn active" onclick="switchTab(1)">📊 Variables</button>
         <button class="tab-btn" onclick="switchTab(2)">🧪 Stress &amp; Mora</button>
         <button class="tab-btn" onclick="switchTab(3)">🎭 Escenarios</button>
-        <button class="tab-btn" onclick="switchTab(4)">📅 Tabla de cuotas</button>
+        <button class="tab-btn" onclick="switchTab(4)">📅 Cuotas</button>
         <button class="tab-btn" onclick="switchTab(5)">📐 Glosario</button>
+        <button class="tab-btn" onclick="switchTab(6)">🔄 Ciclo de vida</button>
       </nav>
 
       <!-- ====== TAB 1: VARIABLES + RESULTADOS + TASAS ====== -->
@@ -579,7 +699,7 @@
 
       <!-- Grupo: Costos -->
       <div class="input-card">
-        <div class="input-card-title">💸 Costos y tasa</div>
+        <div class="input-card-title">💸 Costos</div>
 
         <div class="input-group">
           <label for="costoAdq">Costo de adquisición</label>
@@ -589,6 +709,11 @@
           </div>
           <span class="input-hint">Por crédito otorgado (originación)</span>
         </div>
+      </div>
+
+      <!-- Grupo: Tasas -->
+      <div class="input-card">
+        <div class="input-card-title">📐 Tasas</div>
 
         <div class="input-group">
           <label for="tasaDirecta">Tasa directa (pricing bruto)</label>
@@ -662,7 +787,7 @@
       <div class="res-card" id="r-cardResultado">
         <div class="res-label">💵 Flujo libre antes de mora</div>
         <div class="res-value lg" id="r-resultado">—</div>
-        <div class="res-sub">Ingresos − Costos − IVA − IIBB</div>
+        <div class="res-sub">Ingresos − Costos − IVA interés − IVA CS − IIBB</div>
       </div>
       <div class="res-card hl">
         <div class="res-label">🛡️ Mora máxima tolerable ($)</div>
@@ -986,6 +1111,100 @@
   </div>
 
       </div><!-- /tab5 -->
+      <!-- ====== TAB 6: CICLO DE VIDA ====== -->
+      <div id="tab6" class="tab-panel">
+        <div class="section">
+          <div class="section-title">🔄 Ciclo de vida del cliente</div>
+
+          <div class="cv-header">
+            <h3>Renovaciones sucesivas · C1 → C5</h3>
+            <div class="cv-mode-toggle">
+              <button id="cvModeBase" class="active" onclick="setCvMode('base')">Base</button>
+              <button id="cvModeStress" onclick="setCvMode('stress')">Estresado</button>
+            </div>
+          </div>
+
+          <!-- C1 read-only — always expanded, not collapsible -->
+          <div id="cvBlock1" class="cv-block cv-block-c1">
+            <div class="cv-block-header" style="cursor:default">
+              <span class="cv-dot"></span>
+              <span class="cv-title">📌 Crédito 1 (heredado de Variables)</span>
+              <span class="cv-summary" id="cvSummary1">—</span>
+            </div>
+            <div id="cvReadonly1" class="cv-readonly-grid"></div>
+          </div>
+
+          <!-- C2-C5 collapsible -->
+          <div id="cvBlock2" class="cv-block cv-block-c2">
+            <div class="cv-block-header" onclick="toggleCicloCredit(2)">
+              <span class="cv-dot"></span>
+              <span class="cv-title">🔁 Crédito 2</span>
+              <span class="cv-summary" id="cvSummary2">—</span>
+              <button class="cv-reset-btn" onclick="resetCicloCredit(2);event.stopPropagation()" title="Limpiar campos">🗑️</button>
+              <span class="cv-chevron" id="cvChevron2">▶</span>
+            </div>
+            <div id="cvBody2" class="cv-block-body"></div>
+          </div>
+
+          <div id="cvBlock3" class="cv-block cv-block-c3">
+            <div class="cv-block-header" onclick="toggleCicloCredit(3)">
+              <span class="cv-dot"></span>
+              <span class="cv-title">🔁 Crédito 3</span>
+              <span class="cv-summary" id="cvSummary3">—</span>
+              <button class="cv-reset-btn" onclick="resetCicloCredit(3);event.stopPropagation()" title="Limpiar campos">🗑️</button>
+              <span class="cv-chevron" id="cvChevron3">▶</span>
+            </div>
+            <div id="cvBody3" class="cv-block-body"></div>
+          </div>
+
+          <div id="cvBlock4" class="cv-block cv-block-c4">
+            <div class="cv-block-header" onclick="toggleCicloCredit(4)">
+              <span class="cv-dot"></span>
+              <span class="cv-title">🔁 Crédito 4</span>
+              <span class="cv-summary" id="cvSummary4">—</span>
+              <button class="cv-reset-btn" onclick="resetCicloCredit(4);event.stopPropagation()" title="Limpiar campos">🗑️</button>
+              <span class="cv-chevron" id="cvChevron4">▶</span>
+            </div>
+            <div id="cvBody4" class="cv-block-body"></div>
+          </div>
+
+          <div id="cvBlock5" class="cv-block cv-block-c5">
+            <div class="cv-block-header" onclick="toggleCicloCredit(5)">
+              <span class="cv-dot"></span>
+              <span class="cv-title">🔁 Crédito 5</span>
+              <span class="cv-summary" id="cvSummary5">—</span>
+              <button class="cv-reset-btn" onclick="resetCicloCredit(5);event.stopPropagation()" title="Limpiar campos">🗑️</button>
+              <span class="cv-chevron" id="cvChevron5">▶</span>
+            </div>
+            <div id="cvBody5" class="cv-block-body"></div>
+          </div>
+
+          <!-- Desglose 2 acumulado -->
+          <div class="cv-desglose">
+            <h4>📊 Desglose 2 · Acumulado por crédito</h4>
+            <div class="tbl-wrap">
+              <table id="cvDesgloseTable">
+                <thead>
+                  <tr>
+                    <th>Crédito</th>
+                    <th>Capital total</th>
+                    <th>Ing. intereses</th>
+                    <th>Ing. cross</th>
+                    <th>Ing. punitorios</th>
+                    <th>Costos adq.</th>
+                    <th>IVA + IIBB</th>
+                    <th>Resultado</th>
+                    <th>Flujo libre</th>
+                  </tr>
+                </thead>
+                <tbody id="cvDesgloseBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /tab6 -->
+
 
     </div><!-- /tab-area -->
 
@@ -1014,8 +1233,8 @@
 
 
 <footer>
-  <img src="Logo-Libgot-Azul-Logo-completo.png" alt="Libgot" style="height:18px;opacity:.35;filter:brightness(0) invert(1);vertical-align:middle;margin-right:.5rem" />
-  Libgot &middot; Calculadora Break-Even — Cartera de Créditos &middot; Uso interno
+  <span style="font-weight:900;font-style:italic;letter-spacing:2px;opacity:.4;margin-right:.5rem">LIBGOT</span>
+  Calculadora Break-Even &middot; Uso interno
 </footer>
 
 <!-- ========== JAVASCRIPT ========== -->
@@ -1108,8 +1327,12 @@ function getEffectiveInputs() {
   const out  = { ...base };
   if (typeof stressState === 'undefined') return out;
   STRESS_VARS.forEach(v => {
-    const pct = stressState[v.key] || 0;
-    out[v.key] = base[v.key] * (1 + pct / 100);
+    const delta = stressState[v.key] || 0;
+    if (v.mode === 'abs') {
+      out[v.key] = Math.max(0, base[v.key] + delta);
+    } else {
+      out[v.key] = base[v.key] * (1 + delta / 100);
+    }
     if (v.key === 'plazo' || v.key === 'cantCreditos')
       out[v.key] = Math.max(1, Math.round(out[v.key]));
   });
@@ -1140,10 +1363,11 @@ function calcRes(inp) {
 
   const resultado = ingresoTotal - costoTotal;
 
-  // Impuestos sobre el interés devengado
+  // Impuestos
   const iva            = ingresoIntereses * 0.21;          // IVA 21% sobre interés
   const iibb           = iva * 0.03;                       // IIBB 3% del IVA
-  const impuestosTotal = iva + iibb;
+  const ivaCS          = ingresoCS * 0.21;                 // IVA 21% sobre cross selling
+  const impuestosTotal = iva + iibb + ivaCS;
 
   // Flujo libre = resultado antes de mora − impuestos
   const flujoLibre   = resultado - impuestosTotal;
@@ -1153,7 +1377,7 @@ function calcRes(inp) {
   return {
     capitalTotal, interesPct, ingresoIntereses, ingresoCS, ingresoPun, ingresoTotal,
     costoAdqTotal, costoTotal,
-    resultado, iva, iibb, impuestosTotal, flujoLibre,
+    resultado, iva, iibb, ivaCS, impuestosTotal, flujoLibre,
     moraMaxMonto, moraMaxPct
   };
 }
@@ -1343,8 +1567,9 @@ function renderPrincipal(inp, res) {
     { label: '❌ Costo de adquisición',     val: -res.costoAdqTotal,   sign: -1 },
   ];
   const rowsImpuestos = [
-    { label: '🧾 IVA (21% s/ interés)',     val: -res.iva,             sign: -1 },
-    { label: '🧾 IIBB (3% del IVA)',        val: -res.iibb,            sign: -1 },
+    { label: '🧾 IVA (21% s/ interés)',        val: -res.iva,   sign: -1 },
+    { label: '🧾 IIBB (3% del IVA)',           val: -res.iibb,  sign: -1 },
+    { label: '🧾 IVA (21% s/ cross selling)',   val: -res.ivaCS, sign: -1 },
   ];
 
   const fmtRow = (r, style='') => `
@@ -1361,7 +1586,7 @@ function renderPrincipal(inp, res) {
   let html = '';
   html += rowsIngresos.map(r => fmtRow(r)).join('');
   html += rowsCostos.map(r => fmtRow(r)).join('');
-  html += `<tr style="font-weight:700;background:#eff6ff">
+  html += `<tr style="font-weight:700;background:#1e3a5f">
     <td>📊 Resultado antes de mora e impuestos</td>
     <td class="${resClass}">${fmtM(res.resultado)}</td>
     <td class="${resClass}">${fmtM(res.resultado / cred)}</td>
@@ -1369,8 +1594,8 @@ function renderPrincipal(inp, res) {
   </tr>`;
   html += `<tr><td colspan="4" style="padding:.3rem 1rem;font-size:.72rem;font-weight:600;color:var(--gray-400);background:var(--gray-50);text-transform:uppercase;letter-spacing:.05em">Impuestos</td></tr>`;
   html += rowsImpuestos.map(r => fmtRow(r)).join('');
-  html += `<tr style="font-weight:800;background:#f0fdf4;border-top:2px solid #16a34a">
-    <td style="color:#15803d">💵 Flujo libre (antes de mora)</td>
+  html += `<tr style="font-weight:800;background:#1a3028;border-top:2px solid var(--success)">
+    <td style="color:var(--success)">💵 Flujo libre (antes de mora)</td>
     <td class="${flujClass}" style="font-size:1.05rem">${fmtM(res.flujoLibre)}</td>
     <td class="${flujClass}">${fmtM(res.flujoLibre / cred)}</td>
     <td class="${flujClass}">${fmtP(res.flujoLibre / ct * 100)}</td>
@@ -1565,14 +1790,14 @@ function renderEscaleraMora() {
 // STRESS COMBINADO
 // ──────────────────────────────────────────
 const STRESS_VARS = [
-  { key: 'tasaDirecta',  label: 'Tasa directa',         fmt: v => r2(v) + '%',  min: -50, max: 50 },
-  { key: 'bonificacion', label: 'Bonificación de tasa',  fmt: v => r2(v) + '%',  min: -50, max: 50 },
-  { key: 'crossSelling', label: 'Cross selling mensual', fmt: v => fmtM(v),       min: -80, max: 100 },
-  { key: 'punitorios',   label: 'Punitorios promedio',   fmt: v => fmtM(v),       min: -80, max: 100 },
-  { key: 'costoAdq',     label: 'Costo de adquisición',  fmt: v => fmtM(v),       min: -80, max: 100 },
-  { key: 'plazo',        label: 'Plazo (meses)',          fmt: v => Math.round(v) + ' m', min: -50, max: 50 },
-  { key: 'cantCreditos', label: 'Cantidad de créditos',  fmt: v => Math.round(v).toLocaleString('es-AR'), min: -50, max: 50 },
-  { key: 'capitalCredito',label: 'Capital por crédito',  fmt: v => fmtM(v),       min: -50, max: 50 },
+  { key: 'tasaDirecta',   label: 'Tasa directa',         fmt: v => r2(v) + '%',  min: -50,    max: 50,    step: 1,   mode: 'pct' },
+  { key: 'bonificacion',  label: 'Bonificación de tasa',  fmt: v => r2(v) + '%',  min: -50,    max: 50,    step: 1,   mode: 'pct' },
+  { key: 'crossSelling',  label: 'Cross selling mensual', fmt: v => fmtM(v),       min: -80,    max: 100,   step: 1,   mode: 'pct' },
+  { key: 'punitorios',    label: 'Punitorios promedio',   fmt: v => fmtM(v),       min: -10000, max: 50000, step: 100, mode: 'abs' },
+  { key: 'costoAdq',      label: 'Costo de adquisición',  fmt: v => fmtM(v),       min: -80,    max: 100,   step: 1,   mode: 'pct' },
+  { key: 'plazo',         label: 'Plazo (meses)',          fmt: v => Math.round(v) + ' m', min: -50, max: 50, step: 1, mode: 'pct' },
+  { key: 'cantCreditos',  label: 'Cantidad de créditos',  fmt: v => Math.round(v).toLocaleString('es-AR'), min: -50, max: 50, step: 1, mode: 'pct' },
+  { key: 'capitalCredito',label: 'Capital por crédito',   fmt: v => fmtM(v),       min: -50,    max: 50,    step: 1,   mode: 'pct' },
 ];
 
 // Estado de los sliders (variación % por variable)
@@ -1581,25 +1806,30 @@ STRESS_VARS.forEach(v => stressState[v.key] = 0);
 
 function buildStressGrid() {
   const grid = document.getElementById('stressGrid');
-  grid.innerHTML = STRESS_VARS.map(v => `
+  grid.innerHTML = STRESS_VARS.map(v => {
+    const isAbs  = v.mode === 'abs';
+    const minLbl = isAbs ? fmtM(v.min) : `${v.min}%`;
+    const maxLbl = isAbs ? fmtM(v.max) : `+${v.max}%`;
+    return `
     <div class="stress-var" id="sv-${v.key}">
       <div class="stress-var-header">
         <span class="stress-var-name">${v.label}</span>
-        <span class="stress-pct-badge zero" id="sb-${v.key}">0%</span>
+        <span class="stress-pct-badge zero" id="sb-${v.key}">${isAbs ? '$ 0' : '0%'}</span>
       </div>
       <div class="stress-values">
         <span class="stress-val-base" id="svbase-${v.key}">—</span>
         <span class="stress-arrow">→</span>
         <span class="stress-val-new"  id="svnew-${v.key}">—</span>
       </div>
-      <input type="range" min="${v.min}" max="${v.max}" step="1" value="0"
+      <input type="range" min="${v.min}" max="${v.max}" step="${v.step}" value="0"
              id="slider-${v.key}"
              oninput="onStressSlider('${v.key}', this.value)" />
       <div style="display:flex;justify-content:space-between;font-size:.6rem;color:var(--gray-400);margin-top:.2rem">
-        <span>${v.min}%</span><span>0</span><span>+${v.max}%</span>
+        <span>${minLbl}</span><span>0</span><span>${maxLbl}</span>
       </div>
       <button class="stress-reset" onclick="resetStressVar('${v.key}')">Resetear</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   refreshStressDisplay();
 }
 
@@ -1630,8 +1860,12 @@ function refreshStressDisplay() {
   // Construir inputs estresados
   const stressInp = { ...baseInp };
   STRESS_VARS.forEach(v => {
-    const pct = stressState[v.key];
-    stressInp[v.key] = baseInp[v.key] * (1 + pct / 100);
+    const delta = stressState[v.key];
+    if (v.mode === 'abs') {
+      stressInp[v.key] = Math.max(0, baseInp[v.key] + delta);
+    } else {
+      stressInp[v.key] = baseInp[v.key] * (1 + delta / 100);
+    }
     if (v.key === 'plazo' || v.key === 'cantCreditos')
       stressInp[v.key] = Math.max(1, Math.round(stressInp[v.key]));
   });
@@ -1647,8 +1881,11 @@ function refreshStressDisplay() {
     const bNew  = document.getElementById('svnew-' + v.key);
     if (!badge) return;
 
-    badge.textContent = (pct > 0 ? '+' : '') + pct + '%';
-    badge.className   = 'stress-pct-badge ' + (pct > 0 ? 'pos' : pct < 0 ? 'neg' : 'zero');
+    const delta = stressState[v.key];
+    badge.textContent = v.mode === 'abs'
+      ? (delta > 0 ? '+' : '') + fmtM(delta)
+      : (delta > 0 ? '+' : '') + delta + '%';
+    badge.className   = 'stress-pct-badge ' + (delta > 0 ? 'pos' : delta < 0 ? 'neg' : 'zero');
     card.classList.toggle('active', pct !== 0);
     bBase.textContent = v.fmt(baseInp[v.key]);
     bNew.textContent  = v.fmt(stressInp[v.key]);
@@ -1673,14 +1910,14 @@ function refreshStressDisplay() {
       <div class="stress-kpi-delta" style="color:${moraColor}">${(stressRes.moraMaxPct - baseRes.moraMaxPct) >= 0 ? '+' : ''}${fmtP(stressRes.moraMaxPct - baseRes.moraMaxPct)} vs base</div>
     </div>
     <div class="stress-kpi">
-      <div class="stress-kpi-label">🏦 Capital total estresado</div>
-      <div class="stress-kpi-val" style="color:var(--gray-700)">${fmtM(stressRes.capitalTotal)}</div>
-      <div class="stress-kpi-delta" style="color:var(--gray-500)">${fmtM(stressRes.capitalTotal - baseRes.capitalTotal)} vs base</div>
-    </div>
-    <div class="stress-kpi">
       <div class="stress-kpi-label">📈 Ingresos estresados</div>
       <div class="stress-kpi-val" style="color:var(--gray-700)">${fmtM(stressRes.ingresoTotal)}</div>
-      <div class="stress-kpi-delta" style="color:${stressRes.ingresoTotal >= baseRes.ingresoTotal ? 'var(--success)' : 'var(--danger)'}">${fmtM(stressRes.ingresoTotal - baseRes.ingresoTotal)} vs base</div>
+      <div class="stress-kpi-delta" style="color:${stressRes.ingresoTotal >= baseRes.ingresoTotal ? 'var(--success)' : 'var(--danger)'}">${(stressRes.ingresoTotal - baseRes.ingresoTotal) >= 0 ? '+' : ''}${fmtM(stressRes.ingresoTotal - baseRes.ingresoTotal)} vs base</div>
+    </div>
+    <div class="stress-kpi">
+      <div class="stress-kpi-label">💸 Costos estresados</div>
+      <div class="stress-kpi-val" style="color:var(--gray-700)">${fmtM(stressRes.costoTotal)}</div>
+      <div class="stress-kpi-delta" style="color:${stressRes.costoTotal <= baseRes.costoTotal ? 'var(--success)' : 'var(--danger)'}">${(stressRes.costoTotal - baseRes.costoTotal) >= 0 ? '+' : ''}${fmtM(stressRes.costoTotal - baseRes.costoTotal)} vs base</div>
     </div>
     <div style="display:flex;align-items:center">
       <button class="stress-reset-all" onclick="resetAllStress()" ${!anyActive ? 'style="opacity:.4;cursor:default"' : ''}>↺ Resetear todo</button>
@@ -1691,7 +1928,11 @@ function refreshStressDisplay() {
   if (banner) {
     banner.style.display = anyActive ? 'flex' : 'none';
     const activeVars = STRESS_VARS.filter(v => stressState[v.key] !== 0)
-      .map(v => `${v.label} ${stressState[v.key] > 0 ? '+' : ''}${stressState[v.key]}%`).join(' · ');
+      .map(v => {
+        const d = stressState[v.key];
+        const lbl = v.mode === 'abs' ? (d > 0 ? '+' : '') + fmtM(d) : (d > 0 ? '+' : '') + d + '%';
+        return `${v.label} ${lbl}`;
+      }).join(' · ');
     const txt = document.getElementById('stressBannerTxt');
     if (txt) txt.textContent = `⚡ Stress activo: ${activeVars}`;
   }
@@ -1830,6 +2071,7 @@ function calcular() {
   renderEscenarios(inp, res);
   renderEscaleraMora();
   renderAmort();
+  renderCicloVida();
   if (document.getElementById('stressGrid').children.length) refreshStressDisplay();
 }
 
@@ -1862,6 +2104,182 @@ function switchTab(n) {
   });
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// TAB 6: CICLO DE VIDA
+// ══════════════════════════════════════════════════════════════
+
+const CV_FIELDS = [
+  { key: 'cantCreditos',  label: 'Cantidad créditos', fmt: v => Math.round(v).toLocaleString('es-AR') },
+  { key: 'capitalCredito',label: 'Capital por crédito', fmt: v => fmtM(v) },
+  { key: 'plazo',         label: 'Plazo (meses)', fmt: v => Math.round(v) + ' m' },
+  { key: 'tasaDirecta',   label: 'Tasa directa', fmt: v => r2(v) + '%' },
+  { key: 'bonificacion',  label: 'Bonificación', fmt: v => r2(v) + '%' },
+  { key: 'crossSelling',  label: 'Cross selling / mes', fmt: v => fmtM(v) },
+  { key: 'aceptacionCS',  label: '% Aceptación CS', fmt: v => r2(v) + '%' },
+  { key: 'punitorios',    label: 'Punitorios prom.', fmt: v => fmtM(v) },
+  { key: 'costoAdq',      label: 'Costo de adq.', fmt: v => fmtM(v) },
+];
+
+// stores editable values for C2-C5
+const cvState = { 2: null, 3: null, 4: null, 5: null };
+let cvMode = 'base'; // 'base' | 'stress'
+
+function setCvMode(mode) {
+  cvMode = mode;
+  document.getElementById('cvModeBase').classList.toggle('active', mode === 'base');
+  document.getElementById('cvModeStress').classList.toggle('active', mode === 'stress');
+  renderCicloVida();
+}
+
+function getC1Inputs() {
+  return cvMode === 'stress' ? getEffectiveInputs() : getInputs();
+}
+
+function buildCicloForms() {
+  for (let n = 2; n <= 5; n++) {
+    const body = document.getElementById('cvBody' + n);
+    if (!body) continue;
+    let html = '<div class="cv-form-grid">';
+    CV_FIELDS.forEach(f => {
+      html += `
+        <div class="input-group">
+          <label for="cv_${n}_${f.key}">${f.label}</label>
+          <input type="number" id="cv_${n}_${f.key}" step="any"
+            onchange="cvFieldChanged(${n})"
+            oninput="cvFieldChanged(${n})">
+        </div>`;
+    });
+    html += '</div>';
+    body.innerHTML = html;
+  }
+}
+
+function cvFieldChanged(n) {
+  if (!cvState[n]) cvState[n] = {};
+  CV_FIELDS.forEach(f => {
+    const el = document.getElementById('cv_' + n + '_' + f.key);
+    if (el) cvState[n][f.key] = parseFloat(el.value) || 0;
+  });
+  renderCicloVida();
+}
+
+function getCicloInputs(n) {
+  if (n === 1) return getC1Inputs();
+  const base = cvState[n] || {};
+  const out = {};
+  CV_FIELDS.forEach(f => {
+    out[f.key] = base[f.key] !== undefined ? base[f.key] : 0;
+  });
+  return out;
+}
+
+function resetCicloCredit(n) {
+  cvState[n] = null;
+  CV_FIELDS.forEach(f => {
+    const el = document.getElementById('cv_' + n + '_' + f.key);
+    if (el) el.value = '';
+  });
+  renderCicloVida();
+}
+
+function toggleCicloCredit(n) {
+  const body = document.getElementById('cvBody' + n);
+  const chev = document.getElementById('cvChevron' + n);
+  if (!body) return;
+  const opening = !body.classList.contains('open');
+  body.classList.toggle('open', opening);
+  if (chev) chev.classList.toggle('open', opening);
+}
+
+function renderCicloVida() {
+  const c1 = getC1Inputs();
+
+  // C1 read-only grid
+  const ro1 = document.getElementById('cvReadonly1');
+  if (ro1) {
+    ro1.innerHTML = CV_FIELDS.map(f =>
+      `<div class="cv-ro-item">
+        <div class="cv-ro-label">${f.label}</div>
+        <div class="cv-ro-val">${f.fmt(c1[f.key])}</div>
+      </div>`
+    ).join('');
+  }
+
+  // Compute results for all 5 credits
+  const results = [];
+  for (let n = 1; n <= 5; n++) {
+    const inp = getCicloInputs(n);
+    const res = calcRes(inp);
+    const hasData = n === 1 || !!cvState[n];
+    results.push({ n, inp, res, hasData });
+
+    // summary badge
+    const sumEl = document.getElementById('cvSummary' + n);
+    if (sumEl) {
+      sumEl.textContent = hasData
+        ? 'Resultado: ' + fmtM(res.resultado) + ' · Flujo: ' + fmtM(res.flujoLibre)
+        : '— sin datos';
+    }
+  }
+
+  // Desglose 2 table
+  const tbody = document.getElementById('cvDesgloseBody');
+  if (!tbody) return;
+
+  const colors = ['', '#3b82f6', 'var(--success)', 'var(--warning)', 'var(--purple)', 'var(--danger)'];
+  const rowClass = ['', 'cv-row-c1', 'cv-row-c2', 'cv-row-c3', 'cv-row-c4', 'cv-row-c5'];
+  let html = '';
+
+  let totCap=0, totInt=0, totCS=0, totPun=0, totCost=0, totImp=0, totRes=0, totFlujo=0;
+
+  results.forEach(({ n, res, hasData }) => {
+    if (!hasData) {
+      html += `<tr class="${rowClass[n]}" style="opacity:.4">
+        <td>C${n}</td>
+        <td colspan="8" style="text-align:center;font-style:italic;color:var(--gray-500)">sin datos cargados</td>
+      </tr>`;
+      return;
+    }
+    const cap   = res.capitalTotal;
+    const ing   = res.ingresoIntereses;
+    const cs    = res.ingresoCS;
+    const pun   = res.ingresoPun;
+    const cost  = res.costoAdqTotal;
+    const imp   = res.impuestosTotal;
+    const res_  = res.resultado;
+    const fl    = res.flujoLibre;
+    totCap+=cap; totInt+=ing; totCS+=cs; totPun+=pun;
+    totCost+=cost; totImp+=imp; totRes+=res_; totFlujo+=fl;
+
+    html += `<tr class="${rowClass[n]}">
+      <td>C${n}</td>
+      <td>${fmtM(cap)}</td>
+      <td>${fmtM(ing)}</td>
+      <td>${fmtM(cs)}</td>
+      <td>${fmtM(pun)}</td>
+      <td>${fmtM(cost)}</td>
+      <td>${fmtM(imp)}</td>
+      <td style="color:${res_>=0?'var(--success)':'var(--danger)'}">${fmtM(res_)}</td>
+      <td style="color:${fl>=0?'var(--success)':'var(--danger)'}">${fmtM(fl)}</td>
+    </tr>`;
+  });
+
+  html += `<tr class="cv-row-total">
+    <td>Total</td>
+    <td>${fmtM(totCap)}</td>
+    <td>${fmtM(totInt)}</td>
+    <td>${fmtM(totCS)}</td>
+    <td>${fmtM(totPun)}</td>
+    <td>${fmtM(totCost)}</td>
+    <td>${fmtM(totImp)}</td>
+    <td style="color:${totRes>=0?'var(--success)':'var(--danger)'}">${fmtM(totRes)}</td>
+    <td style="color:${totFlujo>=0?'var(--success)':'var(--danger)'}">${fmtM(totFlujo)}</td>
+  </tr>`;
+
+  tbody.innerHTML = html;
+}
+
 window.addEventListener('load', () => {
   // Tasa y bonificación → actualizar interés display + recalcular
   ['tasaDirecta', 'bonificacion'].forEach(id => {
@@ -1891,6 +2309,7 @@ window.addEventListener('load', () => {
 
   // Init
   buildStressGrid();
+  buildCicloForms();
   syncInteresDesdeTaska();
   calcular();
 });
