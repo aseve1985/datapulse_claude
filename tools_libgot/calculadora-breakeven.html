@@ -387,6 +387,73 @@
       .interes-dual { grid-template-columns: 1fr; }
       .header-badges { display: none; }
     }
+
+    /* ===== LAYOUT DOS COLUMNAS ===== */
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 310px;
+      gap: 1.4rem;
+      align-items: start;
+    }
+    .tab-area { min-width: 0; }
+
+    /* ===== SIDEBAR DESGLOSE ===== */
+    .sidebar-desglose {
+      position: sticky;
+      top: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.1rem 1rem;
+      max-height: calc(100vh - 2rem);
+      overflow-y: auto;
+    }
+    .sidebar-title {
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--gray-600);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      margin-bottom: .85rem;
+    }
+
+    /* ===== TABS ===== */
+    .tab-nav {
+      display: flex;
+      gap: .25rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.2rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: .3rem;
+    }
+    .tab-btn {
+      flex: 1;
+      min-width: 70px;
+      padding: .42rem .6rem;
+      border: none;
+      background: transparent;
+      color: var(--gray-500);
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+      white-space: nowrap;
+      text-align: center;
+    }
+    .tab-btn:hover { background: var(--surface-2); color: var(--gray-200); }
+    .tab-btn.active { background: var(--primary); color: #fff; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    @media (max-width: 960px) {
+      .main-layout { grid-template-columns: 1fr; }
+      .sidebar-desglose { position: static; max-height: none; }
+    }
   </style>
 </head>
 <body>
@@ -408,7 +475,22 @@
 
 <div class="container">
 
-  <!-- ====== INPUTS ====== -->
+  <div class="main-layout">
+    <div class="tab-area">
+
+      <!-- Tab Navigation -->
+      <nav class="tab-nav">
+        <button class="tab-btn active" onclick="switchTab(1)">📊 Variables &amp; Resultados</button>
+        <button class="tab-btn" onclick="switchTab(2)">🧪 Stress &amp; Mora</button>
+        <button class="tab-btn" onclick="switchTab(3)">🎭 Escenarios</button>
+        <button class="tab-btn" onclick="switchTab(4)">📅 Tabla de cuotas</button>
+        <button class="tab-btn" onclick="switchTab(5)">📐 Glosario</button>
+      </nav>
+
+      <!-- ====== TAB 1: VARIABLES + RESULTADOS + TASAS ====== -->
+      <div id="tab1" class="tab-panel active">
+
+<!-- ====== INPUTS ====== -->
   <div class="section">
     <div class="section-title">⚙️ Variables de entrada</div>
 
@@ -536,7 +618,7 @@
     <div class="warn-box" id="warnBox">⚠️ <span id="warnMsg"></span></div>
   </div>
 
-  <!-- ====== RESULTADOS PRINCIPALES ====== -->
+<!-- ====== RESULTADOS PRINCIPALES ====== -->
   <div class="section">
     <div class="section-title">📈 Resultados principales</div>
 
@@ -630,8 +712,14 @@
         Estos son indicadores por crédito individual, no de la cartera consolidada.
       </div>
     </div>
+  </div>
 
-    <!-- Combinador de stress -->
+      </div><!-- /tab1 -->
+
+      <!-- ====== TAB 2: STRESS + MORA + SENSIBILIDAD ====== -->
+      <div id="tab2" class="tab-panel">
+
+<!-- Combinador de stress -->
     <div style="margin-top:1rem;">
       <div class="section-title" style="margin-bottom:.75rem;">🧪 Combinador de stress — todas las variables</div>
       <div class="card">
@@ -643,26 +731,7 @@
       </div>
     </div>
 
-    <!-- Desglose detallado -->
-    <div class="card" style="margin-top:1rem;">
-      <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.06em;">📋 Desglose detallado</div>
-      <div class="tbl-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Concepto</th>
-              <th>Monto total</th>
-              <th>Por crédito</th>
-              <th>% del capital</th>
-            </tr>
-          </thead>
-          <tbody id="tbDesglose"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ====== ESCALERA DE MORA ====== -->
+<!-- ====== ESCALERA DE MORA ====== -->
   <div class="section">
     <div class="section-title">📉 Resultado según nivel de mora</div>
     <div class="card">
@@ -689,7 +758,7 @@
     </div>
   </div>
 
-  <!-- ====== ANÁLISIS DE SENSIBILIDAD ====== -->
+<!-- ====== ANÁLISIS DE SENSIBILIDAD ====== -->
   <div class="section">
     <div class="section-title">🎛️ Análisis de sensibilidad</div>
     <div class="card">
@@ -721,17 +790,14 @@
         </table>
       </div>
     </div>
-
-    <div class="chart-box">
-      <div class="chart-header">
-        <strong>Mora tolerable por variación de:</strong>
-        <span class="badge badge-blue" id="chartBadge">Tasa directa</span>
-      </div>
-      <canvas id="chart" height="290"></canvas>
-    </div>
   </div>
 
-  <!-- ====== ESCENARIOS ====== -->
+      </div><!-- /tab2 -->
+
+      <!-- ====== TAB 3: ESCENARIOS ====== -->
+      <div id="tab3" class="tab-panel">
+
+<!-- ====== ESCENARIOS ====== -->
   <div class="section">
     <div class="section-title">🎭 Comparación de escenarios</div>
 
@@ -771,7 +837,12 @@
     </div>
   </div>
 
-  <!-- ====== TABLA DE AMORTIZACIÓN ====== -->
+      </div><!-- /tab3 -->
+
+      <!-- ====== TAB 4: TABLA DE CUOTAS ====== -->
+      <div id="tab4" class="tab-panel">
+
+<!-- ====== TABLA DE AMORTIZACIÓN ====== -->
   <div class="section">
     <div class="section-title">📅 Tabla de cuotas — crédito modelo</div>
     <div class="card">
@@ -802,7 +873,12 @@
     </div>
   </div>
 
-  <!-- ====== SUPUESTOS Y FÓRMULAS ====== -->
+      </div><!-- /tab4 -->
+
+      <!-- ====== TAB 5: GLOSARIO ====== -->
+      <div id="tab5" class="tab-panel">
+
+<!-- ====== SUPUESTOS Y FÓRMULAS ====== -->
   <div class="section">
     <div class="section-title">📐 Supuestos y fórmulas</div>
     <div class="formulas">
@@ -908,7 +984,34 @@
       </div>
     </div>
   </div>
+
+      </div><!-- /tab5 -->
+
+    </div><!-- /tab-area -->
+
+    <!-- SIDEBAR DESGLOSE -->
+    <div class="sidebar-desglose">
+      <div class="sidebar-title">📋 Desglose detallado</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left">Concepto</th>
+              <th>Monto total</th>
+              <th>Por crédito</th>
+              <th>% del capital</th>
+            </tr>
+          </thead>
+          <tbody id="tbDesglose"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /main-layout -->
+
 </div>
+
+
 
 <footer>
   <img src="Logo-Libgot-Azul-Logo-completo.png" alt="Libgot" style="height:18px;opacity:.35;filter:brightness(0) invert(1);vertical-align:middle;margin-right:.5rem" />
@@ -1606,7 +1709,6 @@ function actualizarSens() {
   const base    = calcRes(inp);
   const baseVal = inp[varName];
 
-  const chartLabels = [], chartValues = [], chartColors = [];
   let html = '';
 
   VARIATIONS.forEach((v, i) => {
@@ -1629,91 +1731,9 @@ function actualizarSens() {
       <td class="${dCls}">${delta >= 0 ? '+' : ''}${fmtM(delta)}</td>
     </tr>`;
 
-    chartLabels.push(VAR_LABELS[i]);
-    chartValues.push(moraShow);
-    chartColors.push(isBase ? '#1a56db' : v > 0 ? '#057a55' : '#c81e1e');
   });
 
   document.getElementById('tbSens').innerHTML = html;
-  document.getElementById('chartBadge').textContent = VAR_META[varName].label;
-  renderChart(chartLabels, chartValues, chartColors, VAR_META[varName].label);
-}
-
-// ──────────────────────────────────────────
-// GRÁFICO CANVAS
-// ──────────────────────────────────────────
-function renderChart(labels, values, colors, title) {
-  const canvas = document.getElementById('chart');
-  const ctx    = canvas.getContext('2d');
-  const dpr    = window.devicePixelRatio || 1;
-  const W      = canvas.parentElement.clientWidth - 44;
-  const H      = 270;
-
-  canvas.width         = W * dpr;
-  canvas.height        = H * dpr;
-  canvas.style.width   = W + 'px';
-  canvas.style.height  = H + 'px';
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, W, H);
-
-  const pad  = { t: 36, r: 20, b: 48, l: 84 };
-  const cW   = W - pad.l - pad.r;
-  const cH   = H - pad.t - pad.b;
-  const maxV = Math.max(...values, 1);
-
-  // Grid
-  ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
-  for (let i = 0; i <= 5; i++) {
-    const y = pad.t + cH - (i / 5) * cH;
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cW, y); ctx.stroke();
-    ctx.fillStyle = '#9ca3af'; ctx.font = '10px -apple-system,sans-serif'; ctx.textAlign = 'right';
-    ctx.fillText(fmtShort(maxV * i / 5), pad.l - 6, y + 4);
-  }
-
-  // Ejes
-  ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t + cH); ctx.lineTo(pad.l + cW, pad.t + cH);
-  ctx.stroke();
-
-  // Barras
-  const slotW = cW / labels.length;
-  const barW  = slotW * 0.58;
-  const barX0 = (slotW - barW) / 2;
-
-  labels.forEach((lbl, i) => {
-    const x    = pad.l + i * slotW + barX0;
-    const barH = Math.max(2, (values[i] / maxV) * cH);
-    const y    = pad.t + cH - barH;
-    const isB  = i === 3;
-
-    // Sombra
-    ctx.fillStyle = 'rgba(0,0,0,.06)';
-    ctx.fillRect(x + 2, y + 2, barW, barH);
-
-    // Barra
-    const grad = ctx.createLinearGradient(x, y, x, y + barH);
-    grad.addColorStop(0, colors[i]);
-    grad.addColorStop(1, colors[i] + 'cc');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, [5, 5, 0, 0]);
-    else ctx.rect(x, y, barW, barH);
-    ctx.fill();
-
-    // Valor
-    ctx.fillStyle = '#374151'; ctx.font = 'bold 9px -apple-system,sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(fmtShort(values[i]), x + barW / 2, y - 5);
-
-    // Etiqueta X
-    ctx.fillStyle = isB ? '#1a56db' : '#6b7280';
-    ctx.font = (isB ? 'bold ' : '') + '10px -apple-system,sans-serif';
-    ctx.fillText(lbl, x + barW / 2, pad.t + cH + 17);
-  });
-
-  // Título
-  ctx.fillStyle = '#374151'; ctx.font = 'bold 11px -apple-system,sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Mora tolerable según variación de: ' + title, W / 2, 16);
 }
 
 // ──────────────────────────────────────────
@@ -1830,6 +1850,18 @@ function resetear() {
 // ──────────────────────────────────────────
 // EVENTOS
 // ──────────────────────────────────────────
+// ──────────────────────────────────────────
+// NAVEGACIÓN DE TABS
+// ──────────────────────────────────────────
+function switchTab(n) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', i + 1 === n);
+  });
+  document.querySelectorAll('.tab-panel').forEach((p, i) => {
+    p.classList.toggle('active', i + 1 === n);
+  });
+}
+
 window.addEventListener('load', () => {
   // Tasa y bonificación → actualizar interés display + recalcular
   ['tasaDirecta', 'bonificacion'].forEach(id => {
