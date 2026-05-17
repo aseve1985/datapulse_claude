@@ -769,7 +769,9 @@ async function startServer() {
       const auth = await getGoogleAuthClient();
       if (!auth) throw new Error('Google service account not configured');
       const sheets = google.sheets({ version: 'v4', auth: auth as any });
-      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const now = new Date();
+      const ar = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+      const timestamp = ar.toISOString().replace('T', ' ').substring(0, 19);
       await sheets.spreadsheets.values.append({
         spreadsheetId: FEATURE_REQUESTS_SPREADSHEET_ID,
         range: `${FEATURE_REQUESTS_SHEET}!A:D`,
