@@ -13,6 +13,7 @@ import LandingPage from './components/LandingPage';
 import DashboardView from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { TermsModal } from './components/TermsModal';
+import { FeatureRequestModal } from './components/FeatureRequestModal';
 import { fetchSalesData } from './services/api';
 import { updateExchangeRates, EXCHANGE_RATES } from './constants';
 import type { SavedReport, ReportFilters } from './types';
@@ -25,6 +26,7 @@ export default function App() {
   const [moduleData, setModuleData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [isTermsOpen, setIsTermsOpen] = useState(false);
+  const [isFeatureRequestOpen, setIsFeatureRequestOpen] = useState(false);
   const [authStatus, setAuthStatus] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [exchangeRates, setExchangeRates] = useState(EXCHANGE_RATES);
@@ -498,6 +500,7 @@ export default function App() {
             <LandingPage
               onSelectModule={handleSelectModule}
               onOpenTerms={() => setIsTermsOpen(true)}
+              onOpenFeatureRequest={() => setIsFeatureRequestOpen(true)}
               onRefreshRates={handleRefreshRates}
               authStatus={authStatus}
               isLoading={isLoading}
@@ -531,6 +534,7 @@ export default function App() {
               loading={loading}
               onFetchData={handleFetchData}
               onOpenTerms={() => setIsTermsOpen(true)}
+              onOpenFeatureRequest={() => setIsFeatureRequestOpen(true)}
               exchangeRates={exchangeRates}
               savedReports={savedReports.filter(r => r.modulo === activeModule?.id)}
               onSaveReport={handleSaveReport}
@@ -541,9 +545,15 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <TermsModal 
-        isOpen={isTermsOpen} 
-        onClose={() => setIsTermsOpen(false)} 
+      <TermsModal
+        isOpen={isTermsOpen}
+        onClose={() => setIsTermsOpen(false)}
+      />
+
+      <FeatureRequestModal
+        isOpen={isFeatureRequestOpen}
+        onClose={() => setIsFeatureRequestOpen(false)}
+        userEmail={authStatus?.email || ''}
       />
 
       {loading && currentView === 'landing' && (

@@ -45,6 +45,7 @@ interface SheetTab {
 interface LandingPageProps {
   onSelectModule: (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => void;
   onOpenTerms: () => void;
+  onOpenFeatureRequest: () => void;
   onRefreshRates: () => void;
   authStatus: any;
   isLoading: boolean;
@@ -157,7 +158,7 @@ const WELCOME_PHRASES_GUEST = [
   'Todo listo. ¿Qué necesitás?',
 ];
 
-export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRates, authStatus, isLoading, exchangeRates, savedReports = [], onDeleteReport, tokenUsage, sheetPicker, onSheetSelect, onSheetPickerClose, sheetPickerLoading }: LandingPageProps) {
+export default function LandingPage({ onSelectModule, onOpenTerms, onOpenFeatureRequest, onRefreshRates, authStatus, isLoading, exchangeRates, savedReports = [], onDeleteReport, tokenUsage, sheetPicker, onSheetSelect, onSheetPickerClose, sheetPickerLoading }: LandingPageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deniedModule, setDeniedModule] = React.useState<string | null>(null);
   const [sheetUrl, setSheetUrl] = React.useState('');
@@ -699,15 +700,21 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onRefreshRate
             <a href="https://notebooklm.google.com/notebook/854ed618-48fc-4e44-9483-772a0dced21c" target="_blank" rel="noreferrer" className="hover:text-blue-400 transition-colors flex items-center gap-2">
               <ChevronRight size={14} /> DOCUMENTACIÓN
             </a>
-            <button 
+            <button
               onClick={onOpenTerms}
               className="hover:text-blue-400 transition-colors flex items-center gap-2 cursor-pointer uppercase"
             >
               <ChevronRight size={14} /> PRIVACIDAD
             </button>
+            <button
+              onClick={onOpenFeatureRequest}
+              className="hover:text-blue-400 transition-colors flex items-center gap-2 cursor-pointer uppercase"
+            >
+              <ChevronRight size={14} /> SUGERENCIAS
+            </button>
           </div>
         </div>
-        
+
         <ContactGrid />
 
         <div className="text-center text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em] pb-12 border-t border-slate-900/50 pt-8">

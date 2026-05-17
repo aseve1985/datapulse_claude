@@ -756,6 +756,34 @@ async function startServer() {
     }
   });
 
+  // ── Feature Requests ────────────────────────────────────────────────────────
+  const FEATURE_REQUESTS_SHEET = 'funciones_solicitadas';
+  const FEATURE_REQUESTS_SPREADSHEET_ID = process.env.PERMISSIONS_SPREADSHEET_ID || '1zZEec45p5_zZ6xFeEYsSspLnld-KyzpnAhpeHHDVi5s';
+
+  app.post('/api/feature-requests', async (req, res) => {
+    const { usuario, modulo, funcionalidad_deseada } = req.body;
+    if (!usuario || !modulo || !funcionalidad_deseada) {
+      return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+    try {
+      const auth = await getGoogleAuthClient();
+      if (!auth) throw new Error('Google service account not configured');
+      const sheets = google.sheets({ version: 'v4', auth: auth as any });
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: FEATURE_REQUESTS_SPREADSHEET_ID,
+        range: `${FEATURE_REQUESTS_SHEET}!A:D`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [[timestamp, usuario, modulo, funcionalidad_deseada]] }
+      });
+      console.log(`[FeatureRequest] New request from ${usuario}: ${modulo}`);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('[FeatureRequest] Error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Sales S3 Parquet Endpoint ────────────────────────────────────────────────
   let salesS3Cache: { data: any[]; fetchedAt: number } | null = null;
   const SALES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour

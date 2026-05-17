@@ -683,6 +683,7 @@ export default function DashboardView({
   loading: initialLoading,
   onFetchData,
   onOpenTerms,
+  onOpenFeatureRequest,
   exchangeRates,
   savedReports = [],
   onSaveReport,
@@ -1711,11 +1712,17 @@ export default function DashboardView({
             <a href="https://notebooklm.google.com/notebook/854ed618-48fc-4e44-9483-772a0dced21c" target="_blank" rel="noreferrer" className="hover:text-blue-400 transition-colors flex items-center gap-2">
               <ChevronRight size={14} /> DOCUMENTACIÓN
             </a>
-            <button 
+            <button
               onClick={onOpenTerms}
               className="hover:text-blue-400 transition-colors flex items-center gap-2 cursor-pointer uppercase"
             >
               <ChevronRight size={14} /> PRIVACIDAD
+            </button>
+            <button
+              onClick={onOpenFeatureRequest}
+              className="hover:text-blue-400 transition-colors flex items-center gap-2 cursor-pointer uppercase"
+            >
+              <ChevronRight size={14} /> SUGERENCIAS
             </button>
           </div>
         </div>
