@@ -530,7 +530,7 @@ export default function App() {
               sheetsList={activeModule?.sheets}
               onSwitchSheet={handleSwitchSheet}
               data={moduleData}
-              onBack={() => window.history.back()}
+              onBack={() => { setCurrentView('landing'); setActiveModule(null); setModuleData([]); window.scrollTo({ top: 0, behavior: 'instant' }); }}
               loading={loading}
               onFetchData={handleFetchData}
               onOpenTerms={() => setIsTermsOpen(true)}
