@@ -43,7 +43,7 @@ interface SheetTab {
 }
 
 interface LandingPageProps {
-  onSelectModule: (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => void;
+  onSelectModule: (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any, submodules?: any[]) => void;
   onOpenTerms: () => void;
   onOpenFeatureRequest: () => void;
   onRefreshRates: () => void;
@@ -114,7 +114,27 @@ const modules = [
     description: 'Seguimiento de contratos, litigios y cumplimiento normativo.',
     icon: Scale,
     color: 'bg-zinc-700',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'uif',
+        title: 'UIF',
+        description: 'Unidad de Información Financiera. Cumplimiento y reportes de prevención del lavado de activos.',
+        color: 'bg-zinc-700'
+      },
+      {
+        id: 'ri-bcra-reclamos',
+        title: 'RI-BCRA Reclamos',
+        description: 'Régimen Informativo BCRA. Seguimiento y gestión de reclamos regulatorios ante el Banco Central.',
+        color: 'bg-zinc-700'
+      },
+      {
+        id: 'ri-bcra-tasas',
+        title: 'RI-BCRA Tasas',
+        description: 'Régimen Informativo BCRA. Reporte de tasas de interés para el Banco Central de la República Argentina.',
+        color: 'bg-zinc-700'
+      }
+    ]
   },
   {
     id: 'board',
@@ -212,7 +232,7 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onOpenFeature
 
   const handleModuleClick = (module: any) => {
     if (checkAccess(module.id)) {
-      onSelectModule(module.id, 'api');
+      onSelectModule(module.id, 'api', undefined, undefined, undefined, module.submodules);
     } else {
       setDeniedModule(module.title);
     }

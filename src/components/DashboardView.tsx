@@ -32,6 +32,7 @@ import * as XLSX from 'xlsx';
 import { ChatMessage } from '../types';
 import { generateInsights, chatWithData } from '../services/gemini';
 import { EXCHANGE_RATES } from '../constants';
+import UifSubmodule from './submodules/UifSubmodule';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -688,9 +689,11 @@ export default function DashboardView({
   savedReports = [],
   onSaveReport,
   userEmail,
-  initialReport
+  initialReport,
+  submodules = []
 }: any) {
   const [activeTab, setActiveTab] = useState<'overview' | 'data'>('overview');
+  const [activeSubmodule, setActiveSubmodule] = useState<any>(null);
   const [sales, setSales] = useState<any[]>(data || []);
   const [loading, setLoading] = useState(initialLoading);
   const [insights, setInsights] = useState<any>(null);
@@ -1090,12 +1093,17 @@ export default function DashboardView({
 
         {/* Fila 1: título */}
         <div className="max-w-7xl mx-auto flex items-center gap-3 pt-3 pb-2">
-          <button onClick={onBack} className="p-1.5 hover:bg-slate-800 rounded-lg text-zinc-500 transition-colors shrink-0">
+          <button
+            onClick={activeSubmodule ? () => setActiveSubmodule(null) : onBack}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-zinc-500 transition-colors shrink-0"
+          >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="leading-tight">
             <h1 className="text-base font-bold text-white">DataPulse <span className="text-blue-400">Libgot</span></h1>
-            <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-widest">{title}</p>
+            <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-widest">
+              {activeSubmodule ? `${title} › ${activeSubmodule.title}` : title}
+            </p>
           </div>
         </div>
 
@@ -1128,7 +1136,7 @@ export default function DashboardView({
         <div className="max-w-7xl mx-auto flex items-center justify-end gap-2 pb-2 flex-wrap">
 
           {/* Shortcuts de período */}
-          {moduleType === 'api' && (
+          {moduleType === 'api' && submodules.length === 0 && (
             <div className="flex items-center gap-0.5 bg-slate-800/60 p-0.5 rounded-lg">
               {(['current_month', 'last_month', 'last_quarter'] as const).map((key, i) => (
                 <button key={key} onClick={() => setDateRange(key)}
@@ -1140,7 +1148,7 @@ export default function DashboardView({
           )}
 
           {/* Rango de fechas */}
-          {moduleType === 'api' && (
+          {moduleType === 'api' && submodules.length === 0 && (
             <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
                 className="text-xs font-bold text-white focus:outline-none bg-transparent w-[100px] [color-scheme:dark]" />
@@ -1150,23 +1158,25 @@ export default function DashboardView({
             </div>
           )}
 
-          {/* Separador visual */}
-          <div className="w-px h-5 bg-slate-700 mx-1" />
+          {/* Separador visual — solo si hay controles de fecha */}
+          {submodules.length === 0 && <div className="w-px h-5 bg-slate-700 mx-1" />}
 
-          {/* Tabs Overview / Datos */}
-          <div className="flex bg-slate-800 p-0.5 rounded-lg">
-            <button onClick={() => setActiveTab('overview')}
-              className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'overview' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
-              Overview
-            </button>
-            <button onClick={() => setActiveTab('data')}
-              className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'data' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
-              Datos
-            </button>
-          </div>
+          {/* Tabs Overview / Datos — oculto en módulos con sub-módulos */}
+          {submodules.length === 0 && (
+            <div className="flex bg-slate-800 p-0.5 rounded-lg">
+              <button onClick={() => setActiveTab('overview')}
+                className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'overview' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
+                Overview
+              </button>
+              <button onClick={() => setActiveTab('data')}
+                className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'data' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
+                Datos
+              </button>
+            </div>
+          )}
 
           {/* CTA Cargar/Actualizar */}
-          {moduleType === 'api' && (
+          {moduleType === 'api' && submodules.length === 0 && (
             <button onClick={handleFetch} disabled={loading}
               className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors">
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
@@ -1368,9 +1378,75 @@ export default function DashboardView({
               />
             </div>
           </div>
+        ) : sales.length === 0 && moduleType === 'api' && submodules.length > 0 && !activeSubmodule ? (
+          /* Pantalla de selección de sub-módulos */
+          <div className="flex-1 flex flex-col items-center justify-center py-20 px-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="max-w-2xl w-full space-y-10"
+            >
+              <div className="text-center space-y-3">
+                <div className="w-16 h-16 bg-zinc-800/60 rounded-3xl flex items-center justify-center mx-auto shadow-inner border border-zinc-700/50">
+                  <Database className="w-8 h-8 text-zinc-400" />
+                </div>
+                <h2 className="text-2xl font-bold tracking-tight text-white">{title}</h2>
+                <p className="text-zinc-400 text-sm">Seleccioná el sub-módulo al que querés acceder.</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {submodules.map((sub: any, idx: number) => (
+                  <motion.button
+                    key={sub.id}
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.07 }}
+                    onClick={() => setActiveSubmodule(sub)}
+                    className="group flex flex-col items-start gap-3 p-5 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-zinc-500 rounded-2xl text-left transition-all shadow-sm hover:shadow-md"
+                  >
+                    <div className="w-10 h-10 bg-zinc-800 group-hover:bg-zinc-700 rounded-xl flex items-center justify-center transition-colors border border-zinc-700">
+                      <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-white text-sm mb-1">{sub.title}</p>
+                      <p className="text-zinc-500 text-xs leading-relaxed">{sub.description}</p>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+
+        ) : moduleType === 'api' && submodules.length > 0 && activeSubmodule ? (
+          /* Sub-módulo activo — cada uno renderiza su propio componente */
+          activeSubmodule.id === 'uif' ? (
+            <UifSubmodule userEmail={userEmail} />
+          ) : (
+            /* Placeholder para sub-módulos aún sin implementar */
+            <div className="flex-1 flex flex-col items-center justify-center py-20">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-md w-full text-center space-y-6"
+              >
+                <div className="w-16 h-16 bg-zinc-800/60 rounded-3xl flex items-center justify-center mx-auto border border-zinc-700/50">
+                  <Database className="w-8 h-8 text-zinc-400" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-bold text-white">{activeSubmodule.title}</h2>
+                  <p className="text-zinc-400 text-sm leading-relaxed">{activeSubmodule.description}</p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-800/60 border border-zinc-700 rounded-xl text-zinc-500 text-xs font-bold uppercase tracking-widest">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Lógica en desarrollo
+                </div>
+              </motion.div>
+            </div>
+          )
+
         ) : sales.length === 0 && moduleType === 'api' ? (
           <div className="flex-1 flex flex-col items-center justify-center py-20">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               className="max-w-md w-full text-center space-y-8"

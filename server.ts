@@ -5,7 +5,8 @@ import path from "path";
 import { GoogleAuth } from "google-auth-library";
 import { google } from "googleapis";
 import dotenv from "dotenv";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { Pool } from "pg";
 import { parquetRead } from "hyparquet";
 
 dotenv.config();
@@ -984,16 +985,6 @@ async function startServer() {
     }
   });
 
-  // Catch-all for unhandled API routes to ensure they always return JSON
-  app.all("/api/*", (req, res) => {
-    console.warn(`[Server] Unhandled API route: ${req.method} ${req.path}`);
-    res.status(404).json({ 
-      error: "API Route not found", 
-      path: req.path,
-      method: req.method
-    });
-  });
-
   // Serve tools from tools_libgot (explicit route bypasses Vite's SPA html fallback)
   app.get('/tools/:filename', (req, res) => {
     const filename = path.basename(req.params.filename);
@@ -1001,6 +992,137 @@ async function startServer() {
     res.sendFile(filePath, (err) => {
       if (err) res.status(404).json({ error: 'Tool not found' });
     });
+  });
+
+  // ── UIF Endpoints ──────────────────────────────────────────────────────────────
+  let uifS3Cache: { data: any[]; fetchedAt: number } | null = null;
+  const UIF_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+  app.get("/api/uif/records", async (req, res) => {
+    try {
+      const now = Date.now();
+      if (!uifS3Cache || now - uifS3Cache.fetchedAt > UIF_CACHE_TTL_MS) {
+        console.log("[UIF] Listing parquet files in S3...");
+        const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+
+        const listCmd = new ListObjectsV2Command({
+          Bucket: "data-lake-libgot-externos",
+          Prefix: "platinum_ia/legales_uif/",
+        });
+        const listResponse = await s3.send(listCmd);
+        const parquetFiles = (listResponse.Contents || []).filter(obj => obj.Key?.endsWith(".parquet"));
+
+        if (parquetFiles.length === 0) {
+          return res.status(404).json({ error: "No se encontraron archivos parquet en platinum_ia/legales_uif/" });
+        }
+
+        console.log(`[UIF] Found ${parquetFiles.length} parquet file(s), downloading...`);
+        let allRows: any[] = [];
+
+        for (const file of parquetFiles) {
+          const getCmd = new GetObjectCommand({ Bucket: "data-lake-libgot-externos", Key: file.Key! });
+          const response = await s3.send(getCmd);
+          const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
+          const asyncBuffer = {
+            byteLength: bytes.byteLength,
+            slice: async (start: number, end?: number): Promise<ArrayBuffer> =>
+              bytes.buffer.slice(bytes.byteOffset + start, bytes.byteOffset + (end ?? bytes.byteLength)) as ArrayBuffer,
+          };
+          await parquetRead({
+            file: asyncBuffer,
+            rowFormat: "object",
+            onComplete: (data: any[]) => { allRows = [...allRows, ...data]; },
+          });
+        }
+
+        uifS3Cache = { data: allRows, fetchedAt: now };
+        console.log(`[UIF] Cached ${allRows.length} records`);
+      } else {
+        console.log("[UIF] Serving from cache");
+      }
+
+      const safe = JSON.parse(JSON.stringify(uifS3Cache.data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
+      res.json({ records: safe, total: safe.length, source: "s3" });
+    } catch (error: any) {
+      console.error("[UIF] Error loading parquet:", error);
+      res.status(500).json({ error: "Error al cargar datos UIF", details: error.message });
+    }
+  });
+
+  const redshiftPool = (
+    process.env.REDSHIFT_HOST &&
+    process.env.REDSHIFT_DATABASE &&
+    process.env.REDSHIFT_USER &&
+    process.env.REDSHIFT_PASSWORD
+  ) ? new Pool({
+    host: process.env.REDSHIFT_HOST,
+    port: Number(process.env.REDSHIFT_PORT || "5439"),
+    database: process.env.REDSHIFT_DATABASE,
+    user: process.env.REDSHIFT_USER,
+    password: process.env.REDSHIFT_PASSWORD,
+    ssl: { rejectUnauthorized: false },
+    max: 5,
+    idleTimeoutMillis: 30000,
+  }) : null;
+
+  app.patch("/api/uif/audit", async (req, res) => {
+    const { updates } = req.body as {
+      updates: Array<{ record: Record<string, any>; auditoria_realizada: string }>
+    };
+
+    if (!updates || updates.length === 0) {
+      return res.status(400).json({ error: "No se enviaron registros para actualizar" });
+    }
+
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: "Conexión a Redshift no configurada",
+        required_env: ["REDSHIFT_HOST", "REDSHIFT_DATABASE", "REDSHIFT_USER", "REDSHIFT_PASSWORD"],
+      });
+    }
+
+    const client = await redshiftPool.connect();
+    let updatedCount = 0;
+    try {
+      await client.query("BEGIN");
+      for (const { record, auditoria_realizada } of updates) {
+        await client.query(
+          `UPDATE platinum_ia.monitor_uif_arg
+           SET auditoria_realizada = $1
+           WHERE fecha_insercion = $2
+             AND cuil = $3
+             AND dni = $4
+             AND loan_id = $5
+             AND fecha = $6
+             AND aviso_2_1 = $7
+             AND aviso_2_2 = $8
+             AND aviso_2_3 = $9
+             AND aviso_2_4 = $10`,
+          [
+            auditoria_realizada,
+            record.fecha_insercion, record.cuil, record.dni, record.loan_id,
+            record.fecha, record.aviso_2_1, record.aviso_2_2, record.aviso_2_3, record.aviso_2_4,
+          ]
+        );
+        updatedCount++;
+      }
+      await client.query("COMMIT");
+      uifS3Cache = null;
+      console.log(`[UIF] Audit saved: ${updatedCount} records by ${req.headers["x-goog-authenticated-user-email"] || "unknown"}`);
+      res.json({ updated: updatedCount, message: "Auditoría guardada correctamente" });
+    } catch (err: any) {
+      await client.query("ROLLBACK");
+      console.error("[UIF] Redshift update error:", err);
+      res.status(500).json({ error: "Error al guardar en Redshift", details: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // Catch-all for unhandled API routes
+  app.all("/api/*", (req, res) => {
+    console.warn(`[Server] Unhandled API route: ${req.method} ${req.path}`);
+    res.status(404).json({ error: "API Route not found", path: req.path, method: req.method });
   });
 
   // Vite middleware for development

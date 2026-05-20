@@ -307,7 +307,7 @@ export default function App() {
     }
   }, [activeModule, loadSheetData]);
 
-  const handleSelectModule = async (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any) => {
+  const handleSelectModule = async (id: string, type: 'api' | 'file' | 'sheet', file?: File, sheetUrl?: string, reportToLoad?: any, submodules?: any[]) => {
     // Helper to finalize module selection
     const finalizeSelection = (data: any[], moduleInfo: any) => {
       setInitialReport(reportToLoad || null);
@@ -434,7 +434,7 @@ export default function App() {
       case 'administration': title = 'Módulo de Administración'; break;
     }
     
-    finalizeSelection([], { id, title, type: 'api' });
+    finalizeSelection([], { id, title, type: 'api', submodules: submodules || [] });
   };
 
   const handleFetchData = async (id: string, fecha_desde: string, fecha_hasta: string) => {
@@ -540,6 +540,7 @@ export default function App() {
               onSaveReport={handleSaveReport}
               userEmail={authStatus?.email}
               initialReport={initialReport}
+              submodules={activeModule?.submodules || []}
             />
           </motion.div>
         )}
