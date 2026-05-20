@@ -5,7 +5,7 @@ import path from "path";
 import { GoogleAuth } from "google-auth-library";
 import { google } from "googleapis";
 import dotenv from "dotenv";
-import { S3Client, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Pool } from "pg";
 import { parquetRead } from "hyparquet";
 
@@ -995,60 +995,6 @@ async function startServer() {
   });
 
   // ── UIF Endpoints ──────────────────────────────────────────────────────────────
-  let uifS3Cache: { data: any[]; fetchedAt: number } | null = null;
-  const UIF_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
-
-  app.get("/api/uif/records", async (req, res) => {
-    try {
-      const now = Date.now();
-      if (!uifS3Cache || now - uifS3Cache.fetchedAt > UIF_CACHE_TTL_MS) {
-        console.log("[UIF] Listing parquet files in S3...");
-        const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
-
-        const listCmd = new ListObjectsV2Command({
-          Bucket: "data-lake-libgot-externos",
-          Prefix: "platinum_ia/legales_uif/",
-        });
-        const listResponse = await s3.send(listCmd);
-        const parquetFiles = (listResponse.Contents || []).filter(obj => obj.Key?.endsWith(".parquet"));
-
-        if (parquetFiles.length === 0) {
-          return res.status(404).json({ error: "No se encontraron archivos parquet en platinum_ia/legales_uif/" });
-        }
-
-        console.log(`[UIF] Found ${parquetFiles.length} parquet file(s), downloading...`);
-        let allRows: any[] = [];
-
-        for (const file of parquetFiles) {
-          const getCmd = new GetObjectCommand({ Bucket: "data-lake-libgot-externos", Key: file.Key! });
-          const response = await s3.send(getCmd);
-          const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
-          const asyncBuffer = {
-            byteLength: bytes.byteLength,
-            slice: async (start: number, end?: number): Promise<ArrayBuffer> =>
-              bytes.buffer.slice(bytes.byteOffset + start, bytes.byteOffset + (end ?? bytes.byteLength)) as ArrayBuffer,
-          };
-          await parquetRead({
-            file: asyncBuffer,
-            rowFormat: "object",
-            onComplete: (data: any[]) => { allRows = [...allRows, ...data]; },
-          });
-        }
-
-        uifS3Cache = { data: allRows, fetchedAt: now };
-        console.log(`[UIF] Cached ${allRows.length} records`);
-      } else {
-        console.log("[UIF] Serving from cache");
-      }
-
-      const safe = JSON.parse(JSON.stringify(uifS3Cache.data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
-      res.json({ records: safe, total: safe.length, source: "s3" });
-    } catch (error: any) {
-      console.error("[UIF] Error loading parquet:", error);
-      res.status(500).json({ error: "Error al cargar datos UIF", details: error.message });
-    }
-  });
-
   const redshiftPool = (
     process.env.REDSHIFT_HOST &&
     process.env.REDSHIFT_DATABASE &&
@@ -1064,6 +1010,34 @@ async function startServer() {
     max: 5,
     idleTimeoutMillis: 30000,
   }) : null;
+
+  let uifCache: { data: any[]; fetchedAt: number } | null = null;
+  const UIF_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+  app.get("/api/uif/records", async (req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: "Conexión a Redshift no configurada",
+        required_env: ["REDSHIFT_HOST", "REDSHIFT_DATABASE", "REDSHIFT_USER", "REDSHIFT_PASSWORD"],
+      });
+    }
+    try {
+      const now = Date.now();
+      if (!uifCache || now - uifCache.fetchedAt > UIF_CACHE_TTL_MS) {
+        console.log("[UIF] Querying Redshift...");
+        const result = await redshiftPool.query("SELECT * FROM platinum_ia.monitor_uif_arg");
+        uifCache = { data: result.rows, fetchedAt: now };
+        console.log(`[UIF] Cached ${result.rows.length} records from Redshift`);
+      } else {
+        console.log("[UIF] Serving from cache");
+      }
+      const safe = JSON.parse(JSON.stringify(uifCache.data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
+      res.json({ records: safe, total: safe.length, source: "redshift" });
+    } catch (error: any) {
+      console.error("[UIF] Error querying Redshift:", error);
+      res.status(500).json({ error: "Error al cargar datos UIF", details: error.message });
+    }
+  });
 
   app.patch("/api/uif/audit", async (req, res) => {
     const { updates } = req.body as {
@@ -1107,7 +1081,7 @@ async function startServer() {
         updatedCount++;
       }
       await client.query("COMMIT");
-      uifS3Cache = null;
+      uifCache = null; // invalidar cache para que la próxima carga traiga datos frescos
       console.log(`[UIF] Audit saved: ${updatedCount} records by ${req.headers["x-goog-authenticated-user-email"] || "unknown"}`);
       res.json({ updated: updatedCount, message: "Auditoría guardada correctamente" });
     } catch (err: any) {
