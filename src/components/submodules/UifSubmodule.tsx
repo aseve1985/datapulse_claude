@@ -12,7 +12,7 @@ const KEY_COLUMNS = [
 ];
 const AUDIT_COLUMN = 'auditoria_realizada';
 const ALERT_COLUMNS = ['aviso_2_1', 'aviso_2_2', 'aviso_2_3', 'aviso_2_4'];
-const PRIORITY_COLUMNS = ['loan_id', 'fecha', 'fecha_insercion', 'cuil', 'dni', ...ALERT_COLUMNS];
+const PRIORITY_COLUMNS = ['loan_id', 'fecha', 'fecha_insercion', 'cuil', 'dni', ...ALERT_COLUMNS, 'auditor_legal'];
 
 interface Filters {
   loan_id: string;
@@ -110,6 +110,7 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          auditor_legal: userEmail || '',
           updates: updates.map(u => ({
             record: u.record,
             auditoria_realizada: u.value,
@@ -127,15 +128,17 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
       setRecords(prev =>
         prev.map(r => {
           const key = JSON.stringify(KEY_COLUMNS.map(k => r[k]));
-          return savedMap.has(key) ? { ...r, [AUDIT_COLUMN]: savedMap.get(key) } : r;
+          return savedMap.has(key)
+            ? { ...r, [AUDIT_COLUMN]: savedMap.get(key), auditor_legal: userEmail || '' }
+            : r;
         })
       );
     } finally {
       setSaving(false);
     }
-  }, []);
+  }, [userEmail]);
 
-  const hasActiveFilters = Object.entries(filters).some(([k, v]) => v !== '' && v !== 'all');
+  const hasActiveFilters = Object.entries(filters).some(([, v]) => v !== '' && v !== 'all');
 
   // ── Initial load screen ──────────────────────────────────────────────────────
   if (!loaded) {

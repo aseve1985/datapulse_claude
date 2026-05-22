@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Save, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 
@@ -41,6 +41,29 @@ export default function AuditInbox({
   const [page, setPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const bottomScrollRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+
+  useEffect(() => {
+    if (!tableRef.current) return;
+    const observer = new ResizeObserver(() => {
+      setTableScrollWidth(tableRef.current?.scrollWidth ?? 0);
+    });
+    observer.observe(tableRef.current);
+    return () => observer.disconnect();
+  }, [records, page]);
+
+  const syncFromTop = () => {
+    if (bottomScrollRef.current && topScrollRef.current)
+      bottomScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+  };
+  const syncFromBottom = () => {
+    if (topScrollRef.current && bottomScrollRef.current)
+      topScrollRef.current.scrollLeft = bottomScrollRef.current.scrollLeft;
+  };
 
   const getKey = (record: Record<string, any>) =>
     JSON.stringify(keyColumns.map(k => record[k]));
@@ -181,9 +204,23 @@ export default function AuditInbox({
         </div>
       </div>
 
+      {/* Top scroll mirror */}
+      <div
+        ref={topScrollRef}
+        onScroll={syncFromTop}
+        className="overflow-x-auto overflow-y-hidden rounded-t-xl border border-b-0 border-slate-800"
+        style={{ height: 12 }}
+      >
+        <div style={{ width: tableScrollWidth, height: 1 }} />
+      </div>
+
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800 shadow-sm">
-        <table className="w-full text-sm border-collapse min-w-max">
+      <div
+        ref={bottomScrollRef}
+        onScroll={syncFromBottom}
+        className="overflow-x-auto rounded-b-xl border border-t-0 border-slate-800 shadow-sm"
+      >
+        <table ref={tableRef} className="w-full text-sm border-collapse min-w-max">
           <thead>
             <tr className="bg-slate-900 border-b border-slate-700">
               {columns.map(col => (

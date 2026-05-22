@@ -1040,7 +1040,8 @@ async function startServer() {
   });
 
   app.patch("/api/uif/audit", async (req, res) => {
-    const { updates } = req.body as {
+    const { updates, auditor_legal } = req.body as {
+      auditor_legal: string;
       updates: Array<{ record: Record<string, any>; auditoria_realizada: string }>
     };
 
@@ -1062,18 +1063,20 @@ async function startServer() {
       for (const { record, auditoria_realizada } of updates) {
         await client.query(
           `UPDATE platinum_ia.monitor_uif_arg
-           SET auditoria_realizada = $1
-           WHERE fecha_insercion = $2
-             AND cuil = $3
-             AND dni = $4
-             AND loan_id = $5
-             AND fecha = $6
-             AND aviso_2_1 = $7
-             AND aviso_2_2 = $8
-             AND aviso_2_3 = $9
-             AND aviso_2_4 = $10`,
+           SET auditoria_realizada = $1,
+               auditor_legal = $2
+           WHERE fecha_insercion = $3
+             AND cuil = $4
+             AND dni = $5
+             AND loan_id = $6
+             AND fecha = $7
+             AND aviso_2_1 = $8
+             AND aviso_2_2 = $9
+             AND aviso_2_3 = $10
+             AND aviso_2_4 = $11`,
           [
             auditoria_realizada,
+            auditor_legal || null,
             record.fecha_insercion, record.cuil, record.dni, record.loan_id,
             record.fecha, record.aviso_2_1, record.aviso_2_2, record.aviso_2_3, record.aviso_2_4,
           ]
