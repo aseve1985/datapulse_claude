@@ -133,6 +133,12 @@ const modules = [
         title: 'RI-BCRA Tasas',
         description: 'Régimen Informativo BCRA. Reporte de tasas de interés para el Banco Central de la República Argentina.',
         color: 'bg-zinc-700'
+      },
+      {
+        id: 'ri-bcra-deudores',
+        title: 'RI-BCRA Deudores',
+        description: 'Régimen Informativo BCRA. Reporte de deudores para el Banco Central de la República Argentina.',
+        color: 'bg-zinc-700'
       }
     ]
   },

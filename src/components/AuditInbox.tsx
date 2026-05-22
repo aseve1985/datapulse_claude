@@ -226,7 +226,9 @@ export default function AuditInbox({
               {columns.map(col => (
                 <th
                   key={col}
-                  className="px-3 py-2.5 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap"
+                  className={`px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${
+                    col === 'auditor_legal' ? 'text-amber-400' : 'text-zinc-500'
+                  }`}
                 >
                   {col.replace(/_/g, ' ')}
                 </th>
@@ -257,6 +259,10 @@ export default function AuditInbox({
                           record[col] ? 'bg-red-900/40 text-red-400 border border-red-800/50' : 'bg-slate-800 text-zinc-600'
                         }`}>
                           {record[col] ? 'SI' : 'NO'}
+                        </span>
+                      ) : col === 'auditor_legal' ? (
+                        <span className="font-bold text-amber-400" title={String(record[col] ?? '')}>
+                          {formatCell(record[col])}
                         </span>
                       ) : (
                         <span title={String(record[col] ?? '')}>{formatCell(record[col])}</span>
