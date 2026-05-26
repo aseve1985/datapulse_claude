@@ -556,7 +556,7 @@
   /* Desglose 2 acumulado */
   .cv-desglose { margin-top:1.2rem; }
   .cv-desglose h4 { font-size:.78rem; font-weight:700; color:var(--gray-300); margin-bottom:.5rem; }
-  .cv-desglose table { width:100%; border-collapse:collapse; font-size:.68rem; }
+  .cv-desglose table { width:max-content; min-width:100%; border-collapse:collapse; font-size:.68rem; }
   .cv-desglose th {
     background:var(--surface-2); color:var(--gray-400); font-size:.6rem;
     text-transform:uppercase; letter-spacing:.04em;
@@ -564,7 +564,7 @@
     border-bottom:1px solid var(--border);
   }
   .cv-desglose th:first-child { text-align:left; }
-  .cv-desglose td { padding:.32rem .5rem; border-bottom:1px solid var(--border); text-align:right; }
+  .cv-desglose td { padding:.32rem .5rem; border-bottom:1px solid var(--border); text-align:right; white-space:nowrap; }
   .cv-desglose td:first-child { text-align:left; font-weight:600; }
   .cv-row-c1 td:first-child { color:#3b82f6; }
   .cv-row-c2 td:first-child { color:var(--success); }
@@ -1669,6 +1669,7 @@ function renderPrincipal(inp, res) {
     <td class="${flujClass}">${fmtP(res.flujoLibre / ct * 100)}</td>
   </tr>`;
   document.getElementById('tbDesglose').innerHTML = html;
+  appendCvPostMoraToSidebar();
 }
 
 // ──────────────────────────────────────────
@@ -2177,6 +2178,29 @@ function switchTab(n) {
 // TAB 6: CICLO DE VIDA
 // ══════════════════════════════════════════════════════════════
 
+// Shared state so the sidebar can always show the latest post-mora total
+let cvSidebarData = null; // { postMora, cap, totalCant }
+
+function appendCvPostMoraToSidebar() {
+  const tb = document.getElementById('tbDesglose');
+  if (!tb) return;
+  const existing = document.getElementById('cv-postmora-sidebar-row');
+  if (existing) existing.remove();
+  if (!cvSidebarData) return;
+  const { postMora, cap, totalCant } = cvSidebarData;
+  const cls = postMora >= 0 ? 'pos' : 'neg';
+  const row = document.createElement('tr');
+  row.id = 'cv-postmora-sidebar-row';
+  row.style.cssText = 'font-weight:800;background:#1e2a1e;border-top:2px solid var(--warning)';
+  row.innerHTML = `
+    <td style="color:var(--warning)">💵 Flujo libre (después de mora)</td>
+    <td class="${cls}" style="font-size:1.05rem">${fmtM(postMora)}</td>
+    <td class="${cls}">${totalCant > 0 ? fmtM(postMora / totalCant) : '—'}</td>
+    <td class="${cls}">${cap > 0 ? fmtP(postMora / cap * 100) : '—'}</td>
+  `;
+  tb.appendChild(row);
+}
+
 // Fields shown in the expanded extra-fields grid (plazo, cantCreditos, penPct handled separately)
 const CV_EXTRA_FIELDS = [
   { key: 'capitalCredito', label: 'Capital por crédito' },
@@ -2538,6 +2562,12 @@ function renderCicloVida() {
   </tr>`;
 
   tbody.innerHTML = html;
+
+  // Sync post-mora total to sidebar desglose
+  const allUnivsCount = [2,3,4,5].reduce((s,n) =>
+    s + cvState[n].reduce((ss,u) => ss + (u.cantCreditos||0), 0), 0);
+  cvSidebarData = { postMora: totPostMora, cap: totCap, totalCant: c1.cantCreditos + allUnivsCount };
+  appendCvPostMoraToSidebar();
 }
 
 window.addEventListener('load', () => {
