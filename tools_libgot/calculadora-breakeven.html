@@ -573,6 +573,69 @@
   .cv-row-c5 td:first-child { color:var(--danger); }
   .cv-row-total td { font-weight:800; background:var(--surface-2); border-top:2px solid var(--border); }
   .cv-row-total td:first-child { color:var(--gray-900); }
+
+  /* ── Universo cards ── */
+  .cv-universo {
+    background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:.7rem .8rem; margin-bottom:.5rem;
+  }
+  .cv-universo-header {
+    display:flex; align-items:center; gap:.5rem; margin-bottom:.5rem;
+  }
+  .cv-universo-label {
+    font-size:.7rem; font-weight:700; color:var(--gray-500);
+    text-transform:uppercase; letter-spacing:.05em;
+  }
+  .cv-universo-remove {
+    margin-left:auto; padding:.14rem .4rem; border:1px solid var(--border);
+    border-radius:5px; background:var(--surface); color:var(--gray-400);
+    font-size:.65rem; cursor:pointer; line-height:1; transition:.15s;
+  }
+  .cv-universo-remove:hover { background:var(--danger-light); color:var(--danger); border-color:var(--danger); }
+  .cv-penet-row {
+    display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:.55rem;
+    padding-bottom:.55rem; border-bottom:1px solid var(--border);
+  }
+  .cv-penet-row .input-group { margin:0; flex:0 0 105px; }
+  .cv-penet-row input { font-size:.76rem; padding:.3rem .5rem; }
+  .cv-penet-row label { font-size:.58rem; }
+  .cv-form-extra {
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(105px,1fr)); gap:.4rem;
+  }
+  .cv-form-extra .input-group { margin:0; }
+  .cv-form-extra input { font-size:.76rem; padding:.3rem .5rem; }
+  .cv-form-extra label { font-size:.58rem; }
+  .cv-add-btn {
+    display:flex; align-items:center; justify-content:center; gap:.4rem;
+    width:100%; margin-top:.4rem; padding:.42rem .9rem;
+    border:1px dashed var(--border); border-radius:6px;
+    background:transparent; color:var(--gray-500);
+    font-size:.75rem; font-weight:600; cursor:pointer; transition:.15s;
+  }
+  .cv-add-btn:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-light); }
+
+  /* ── Mora section inside universo ── */
+  .cv-mora-section {
+    margin-top:.55rem; padding:.5rem .7rem;
+    background:var(--danger-light); border:1px solid #4a1515;
+    border-radius:7px;
+  }
+  .cv-mora-title {
+    font-size:.63rem; font-weight:700; color:var(--danger);
+    text-transform:uppercase; letter-spacing:.05em; margin-bottom:.4rem;
+  }
+  .cv-mora-fields {
+    display:flex; flex-wrap:wrap; gap:.5rem; align-items:flex-end;
+  }
+  .cv-mora-fields .input-group { margin:0; flex:0 0 105px; }
+  .cv-mora-fields input { font-size:.76rem; padding:.3rem .5rem; }
+  .cv-mora-fields label { font-size:.58rem; }
+  .cv-mora-recovery {
+    font-size:.71rem; color:var(--gray-600); line-height:1.4;
+    padding:.3rem .55rem; background:var(--surface-2);
+    border-radius:5px; border:1px solid var(--border); align-self:flex-end;
+    white-space:nowrap;
+  }
   </style>
 </head>
 <body>
@@ -1187,6 +1250,8 @@
                 <thead>
                   <tr>
                     <th>Crédito</th>
+                    <th>Universo</th>
+                    <th>Cant.</th>
                     <th>Capital total</th>
                     <th>Ing. intereses</th>
                     <th>Ing. cross</th>
@@ -1194,7 +1259,10 @@
                     <th>Costos adq.</th>
                     <th>IVA + IIBB</th>
                     <th>Resultado</th>
-                    <th>Flujo libre</th>
+                    <th>Flujo libre*</th>
+                    <th>Mora crédito</th>
+                    <th>Mora CS</th>
+                    <th>Flujo post-mora</th>
                   </tr>
                 </thead>
                 <tbody id="cvDesgloseBody"></tbody>
@@ -2109,21 +2177,22 @@ function switchTab(n) {
 // TAB 6: CICLO DE VIDA
 // ══════════════════════════════════════════════════════════════
 
-const CV_FIELDS = [
-  { key: 'cantCreditos',  label: 'Cantidad créditos', fmt: v => Math.round(v).toLocaleString('es-AR') },
-  { key: 'capitalCredito',label: 'Capital por crédito', fmt: v => fmtM(v) },
-  { key: 'plazo',         label: 'Plazo (meses)', fmt: v => Math.round(v) + ' m' },
-  { key: 'tasaDirecta',   label: 'Tasa directa', fmt: v => r2(v) + '%' },
-  { key: 'bonificacion',  label: 'Bonificación', fmt: v => r2(v) + '%' },
-  { key: 'crossSelling',  label: 'Cross selling / mes', fmt: v => fmtM(v) },
-  { key: 'aceptacionCS',  label: '% Aceptación CS', fmt: v => r2(v) + '%' },
-  { key: 'punitorios',    label: 'Punitorios prom.', fmt: v => fmtM(v) },
-  { key: 'costoAdq',      label: 'Costo de adq.', fmt: v => fmtM(v) },
+// Fields shown in the expanded extra-fields grid (plazo, cantCreditos, penPct handled separately)
+const CV_EXTRA_FIELDS = [
+  { key: 'capitalCredito', label: 'Capital por crédito' },
+  { key: 'tasaDirecta',    label: 'Tasa directa (%)' },
+  { key: 'bonificacion',   label: 'Bonificación (%)' },
+  { key: 'crossSelling',   label: 'Cross selling / mes' },
+  { key: 'aceptacionCS',   label: 'Acepc. CS (%)' },
+  { key: 'punitorios',     label: 'Punitorios prom.' },
+  { key: 'costoAdq',       label: 'Costo de adq.' },
 ];
 
-// stores editable values for C2-C5
-const cvState = { 2: null, 3: null, 4: null, 5: null };
-let cvMode = 'base'; // 'base' | 'stress'
+// cvState[n] = array of universo objects (one per product variant)
+// universo: { cantCreditos, penPct, plazo, capitalCredito, tasaDirecta,
+//             bonificacion, crossSelling, aceptacionCS, punitorios, costoAdq }
+const cvState = { 2: [], 3: [], 4: [], 5: [] };
+let cvMode = 'base';
 
 function setCvMode(mode) {
   cvMode = mode;
@@ -2136,50 +2205,154 @@ function getC1Inputs() {
   return cvMode === 'stress' ? getEffectiveInputs() : getInputs();
 }
 
-function buildCicloForms() {
-  for (let n = 2; n <= 5; n++) {
-    const body = document.getElementById('cvBody' + n);
-    if (!body) continue;
-    let html = '<div class="cv-form-grid">';
-    CV_FIELDS.forEach(f => {
-      html += `
-        <div class="input-group">
-          <label for="cv_${n}_${f.key}">${f.label}</label>
-          <input type="number" id="cv_${n}_${f.key}" step="any"
-            onchange="cvFieldChanged(${n})"
-            oninput="cvFieldChanged(${n})">
-        </div>`;
-    });
-    html += '</div>';
-    body.innerHTML = html;
-  }
+// Total cantCreditos of credit n-1 (reference for penetration %)
+function getPrevTotal(n) {
+  if (n === 2) return getC1Inputs().cantCreditos;
+  const prev = cvState[n - 1];
+  return prev.reduce((s, u) => s + (u.cantCreditos || 0), 0);
 }
 
-function cvFieldChanged(n) {
-  if (!cvState[n]) cvState[n] = {};
-  CV_FIELDS.forEach(f => {
-    const el = document.getElementById('cv_' + n + '_' + f.key);
-    if (el) cvState[n][f.key] = parseFloat(el.value) || 0;
-  });
+function defaultUniverso(n) {
+  const c1 = getC1Inputs();
+  return {
+    cantCreditos: 0, penPct: 0, plazo: c1.plazo,
+    capitalCredito: c1.capitalCredito, tasaDirecta: c1.tasaDirecta,
+    bonificacion: c1.bonificacion, crossSelling: c1.crossSelling,
+    aceptacionCS: c1.aceptacionCS, punitorios: c1.punitorios, costoAdq: c1.costoAdq,
+    moraCreditoPct: 0, moraCSPct: 0,
+  };
+}
+
+function addUniverso(n) {
+  cvState[n].push(defaultUniverso(n));
+  buildCreditForm(n);
   renderCicloVida();
 }
 
-function getCicloInputs(n) {
-  if (n === 1) return getC1Inputs();
-  const base = cvState[n] || {};
-  const out = {};
-  CV_FIELDS.forEach(f => {
-    out[f.key] = base[f.key] !== undefined ? base[f.key] : 0;
+function removeUniverso(n, idx) {
+  if (cvState[n].length <= 1) return;
+  cvState[n].splice(idx, 1);
+  buildCreditForm(n);
+  renderCicloVida();
+}
+
+function buildCreditForm(n) {
+  const body = document.getElementById('cvBody' + n);
+  if (!body) return;
+  const prevTotal = getPrevTotal(n);
+  const prevLabel = prevTotal > 0
+    ? 'de ' + Math.round(prevTotal).toLocaleString('es-AR')
+    : 'C' + (n - 1) + ' vacío';
+
+  let html = '';
+  cvState[n].forEach((u, idx) => {
+    const canRemove = cvState[n].length > 1;
+    html += `
+      <div class="cv-universo">
+        <div class="cv-universo-header">
+          <span class="cv-universo-label">Universo ${idx + 1}</span>
+          ${canRemove ? `<button class="cv-universo-remove" onclick="removeUniverso(${n},${idx})">✕ quitar</button>` : ''}
+        </div>
+        <div class="cv-penet-row">
+          <div class="input-group">
+            <label for="cv_${n}_${idx}_penPct">% Penetración</label>
+            <div class="input-wrap">
+              <input type="number" id="cv_${n}_${idx}_penPct" step="0.1" min="0" max="100"
+                class="has-suf" value="${u.penPct || 0}"
+                oninput="cvPenPctChanged(${n},${idx})">
+              <span class="i-suf">%</span>
+            </div>
+            <span class="input-hint" id="cv_${n}_${idx}_penHint">${prevLabel}</span>
+          </div>
+          <div class="input-group">
+            <label for="cv_${n}_${idx}_cantCreditos">Cant. créditos</label>
+            <div class="input-wrap">
+              <input type="number" id="cv_${n}_${idx}_cantCreditos" step="1" min="0"
+                value="${u.cantCreditos || 0}"
+                oninput="cvCantChanged(${n},${idx})">
+            </div>
+          </div>
+          <div class="input-group">
+            <label for="cv_${n}_${idx}_plazo">Plazo (m)</label>
+            <div class="input-wrap">
+              <input type="number" id="cv_${n}_${idx}_plazo" step="1" min="1"
+                class="has-suf" value="${u.plazo || 1}"
+                oninput="cvExtraChanged(${n},${idx},'plazo')">
+              <span class="i-suf">m</span>
+            </div>
+          </div>
+        </div>
+        <div class="cv-form-extra">
+          ${CV_EXTRA_FIELDS.map(f => `
+            <div class="input-group">
+              <label for="cv_${n}_${idx}_${f.key}">${f.label}</label>
+              <input type="number" id="cv_${n}_${idx}_${f.key}" step="any"
+                value="${u[f.key] !== undefined ? u[f.key] : ''}"
+                oninput="cvExtraChanged(${n},${idx},'${f.key}')">
+            </div>`).join('')}
+        </div>
+        <div class="cv-mora-section">
+          <div class="cv-mora-title">⚠️ Mora esperada</div>
+          <div class="cv-mora-fields">
+            <div class="input-group">
+              <label for="cv_${n}_${idx}_moraCreditoPct">% Mora Crédito</label>
+              <div class="input-wrap">
+                <input type="number" id="cv_${n}_${idx}_moraCreditoPct" step="0.1" min="0" max="100"
+                  class="has-suf" value="${u.moraCreditoPct || 0}"
+                  oninput="cvExtraChanged(${n},${idx},'moraCreditoPct')">
+                <span class="i-suf">%</span>
+              </div>
+            </div>
+            <div class="input-group">
+              <label for="cv_${n}_${idx}_moraCSPct">% Mora Cross Selling</label>
+              <div class="input-wrap">
+                <input type="number" id="cv_${n}_${idx}_moraCSPct" step="0.1" min="0" max="100"
+                  class="has-suf" value="${u.moraCSPct || 0}"
+                  oninput="cvExtraChanged(${n},${idx},'moraCSPct')">
+                <span class="i-suf">%</span>
+              </div>
+            </div>
+            <div class="cv-mora-recovery" id="cv_${n}_${idx}_moraInfo">—</div>
+          </div>
+        </div>
+      </div>`;
   });
-  return out;
+
+  html += `<button class="cv-add-btn" onclick="addUniverso(${n})">＋ Agregar universo</button>`;
+  body.innerHTML = html;
+}
+
+function cvPenPctChanged(n, idx) {
+  const penEl  = document.getElementById(`cv_${n}_${idx}_penPct`);
+  const cantEl = document.getElementById(`cv_${n}_${idx}_cantCreditos`);
+  const penPct = parseFloat(penEl.value) || 0;
+  const prevTotal = getPrevTotal(n);
+  const cant = prevTotal > 0 ? Math.round(prevTotal * penPct / 100) : 0;
+  cantEl.value = cant;
+  cvState[n][idx] = { ...cvState[n][idx], penPct, cantCreditos: cant };
+  renderCicloVida();
+}
+
+function cvCantChanged(n, idx) {
+  const penEl  = document.getElementById(`cv_${n}_${idx}_penPct`);
+  const cantEl = document.getElementById(`cv_${n}_${idx}_cantCreditos`);
+  const cant = parseFloat(cantEl.value) || 0;
+  const prevTotal = getPrevTotal(n);
+  const penPct = prevTotal > 0 ? parseFloat((cant / prevTotal * 100).toFixed(1)) : 0;
+  penEl.value = penPct;
+  cvState[n][idx] = { ...cvState[n][idx], cantCreditos: cant, penPct };
+  renderCicloVida();
+}
+
+function cvExtraChanged(n, idx, field) {
+  const el = document.getElementById(`cv_${n}_${idx}_${field}`);
+  cvState[n][idx] = { ...cvState[n][idx], [field]: parseFloat(el.value) || 0 };
+  renderCicloVida();
 }
 
 function resetCicloCredit(n) {
-  cvState[n] = null;
-  CV_FIELDS.forEach(f => {
-    const el = document.getElementById('cv_' + n + '_' + f.key);
-    if (el) el.value = '';
-  });
+  cvState[n] = [defaultUniverso(n)];
+  buildCreditForm(n);
   renderCicloVida();
 }
 
@@ -2192,89 +2365,176 @@ function toggleCicloCredit(n) {
   if (chev) chev.classList.toggle('open', opening);
 }
 
+function buildAllCreditForms() {
+  for (let n = 2; n <= 5; n++) {
+    if (!cvState[n].length) cvState[n].push(defaultUniverso(n));
+    buildCreditForm(n);
+  }
+}
+
 function renderCicloVida() {
   const c1 = getC1Inputs();
 
   // C1 read-only grid
   const ro1 = document.getElementById('cvReadonly1');
   if (ro1) {
-    ro1.innerHTML = CV_FIELDS.map(f =>
+    const c1Fields = [
+      ['Cant. créditos',     Math.round(c1.cantCreditos).toLocaleString('es-AR')],
+      ['Capital por crédito',fmtM(c1.capitalCredito)],
+      ['Plazo',              Math.round(c1.plazo) + ' m'],
+      ['Tasa directa',       r2(c1.tasaDirecta) + '%'],
+      ['Bonificación',       r2(c1.bonificacion) + '%'],
+      ['Cross selling / mes',fmtM(c1.crossSelling)],
+      ['Aceptación CS',      r2(c1.aceptacionCS) + '%'],
+      ['Punitorios',         fmtM(c1.punitorios)],
+      ['Costo de adq.',      fmtM(c1.costoAdq)],
+    ];
+    ro1.innerHTML = c1Fields.map(([label, val]) =>
       `<div class="cv-ro-item">
-        <div class="cv-ro-label">${f.label}</div>
-        <div class="cv-ro-val">${f.fmt(c1[f.key])}</div>
-      </div>`
-    ).join('');
+        <div class="cv-ro-label">${label}</div>
+        <div class="cv-ro-val">${val}</div>
+      </div>`).join('');
   }
 
-  // Compute results for all 5 credits
-  const results = [];
-  for (let n = 1; n <= 5; n++) {
-    const inp = getCicloInputs(n);
-    const res = calcRes(inp);
-    const hasData = n === 1 || !!cvState[n];
-    results.push({ n, inp, res, hasData });
+  // C1 summary
+  const r1 = calcRes(c1);
+  const s1 = document.getElementById('cvSummary1');
+  if (s1) s1.textContent = Math.round(c1.cantCreditos).toLocaleString('es-AR') + ' créditos · Flujo: ' + fmtM(r1.flujoLibre);
 
-    // summary badge
+  // C2-C5 summaries + update penetration hints
+  for (let n = 2; n <= 5; n++) {
+    const univs = cvState[n];
+    const prevTotal = getPrevTotal(n);
+    const prevLabel = prevTotal > 0
+      ? 'de ' + Math.round(prevTotal).toLocaleString('es-AR')
+      : 'C' + (n - 1) + ' vacío';
+
+    // Update hint texts (no form rebuild needed)
+    univs.forEach((_, idx) => {
+      const hint = document.getElementById(`cv_${n}_${idx}_penHint`);
+      if (hint) hint.textContent = prevLabel;
+    });
+
     const sumEl = document.getElementById('cvSummary' + n);
-    if (sumEl) {
-      sumEl.textContent = hasData
-        ? 'Resultado: ' + fmtM(res.resultado) + ' · Flujo: ' + fmtM(res.flujoLibre)
-        : '— sin datos';
-    }
+    if (!sumEl) continue;
+    if (!univs.length) { sumEl.textContent = '— sin datos'; continue; }
+    const totalCant = univs.reduce((s, u) => s + (u.cantCreditos || 0), 0);
+    const totalPen  = prevTotal > 0 ? r2(totalCant / prevTotal * 100) + '%' : '—';
+    sumEl.textContent = totalCant.toLocaleString('es-AR') + ' créditos · ' + totalPen + ' penet.';
   }
 
-  // Desglose 2 table
+  // Desglose table
   const tbody = document.getElementById('cvDesgloseBody');
   if (!tbody) return;
 
-  const colors = ['', '#3b82f6', 'var(--success)', 'var(--warning)', 'var(--purple)', 'var(--danger)'];
   const rowClass = ['', 'cv-row-c1', 'cv-row-c2', 'cv-row-c3', 'cv-row-c4', 'cv-row-c5'];
   let html = '';
-
   let totCap=0, totInt=0, totCS=0, totPun=0, totCost=0, totImp=0, totRes=0, totFlujo=0;
 
-  results.forEach(({ n, res, hasData }) => {
-    if (!hasData) {
-      html += `<tr class="${rowClass[n]}" style="opacity:.4">
-        <td>C${n}</td>
-        <td colspan="8" style="text-align:center;font-style:italic;color:var(--gray-500)">sin datos cargados</td>
-      </tr>`;
-      return;
-    }
-    const cap   = res.capitalTotal;
-    const ing   = res.ingresoIntereses;
-    const cs    = res.ingresoCS;
-    const pun   = res.ingresoPun;
-    const cost  = res.costoAdqTotal;
-    const imp   = res.impuestosTotal;
-    const res_  = res.resultado;
-    const fl    = res.flujoLibre;
-    totCap+=cap; totInt+=ing; totCS+=cs; totPun+=pun;
-    totCost+=cost; totImp+=imp; totRes+=res_; totFlujo+=fl;
+  // helper: compute mora for one universo
+  function moraOf(u, res) {
+    const mCPct = u.moraCreditoPct || 0;
+    const mCSPct = u.moraCSPct || 0;
+    const lossCredito = (res.capitalTotal + res.ingresoIntereses) * mCPct / 100;
+    const lossCS      = res.ingresoCS * mCSPct / 100;
+    const total       = lossCredito + lossCS;
+    const postMora    = res.flujoLibre - total;
+    const totalExp    = res.capitalTotal + res.ingresoIntereses + res.ingresoCS;
+    const recovPct    = totalExp > 0 ? (1 - total / totalExp) * 100 : 100;
+    return { lossCredito, lossCS, total, postMora, recovPct };
+  }
 
-    html += `<tr class="${rowClass[n]}">
-      <td>C${n}</td>
-      <td>${fmtM(cap)}</td>
-      <td>${fmtM(ing)}</td>
-      <td>${fmtM(cs)}</td>
-      <td>${fmtM(pun)}</td>
-      <td>${fmtM(cost)}</td>
-      <td>${fmtM(imp)}</td>
-      <td style="color:${res_>=0?'var(--success)':'var(--danger)'}">${fmtM(res_)}</td>
-      <td style="color:${fl>=0?'var(--success)':'var(--danger)'}">${fmtM(fl)}</td>
-    </tr>`;
-  });
+  // C1 row — no mora fields for C1
+  const m1 = { lossCredito:0, lossCS:0, total:0, postMora:r1.flujoLibre };
+  totCap+=r1.capitalTotal; totInt+=r1.ingresoIntereses; totCS+=r1.ingresoCS;
+  totPun+=r1.ingresoPun; totCost+=r1.costoAdqTotal; totImp+=r1.impuestosTotal;
+  totRes+=r1.resultado; totFlujo+=r1.flujoLibre;
+  let totMoraC=0, totMoraCS=0, totPostMora=r1.flujoLibre;
+
+  html += `<tr class="${rowClass[1]}">
+    <td>C1</td><td style="color:var(--gray-500);font-style:italic;font-size:.75em">—</td>
+    <td>${Math.round(c1.cantCreditos).toLocaleString('es-AR')}</td>
+    <td>${fmtM(r1.capitalTotal)}</td><td>${fmtM(r1.ingresoIntereses)}</td>
+    <td>${fmtM(r1.ingresoCS)}</td><td>${fmtM(r1.ingresoPun)}</td>
+    <td>${fmtM(r1.costoAdqTotal)}</td><td>${fmtM(r1.impuestosTotal)}</td>
+    <td style="color:${r1.resultado>=0?'var(--success)':'var(--danger)'}">${fmtM(r1.resultado)}</td>
+    <td style="color:${r1.flujoLibre>=0?'var(--success)':'var(--danger)'}">${fmtM(r1.flujoLibre)}</td>
+    <td style="color:var(--gray-500)">—</td><td style="color:var(--gray-500)">—</td>
+    <td style="color:${r1.flujoLibre>=0?'var(--success)':'var(--danger)'}">${fmtM(r1.flujoLibre)}</td>
+  </tr>`;
+
+  // C2-C5
+  for (let n = 2; n <= 5; n++) {
+    const univs = cvState[n];
+    if (!univs.length) {
+      html += `<tr class="${rowClass[n]}" style="opacity:.4">
+        <td>C${n}</td><td colspan="13" style="text-align:center;font-style:italic;color:var(--gray-500)">sin datos cargados</td>
+      </tr>`;
+      continue;
+    }
+    let subCap=0,subInt=0,subCS=0,subPun=0,subCost=0,subImp=0,subRes=0,subFlujo=0;
+    let subMoraC=0,subMoraCS=0,subPostMora=0;
+
+    univs.forEach((u, idx) => {
+      const res = calcRes(u);
+      const mora = moraOf(u, res);
+
+      subCap+=res.capitalTotal; subInt+=res.ingresoIntereses; subCS+=res.ingresoCS;
+      subPun+=res.ingresoPun; subCost+=res.costoAdqTotal; subImp+=res.impuestosTotal;
+      subRes+=res.resultado; subFlujo+=res.flujoLibre;
+      subMoraC+=mora.lossCredito; subMoraCS+=mora.lossCS; subPostMora+=mora.postMora;
+
+      // Update recovery info in form
+      const infoEl = document.getElementById(`cv_${n}_${idx}_moraInfo`);
+      if (infoEl) {
+        infoEl.innerHTML = mora.total > 0
+          ? `📉 Pérdida: ${fmtM(mora.total)}<br>♻️ Recup.: ${r2(mora.recovPct)}%`
+          : '✅ Sin mora';
+      }
+
+      html += `<tr class="${rowClass[n]}">
+        <td>C${n}</td>
+        <td style="color:var(--gray-400);font-size:.78em;white-space:nowrap">Pz${u.plazo||1} · U${idx+1}</td>
+        <td>${Math.round(u.cantCreditos||0).toLocaleString('es-AR')}</td>
+        <td>${fmtM(res.capitalTotal)}</td><td>${fmtM(res.ingresoIntereses)}</td>
+        <td>${fmtM(res.ingresoCS)}</td><td>${fmtM(res.ingresoPun)}</td>
+        <td>${fmtM(res.costoAdqTotal)}</td><td>${fmtM(res.impuestosTotal)}</td>
+        <td style="color:${res.resultado>=0?'var(--success)':'var(--danger)'}">${fmtM(res.resultado)}</td>
+        <td style="color:${res.flujoLibre>=0?'var(--success)':'var(--danger)'}">${fmtM(res.flujoLibre)}</td>
+        <td style="color:var(--danger)">${mora.lossCredito>0?'-'+fmtM(mora.lossCredito):'—'}</td>
+        <td style="color:var(--danger)">${mora.lossCS>0?'-'+fmtM(mora.lossCS):'—'}</td>
+        <td style="color:${mora.postMora>=0?'var(--success)':'var(--danger)'}"><strong>${fmtM(mora.postMora)}</strong></td>
+      </tr>`;
+    });
+
+    if (univs.length > 1) {
+      html += `<tr style="background:#12172a;font-weight:700;font-size:.78em">
+        <td>C${n} subtotal</td><td></td>
+        <td>${univs.reduce((s,u)=>s+(u.cantCreditos||0),0).toLocaleString('es-AR')}</td>
+        <td>${fmtM(subCap)}</td><td>${fmtM(subInt)}</td><td>${fmtM(subCS)}</td>
+        <td>${fmtM(subPun)}</td><td>${fmtM(subCost)}</td><td>${fmtM(subImp)}</td>
+        <td style="color:${subRes>=0?'var(--success)':'var(--danger)'}">${fmtM(subRes)}</td>
+        <td style="color:${subFlujo>=0?'var(--success)':'var(--danger)'}">${fmtM(subFlujo)}</td>
+        <td style="color:var(--danger)">${subMoraC>0?'-'+fmtM(subMoraC):'—'}</td>
+        <td style="color:var(--danger)">${subMoraCS>0?'-'+fmtM(subMoraCS):'—'}</td>
+        <td style="color:${subPostMora>=0?'var(--success)':'var(--danger)'}"><strong>${fmtM(subPostMora)}</strong></td>
+      </tr>`;
+    }
+
+    totCap+=subCap; totInt+=subInt; totCS+=subCS; totPun+=subPun;
+    totCost+=subCost; totImp+=subImp; totRes+=subRes; totFlujo+=subFlujo;
+    totMoraC+=subMoraC; totMoraCS+=subMoraCS; totPostMora+=subPostMora;
+  }
 
   html += `<tr class="cv-row-total">
-    <td>Total</td>
-    <td>${fmtM(totCap)}</td>
-    <td>${fmtM(totInt)}</td>
-    <td>${fmtM(totCS)}</td>
-    <td>${fmtM(totPun)}</td>
-    <td>${fmtM(totCost)}</td>
-    <td>${fmtM(totImp)}</td>
+    <td>Total</td><td></td><td>—</td>
+    <td>${fmtM(totCap)}</td><td>${fmtM(totInt)}</td><td>${fmtM(totCS)}</td>
+    <td>${fmtM(totPun)}</td><td>${fmtM(totCost)}</td><td>${fmtM(totImp)}</td>
     <td style="color:${totRes>=0?'var(--success)':'var(--danger)'}">${fmtM(totRes)}</td>
     <td style="color:${totFlujo>=0?'var(--success)':'var(--danger)'}">${fmtM(totFlujo)}</td>
+    <td style="color:var(--danger)">${totMoraC>0?'-'+fmtM(totMoraC):'—'}</td>
+    <td style="color:var(--danger)">${totMoraCS>0?'-'+fmtM(totMoraCS):'—'}</td>
+    <td style="color:${totPostMora>=0?'var(--success)':'var(--danger)'}"><strong>${fmtM(totPostMora)}</strong></td>
   </tr>`;
 
   tbody.innerHTML = html;
@@ -2309,7 +2569,7 @@ window.addEventListener('load', () => {
 
   // Init
   buildStressGrid();
-  buildCicloForms();
+  buildAllCreditForms();
   syncInteresDesdeTaska();
   calcular();
 });
