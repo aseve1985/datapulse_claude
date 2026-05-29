@@ -8,6 +8,7 @@ import dotenv from "dotenv";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Pool } from "pg";
 import { parquetRead } from "hyparquet";
+import * as XLSX from "xlsx";
 
 dotenv.config();
 
@@ -1091,6 +1092,71 @@ async function startServer() {
       await client.query("ROLLBACK");
       console.error("[UIF] Redshift update error:", err);
       res.status(500).json({ error: "Error al guardar en Redshift", details: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // ── Productos Argentina ──────────────────────────────────────────────────────
+  let productosCache: { data: any[]; fetchedAt: number } | null = null;
+  const PRODUCTOS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
+
+  app.get("/api/productos-argentina", async (_req, res) => {
+    try {
+      const now = Date.now();
+      if (!productosCache || now - productosCache.fetchedAt > PRODUCTOS_CACHE_TTL_MS) {
+        console.log("[Productos] Downloading productos_argentina.xlsx from S3...");
+        const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+        const cmd = new GetObjectCommand({
+          Bucket: "data-lake-libgot-externos",
+          Key: "platinum_ia/productos_productivos/productos_argentina.xlsx",
+        });
+        const response = await s3.send(cmd);
+        const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
+        const workbook = XLSX.read(bytes, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        productosCache = { data: rows, fetchedAt: now };
+        console.log(`[Productos] Cached ${rows.length} productos`);
+      } else {
+        console.log("[Productos] Serving from cache");
+      }
+      res.json({ records: productosCache.data, total: productosCache.data.length });
+    } catch (error: any) {
+      console.error("[Productos] Error:", error);
+      res.status(500).json({ error: "Error al cargar productos", details: error.message });
+    }
+  });
+
+  // ── RI-EXPERIAN Endpoints ───────────────────────────────────────────────────
+  let riExperianCache: { data: any[]; fetchedAt: number } | null = null;
+  const RI_EXPERIAN_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+  app.get("/api/ri-experian/records", async (req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({ error: "Conexión a Redshift no configurada" });
+    }
+    const client = await redshiftPool.connect();
+    try {
+      const now = Date.now();
+      if (!riExperianCache || now - riExperianCache.fetchedAt > RI_EXPERIAN_CACHE_TTL_MS) {
+        console.log("[RI-EXPERIAN] Executing SP...");
+        await client.query("CALL store_procedures.sp_ri_experian()");
+        console.log("[RI-EXPERIAN] SP done, querying export table...");
+        const result = await client.query(
+          "SELECT concatenado FROM staging.ri_experian_mes_en_curso_export WHERE 1=1 ORDER BY orden"
+        );
+        riExperianCache = { data: result.rows, fetchedAt: Date.now() };
+        console.log(`[RI-EXPERIAN] Cached ${result.rows.length} records`);
+      } else {
+        console.log("[RI-EXPERIAN] Serving from cache");
+      }
+      const safe = JSON.parse(JSON.stringify(riExperianCache.data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
+      res.json({ records: safe, total: safe.length, source: "redshift" });
+    } catch (error: any) {
+      console.error("[RI-EXPERIAN] Error:", error);
+      riExperianCache = null; // no dejar cache parcial si el SP falló
+      res.status(500).json({ error: "Error al cargar datos RI-EXPERIAN", details: error.message });
     } finally {
       client.release();
     }

@@ -447,16 +447,13 @@
     .tab-nav {
       display: flex;
       gap: .25rem;
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      scrollbar-width: none;
+      flex-wrap: wrap;
       margin-bottom: 1.2rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: .3rem;
     }
-    .tab-nav::-webkit-scrollbar { display: none; }
     .tab-btn {
       flex: 0 0 auto;
       padding: .42rem .85rem;
@@ -482,6 +479,8 @@
       .main-layout { grid-template-columns: 1fr; }
       .sidebar-desglose { position: static; max-height: none; }
     }
+    .main-layout.no-sidebar { grid-template-columns: 1fr; }
+    .main-layout.no-sidebar .sidebar-desglose { display: none; }
 
   /* ══════════════════════════════════════════
      TAB 6: CICLO DE VIDA
@@ -668,6 +667,7 @@
         <button class="tab-btn" onclick="switchTab(4)">📅 Cuotas</button>
         <button class="tab-btn" onclick="switchTab(5)">📐 Glosario</button>
         <button class="tab-btn" onclick="switchTab(6)">🔄 Ciclo de vida</button>
+        <button class="tab-btn" onclick="switchTab(7); loadProductos()">📦 Productos</button>
       </nav>
 
       <!-- ====== TAB 1: VARIABLES + RESULTADOS + TASAS ====== -->
@@ -1272,6 +1272,18 @@
 
         </div>
       </div><!-- /tab6 -->
+
+      <!-- ====== TAB 7: PRODUCTOS ====== -->
+      <div id="tab7" class="tab-panel">
+        <div class="section">
+          <div class="section-title">📦 Productos Argentina</div>
+          <div id="productos-state" style="padding:2rem;text-align:center;color:var(--gray-500);font-size:.85rem;">
+            Cargando productos…
+          </div>
+          <div id="productos-error" style="display:none;padding:1rem;background:var(--danger-light);border:1px solid var(--danger);border-radius:8px;color:var(--danger);font-size:.82rem;"></div>
+          <div id="productos-table-wrap" class="tbl-wrap" style="display:none;"></div>
+        </div>
+      </div><!-- /tab7 -->
 
 
     </div><!-- /tab-area -->
@@ -2171,6 +2183,62 @@ function switchTab(n) {
   document.querySelectorAll('.tab-panel').forEach((p, i) => {
     p.classList.toggle('active', i + 1 === n);
   });
+  document.querySelector('.main-layout').classList.toggle('no-sidebar', n === 7);
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 7: PRODUCTOS ARGENTINA
+// ══════════════════════════════════════════════════════════════
+let productosLoaded = false;
+
+async function loadProductos() {
+  if (productosLoaded) return;
+
+  const stateEl  = document.getElementById('productos-state');
+  const errorEl  = document.getElementById('productos-error');
+  const tableWrap = document.getElementById('productos-table-wrap');
+
+  stateEl.style.display  = 'block';
+  stateEl.textContent    = 'Cargando productos…';
+  errorEl.style.display  = 'none';
+  tableWrap.style.display = 'none';
+
+  try {
+    const res  = await fetch('/api/productos-argentina');
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.details || err.error || `HTTP ${res.status}`);
+    }
+    const { records } = await res.json();
+
+    if (!records || records.length === 0) {
+      stateEl.textContent = 'Sin productos disponibles.';
+      return;
+    }
+
+    const cols = Object.keys(records[0]);
+
+    const thead = `<thead><tr>${cols.map(c =>
+      `<th style="text-align:left">${c}</th>`
+    ).join('')}</tr></thead>`;
+
+    const tbody = `<tbody>${records.map(row =>
+      `<tr>${cols.map(col => {
+        const v = row[col];
+        return `<td>${v === null || v === undefined || v === '' ? '—' : v}</td>`;
+      }).join('')}</tr>`
+    ).join('')}</tbody>`;
+
+    tableWrap.innerHTML = `<table>${thead}${tbody}</table>`;
+    stateEl.style.display  = 'none';
+    tableWrap.style.display = 'block';
+    productosLoaded = true;
+
+  } catch (err) {
+    stateEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    errorEl.textContent   = `Error al cargar productos: ${err.message}`;
+  }
 }
 
 
