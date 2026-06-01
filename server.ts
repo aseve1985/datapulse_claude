@@ -174,6 +174,21 @@ async function updateExchangeRates() {
           console.warn(`[ExchangeRates] Bluelytics API failed, trying fallback...`);
         }
       } else if (currency === 'COP') {
+        // Fuente 1: open.er-api.com (sin API key, confiable)
+        try {
+          console.log(`[ExchangeRates] Fetching COP from open.er-api.com...`);
+          const res = await fetch('https://open.er-api.com/v6/latest/USD');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.rates && data.rates.COP) {
+              console.log(`[ExchangeRates] Successfully fetched COP from open.er-api.com: ${data.rates.COP}`);
+              return data.rates.COP;
+            }
+          }
+        } catch (e) {
+          console.warn(`[ExchangeRates] open.er-api.com failed, trying exchangerate-api...`);
+        }
+        // Fuente 2: exchangerate-api.com
         try {
           console.log(`[ExchangeRates] Fetching COP from ExchangeRate-API...`);
           const res = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
@@ -271,20 +286,22 @@ async function updateExchangeRates() {
     const arsRate = await fetchRate('ARS');
     const copRate = await fetchRate('COP');
 
-    if (arsRate || copRate) {
-      const now = new Date();
-      const formattedDate = now.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-      
-      exchangeRatesCache = {
-        ARS: arsRate || exchangeRatesCache.ARS,
-        COP: copRate || exchangeRatesCache.COP,
-        LAST_UPDATE: formattedDate,
-        timestamp: Date.now()
-      };
-      console.log(`[ExchangeRates] Updated: ARS=${exchangeRatesCache.ARS}, COP=${exchangeRatesCache.COP}`);
-    }
+    // Siempre actualizar fecha y timestamp — aunque las APIs fallen, el usuario ve cuándo se intentó
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+    exchangeRatesCache = {
+      ARS: arsRate || exchangeRatesCache.ARS,
+      COP: copRate || exchangeRatesCache.COP,
+      LAST_UPDATE: formattedDate,
+      timestamp: Date.now()
+    };
+    console.log(`[ExchangeRates] Updated: ARS=${exchangeRatesCache.ARS}, COP=${exchangeRatesCache.COP}, fetched=${!!arsRate}/${!!copRate}`);
   } catch (err) {
     console.error("[ExchangeRates] Error updating rates:", err);
+    // Aún así actualizar la fecha para que el usuario vea que el sistema intentó
+    const now = new Date();
+    exchangeRatesCache.LAST_UPDATE = now.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+    exchangeRatesCache.timestamp = Date.now();
   }
 }
 
