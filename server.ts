@@ -1136,10 +1136,11 @@ async function startServer() {
     if (!redshiftPool) {
       return res.status(503).json({ error: "Conexión a Redshift no configurada" });
     }
-    const client = await redshiftPool.connect();
+    let client: any = null;
     try {
       const now = Date.now();
       if (!riExperianCache || now - riExperianCache.fetchedAt > RI_EXPERIAN_CACHE_TTL_MS) {
+        client = await redshiftPool.connect();
         console.log("[RI-EXPERIAN] Executing SP...");
         await client.query("CALL store_procedures.sp_ri_experian()");
         console.log("[RI-EXPERIAN] SP done, querying export table...");
@@ -1155,10 +1156,10 @@ async function startServer() {
       res.json({ records: safe, total: safe.length, source: "redshift" });
     } catch (error: any) {
       console.error("[RI-EXPERIAN] Error:", error);
-      riExperianCache = null; // no dejar cache parcial si el SP falló
-      res.status(500).json({ error: "Error al cargar datos RI-EXPERIAN", details: error.message });
+      riExperianCache = null;
+      res.status(500).json({ error: "Error al cargar datos RI-EXPERIAN", details: error.message || String(error) });
     } finally {
-      client.release();
+      if (client) client.release();
     }
   });
 
