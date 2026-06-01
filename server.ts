@@ -1132,34 +1132,65 @@ async function startServer() {
   let riExperianCache: { data: any[]; fetchedAt: number } | null = null;
   const RI_EXPERIAN_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 
-  app.get("/api/ri-experian/records", async (req, res) => {
+  // Carga el cache (ejecuta SP + SELECT si expiró). Reutilizado por ambos endpoints.
+  async function loadRiExperianCache() {
+    if (riExperianCache && Date.now() - riExperianCache.fetchedAt <= RI_EXPERIAN_CACHE_TTL_MS) return;
+    const client = await redshiftPool!.connect();
+    try {
+      console.log("[RI-EXPERIAN] Executing SP...");
+      await client.query("CALL store_procedures.sp_ri_experian()");
+      console.log("[RI-EXPERIAN] SP done, querying export table...");
+      const result = await client.query(
+        "SELECT concatenado FROM staging.ri_experian_mes_en_curso_export WHERE 1=1 ORDER BY orden"
+      );
+      riExperianCache = { data: result.rows, fetchedAt: Date.now() };
+      console.log(`[RI-EXPERIAN] Cached ${result.rows.length} records`);
+    } finally {
+      client.release();
+    }
+  }
+
+  // Devuelve solo stats (total + periodo) — respuesta mínima, sin filas
+  app.get("/api/ri-experian/records", async (_req, res) => {
     if (!redshiftPool) {
       return res.status(503).json({ error: "Conexión a Redshift no configurada" });
     }
-    let client: any = null;
     try {
-      const now = Date.now();
-      if (!riExperianCache || now - riExperianCache.fetchedAt > RI_EXPERIAN_CACHE_TTL_MS) {
-        client = await redshiftPool.connect();
-        console.log("[RI-EXPERIAN] Executing SP...");
-        await client.query("CALL store_procedures.sp_ri_experian()");
-        console.log("[RI-EXPERIAN] SP done, querying export table...");
-        const result = await client.query(
-          "SELECT concatenado FROM staging.ri_experian_mes_en_curso_export WHERE 1=1 ORDER BY orden"
-        );
-        riExperianCache = { data: result.rows, fetchedAt: Date.now() };
-        console.log(`[RI-EXPERIAN] Cached ${result.rows.length} records`);
-      } else {
-        console.log("[RI-EXPERIAN] Serving from cache");
-      }
-      const safe = JSON.parse(JSON.stringify(riExperianCache.data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
-      res.json({ records: safe, total: safe.length, source: "redshift" });
+      await loadRiExperianCache();
+      const rows = riExperianCache!.data;
+      const header = rows.find(r => String(r.concatenado ?? '').startsWith('H'));
+      const periodo = header ? String(header.concatenado).slice(26, 34) : null;
+      res.json({ total: rows.length, periodo });
     } catch (error: any) {
       console.error("[RI-EXPERIAN] Error:", error);
       riExperianCache = null;
       res.status(500).json({ error: "Error al cargar datos RI-EXPERIAN", details: error.message || String(error) });
-    } finally {
-      if (client) client.release();
+    }
+  });
+
+  // Streamea el TXT completo directamente — el browser lo descarga sin pasar por JSON
+  app.get("/api/ri-experian/export", async (_req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({ error: "Conexión a Redshift no configurada" });
+    }
+    try {
+      await loadRiExperianCache();
+      const rows = riExperianCache!.data;
+      const header = rows.find(r => String(r.concatenado ?? '').startsWith('H'));
+      const raw = header ? String(header.concatenado).slice(26, 34) : null;
+      const filename = raw && /^\d{8}$/.test(raw) ? `050193.${raw}.T.txt` : `050193.export.T.txt`;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      for (const row of rows) {
+        res.write((row.concatenado ?? '') + '\n');
+      }
+      res.end();
+      console.log(`[RI-EXPERIAN] Exported ${rows.length} rows as ${filename}`);
+    } catch (error: any) {
+      console.error("[RI-EXPERIAN] Export error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Error al exportar RI-EXPERIAN", details: error.message || String(error) });
+      }
     }
   });
 
