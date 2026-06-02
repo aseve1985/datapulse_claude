@@ -32,7 +32,8 @@ import {
   CalendarDays,
   Zap,
   Wrench,
-  Calculator
+  Calculator,
+  Brain
 } from 'lucide-react';
 import { EXCHANGE_RATES } from '../constants';
 
@@ -551,6 +552,26 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onOpenFeature
             </p>
             <div className="mt-auto flex items-center text-emerald-500/80 font-bold text-xs uppercase tracking-widest group-hover:text-emerald-400 transition-colors">
               Abrir herramienta
+              <ExternalLink size={13} className="ml-1.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            </div>
+          </a>
+
+          <a
+            href="https://notebooklm.google.com/notebook/76ebc3fe-56a0-4550-848b-0a83d12c4ae2"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex flex-col p-8 bg-slate-900/40 border border-slate-800/50 hover:border-emerald-500/40 hover:bg-slate-800/60 rounded-[2rem] transition-all shadow-xl text-left overflow-hidden relative"
+          >
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-3xl -mr-16 -mt-16 group-hover:bg-emerald-500/10 transition-colors" />
+            <div className="w-14 h-14 bg-violet-700 rounded-2xl flex items-center justify-center text-white mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all shadow-lg shadow-black/20">
+              <Brain size={28} />
+            </div>
+            <h3 className="text-xl font-bold text-white group-hover:text-emerald-400 transition-colors mb-3">Knowledge Capital</h3>
+            <p className="text-zinc-500 text-sm leading-relaxed mb-8 group-hover:text-zinc-400 transition-colors">
+              Base de conocimiento institucional de Libgot. Consultá políticas, procesos y documentación interna con IA.
+            </p>
+            <div className="mt-auto flex items-center text-emerald-500/80 font-bold text-xs uppercase tracking-widest group-hover:text-emerald-400 transition-colors">
+              Abrir notebook
               <ExternalLink size={13} className="ml-1.5 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
             </div>
           </a>
