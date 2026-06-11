@@ -834,9 +834,10 @@ export default function DashboardView({
         return c;
       }));
 
-      // Filter slots: always 3 empty slots (user sets them manually)
+      // Filter slots: 4 slots, first defaults to pais
       if (filterSlots.length === 0) {
         setFilterSlots([
+          { field: 'pais', values: [] },
           { field: '', values: [] },
           { field: '', values: [] },
           { field: '', values: [] },
@@ -844,9 +845,10 @@ export default function DashboardView({
       }
     } else {
       restoredFromReport.current = false;
-      // If report had no filterSlots, init 3 empty editable slots
+      // Filter slots: 4 slots, first defaults to pais
       if (filterSlots.length === 0) {
         setFilterSlots([
+          { field: 'pais', values: [] },
           { field: '', values: [] },
           { field: '', values: [] },
           { field: '', values: [] },
