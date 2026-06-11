@@ -76,7 +76,7 @@ const parseNumericValue = (val: any): number => {
 
 // --- Sub-components (Restored from previous version) ---
 
-const StatCard = React.memo(({ title, value, icon: Icon, trend, color, onConfigChange, availableFields, currentField, currentType }: any) => {
+const StatCard = React.memo(({ title, value, icon: Icon, trend, color, onConfigChange, availableFields, currentField, currentType, countryBreakdown }: any) => {
   const [isEditing, setIsEditing] = useState(false);
 
   const dynamicTitle = useMemo(() => {
@@ -164,7 +164,18 @@ const StatCard = React.memo(({ title, value, icon: Icon, trend, color, onConfigC
       ) : (
         <>
           <p className="text-zinc-400 text-sm font-medium">{displayTitle}</p>
-          <h3 className="text-2xl font-bold text-white mt-1 truncate" title={String(value)}>{value}</h3>
+          {countryBreakdown && Object.keys(countryBreakdown).length > 1 ? (
+            <div className="mt-2 space-y-1.5">
+              {Object.entries(countryBreakdown).map(([country, amount]: [string, any]) => (
+                <div key={country} className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{country}</span>
+                  <span className="text-base font-bold text-white">{amount}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <h3 className="text-2xl font-bold text-white mt-1 truncate" title={String(value)}>{value}</h3>
+          )}
           <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-wider">
             {currentType === 'COUNT' ? 'Registros Totales' : `${currentType} de ${currentField.replace(/_/g, ' ')}`}
           </p>
@@ -1646,6 +1657,7 @@ export default function DashboardView({
                   currentField={config.field}
                   currentType={config.type}
                   availableFields={availableFields}
+                  countryBreakdown={countryBreakdowns[idx]}
                   onConfigChange={(newConfig: any) => {
                     const updated = [...cardConfigs];
                     updated[idx] = { ...updated[idx], ...newConfig };
