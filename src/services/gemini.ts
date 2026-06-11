@@ -90,8 +90,8 @@ function describeDateColumns(salesData: any[], dateColumns: string[]): Record<st
       .map(v => { try { return new Date(v); } catch { return null; } })
       .filter((d): d is Date => d !== null && !isNaN(d.getTime()));
     if (dates.length === 0) continue;
-    const min = new Date(Math.min(...dates.map(d => d.getTime())));
-    const max = new Date(Math.max(...dates.map(d => d.getTime())));
+    const min = new Date(dates.reduce((a, d) => d.getTime() < a ? d.getTime() : a, Infinity));
+    const max = new Date(dates.reduce((a, d) => d.getTime() > a ? d.getTime() : a, -Infinity));
     info[col] = {
       min: min.toISOString().slice(0, 10),
       max: max.toISOString().slice(0, 10),
