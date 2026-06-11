@@ -70,6 +70,14 @@ const modules = [
     type: 'api'
   },
   {
+    id: 'services',
+    title: 'Servicios',
+    description: 'Gestión y seguimiento de servicios, vencimientos y cobros multipais.',
+    icon: Wrench,
+    color: 'bg-teal-700',
+    type: 'api'
+  },
+  {
     id: 'collections',
     title: 'Cobranzas',
     description: 'Seguimiento de pagos, cartera vencida y eficiencia de recaudación.',
