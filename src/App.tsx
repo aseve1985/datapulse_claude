@@ -14,7 +14,7 @@ import DashboardView from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { TermsModal } from './components/TermsModal';
 import { FeatureRequestModal } from './components/FeatureRequestModal';
-import { fetchSalesData, fetchServicesData } from './services/api';
+import { fetchSalesData, fetchServicesData, fetchCollectionsData } from './services/api';
 import { updateExchangeRates, EXCHANGE_RATES } from './constants';
 import type { SavedReport, ReportFilters } from './types';
 
@@ -448,6 +448,9 @@ export default function App() {
       } else if (id === 'services') {
         const servicesResponse = await fetchServicesData(fecha_desde, fecha_hasta);
         data = servicesResponse.records;
+      } else if (id === 'collections') {
+        const collectionsResponse = await fetchCollectionsData(fecha_desde, fecha_hasta);
+        data = collectionsResponse.records;
       }
       // Add other modules here as they become available
       setModuleData(data);
