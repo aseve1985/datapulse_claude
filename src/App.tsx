@@ -14,7 +14,7 @@ import DashboardView from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { TermsModal } from './components/TermsModal';
 import { FeatureRequestModal } from './components/FeatureRequestModal';
-import { fetchSalesData } from './services/api';
+import { fetchSalesData, fetchServicesData } from './services/api';
 import { updateExchangeRates, EXCHANGE_RATES } from './constants';
 import type { SavedReport, ReportFilters } from './types';
 
@@ -432,6 +432,7 @@ export default function App() {
       case 'board': title = 'Módulo de Directorio'; break;
       case 'product': title = 'Módulo de Producto'; break;
       case 'administration': title = 'Módulo de Administración'; break;
+      case 'services': title = 'Módulo de Servicios'; break;
     }
     
     finalizeSelection([], { id, title, type: 'api', submodules: submodules || [] });
@@ -444,6 +445,9 @@ export default function App() {
       if (id === 'sales') {
         const salesResponse = await fetchSalesData(fecha_desde, fecha_hasta);
         data = salesResponse.records;
+      } else if (id === 'services') {
+        const servicesResponse = await fetchServicesData(fecha_desde, fecha_hasta);
+        data = servicesResponse.records;
       }
       // Add other modules here as they become available
       setModuleData(data);
