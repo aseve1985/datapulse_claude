@@ -955,6 +955,31 @@ export default function DashboardView({
     });
   }, [filteredSales, cardConfigs]);
 
+  const countryBreakdowns = useMemo(() => {
+    return cardConfigs.map(config => {
+      const { type, field } = config;
+      if (type !== 'SUM' || !field) return null;
+      const countries = [...new Set(filteredSales.map((s: any) => s['pais']).filter(Boolean))] as string[];
+      if (countries.length <= 1) return null;
+      const isCurrencyField = field.toLowerCase().includes('monto') ||
+        field.toLowerCase().includes('capital') ||
+        field.toLowerCase().includes('total') ||
+        field.toLowerCase().includes('k_mas_i');
+      const breakdown: Record<string, string> = {};
+      countries.forEach(country => {
+        const rows = filteredSales.filter((s: any) => s['pais'] === country);
+        const sum = rows.reduce((acc: number, s: any) => {
+          const v = parseNumericValue(s[field]);
+          return acc + (isNaN(v) ? 0 : v);
+        }, 0);
+        breakdown[country] = isCurrencyField
+          ? formatCurrency(sum)
+          : sum.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      });
+      return breakdown;
+    });
+  }, [filteredSales, cardConfigs]);
+
   const processedChartData = useMemo(() => {
     return chartConfigs.map(config => {
       const { dimension, metric, type } = config;
