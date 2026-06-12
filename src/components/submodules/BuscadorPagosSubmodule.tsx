@@ -1,9 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Download, RotateCcw, Loader2, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 type Country = 'ARG' | 'COL';
+
+const FILTER_FIELDS: { key: string; label: string }[] = [
+  { key: 'fecha_pago', label: 'Fecha de Pago' },
+  { key: 'metodo_pago', label: 'Método Pago' },
+  { key: 'medio_pago', label: 'Medio Pago' },
+  { key: 'agencia_cobranzas', label: 'Agencia' },
+  { key: 'concepto_imputacion_detallado', label: 'Concepto' },
+];
+
+const EMPTY_FILTERS: Record<string, string> = Object.fromEntries(FILTER_FIELDS.map(f => [f.key, '']));
+
+function formatCell(col: string, val: any): string {
+  if (val == null || val === '') return '—';
+  if (col.toLowerCase().includes('fecha')) {
+    try {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    } catch {}
+  }
+  return String(val);
+}
 
 export default function BuscadorPagosSubmodule() {
   const [country, setCountry] = useState<Country>('ARG');
@@ -12,8 +33,62 @@ export default function BuscadorPagosSubmodule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>(EMPTY_FILTERS);
+  const [tableContentWidth, setTableContentWidth] = useState(0);
+
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
 
   const label = country === 'ARG' ? 'CUIL' : 'Cédula';
+  const columns = results.length > 0 ? Object.keys(results[0]) : [];
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      if (tableScrollRef.current) {
+        setTableContentWidth(tableScrollRef.current.scrollWidth);
+      }
+    });
+  }, [results, filters]);
+
+  const handleTopScroll = () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    isSyncingRef.current = false;
+  };
+
+  const handleTableScroll = () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    if (topScrollRef.current && tableScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    }
+    isSyncingRef.current = false;
+  };
+
+  const filterOptions = useMemo(() => {
+    const opts: Record<string, string[]> = {};
+    for (const { key } of FILTER_FIELDS) {
+      opts[key] = [...new Set(results.map(r => formatCell(key, r[key])).filter(v => v !== '—'))].sort();
+    }
+    return opts;
+  }, [results]);
+
+  const displayResults = useMemo(() => {
+    return results.filter(row => {
+      for (const { key } of FILTER_FIELDS) {
+        const filterVal = filters[key];
+        if (!filterVal) continue;
+        if (formatCell(key, row[key]) !== filterVal) return false;
+      }
+      return true;
+    });
+  }, [results, filters]);
+
+  const activeFiltersCount = Object.values(filters).filter(Boolean).length;
 
   const handleCountryChange = (c: Country) => {
     setCountry(c);
@@ -21,6 +96,7 @@ export default function BuscadorPagosSubmodule() {
     setResults([]);
     setSearched(false);
     setError(null);
+    setFilters(EMPTY_FILTERS);
   };
 
   const handleSearch = async () => {
@@ -29,32 +105,30 @@ export default function BuscadorPagosSubmodule() {
     setError(null);
     setSearched(false);
     setResults([]);
+    setFilters(EMPTY_FILTERS);
 
     try {
-      const response = await fetch('/api/collections-s3');
+      const params = new URLSearchParams({ identificacion_cliente: inputValue });
+      const response = await fetch(`/api/collections-s3?${params}`);
       if (!response.ok) throw new Error('Error al cargar los datos del servidor.');
-      const data: any[] = await response.json();
+      const json = await response.json();
+      const data: any[] = Array.isArray(json) ? json : (json.records || []);
 
-      const countryKey = country === 'ARG' ? 'ARGENTIN' : 'COLOMB';
+      const sorted = data.sort((a, b) => {
+        const tipoA = String(a.tipo_producto || '');
+        const tipoB = String(b.tipo_producto || '');
+        if (tipoA !== tipoB) return tipoA.localeCompare(tipoB);
 
-      const filtered = data
-        .filter(row => String(row.pais || '').toUpperCase().includes(countryKey))
-        .filter(row => String(row.identificacion_cliente || '') === inputValue)
-        .sort((a, b) => {
-          const tipoA = String(a.tipo_producto || '');
-          const tipoB = String(b.tipo_producto || '');
-          if (tipoA !== tipoB) return tipoA.localeCompare(tipoB);
+        const idA = String(a.id_producto || '');
+        const idB = String(b.id_producto || '');
+        if (idA !== idB) return idA.localeCompare(idB);
 
-          const idA = String(a.id_producto || '');
-          const idB = String(b.id_producto || '');
-          if (idA !== idB) return idA.localeCompare(idB);
+        const fechaA = String(a.fecha_pago || '');
+        const fechaB = String(b.fecha_pago || '');
+        return fechaA.localeCompare(fechaB);
+      });
 
-          const fechaA = String(a.fecha_pago || '');
-          const fechaB = String(b.fecha_pago || '');
-          return fechaA.localeCompare(fechaB);
-        });
-
-      setResults(filtered);
+      setResults(sorted);
       setSearched(true);
     } catch (e: any) {
       setError(e.message || 'Error desconocido');
@@ -64,8 +138,14 @@ export default function BuscadorPagosSubmodule() {
   };
 
   const handleExport = () => {
-    if (!results.length) return;
-    const ws = XLSX.utils.json_to_sheet(results);
+    if (!displayResults.length) return;
+    const exportData = displayResults.map(row =>
+      Object.fromEntries(columns.map(col => {
+        const formatted = formatCell(col, row[col]);
+        return [col, formatted === '—' ? '' : formatted];
+      }))
+    );
+    const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Pagos');
     const today = new Date().toISOString().slice(0, 10);
@@ -77,9 +157,8 @@ export default function BuscadorPagosSubmodule() {
     setResults([]);
     setSearched(false);
     setError(null);
+    setFilters(EMPTY_FILTERS);
   };
-
-  const columns = results.length > 0 ? Object.keys(results[0]) : [];
 
   return (
     <div className="flex-1 flex flex-col p-6 gap-6 overflow-auto">
@@ -95,7 +174,6 @@ export default function BuscadorPagosSubmodule() {
         </div>
 
         <div className="flex flex-wrap gap-4 items-end">
-          {/* Country selector */}
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">País</span>
             <div className="flex gap-2">
@@ -115,7 +193,6 @@ export default function BuscadorPagosSubmodule() {
             </div>
           </div>
 
-          {/* Identifier input */}
           <div className="flex flex-col gap-1.5 flex-1 min-w-48">
             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{label}</span>
             <input
@@ -129,7 +206,6 @@ export default function BuscadorPagosSubmodule() {
             />
           </div>
 
-          {/* Search button */}
           <button
             onClick={handleSearch}
             disabled={loading || !inputValue}
@@ -141,7 +217,6 @@ export default function BuscadorPagosSubmodule() {
         </div>
       </motion.div>
 
-      {/* Error */}
       {error && (
         <div className="flex items-center gap-3 p-4 bg-red-900/30 border border-red-700/50 rounded-xl text-red-400 text-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -149,12 +224,11 @@ export default function BuscadorPagosSubmodule() {
         </div>
       )}
 
-      {/* No results */}
       {searched && !loading && results.length === 0 && !error && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <Search className="w-10 h-10 text-zinc-700" />
           <p className="text-zinc-500 text-sm">
-            No se encontraron registros para ese identificador en {country === 'ARG' ? 'Argentina' : 'Colombia'}.
+            No se encontraron registros para ese identificador.
           </p>
           <button
             onClick={handleReset}
@@ -166,17 +240,41 @@ export default function BuscadorPagosSubmodule() {
         </div>
       )}
 
-      {/* Results */}
       {results.length > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           className="flex flex-col gap-3"
         >
+          {/* Filters */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4 bg-slate-900/50 border border-slate-700 rounded-xl">
+            {FILTER_FIELDS.map(({ key, label: flabel }) => (
+              <div key={key} className="flex flex-col gap-1">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{flabel}</span>
+                <select
+                  value={filters[key]}
+                  onChange={e => setFilters(prev => ({ ...prev, [key]: e.target.value }))}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500 transition-colors"
+                >
+                  <option value="">Todos</option>
+                  {filterOptions[key]?.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          {/* Header */}
           <div className="flex items-center justify-between">
             <span className="text-sm text-zinc-400">
-              <span className="font-bold text-white">{results.length}</span>{' '}
-              registro{results.length !== 1 ? 's' : ''} encontrado{results.length !== 1 ? 's' : ''}
+              <span className="font-bold text-white">{displayResults.length}</span>{' '}
+              de <span className="font-bold text-white">{results.length}</span> registros
+              {activeFiltersCount > 0 && (
+                <span className="text-indigo-400 ml-1.5">
+                  · {activeFiltersCount} filtro{activeFiltersCount > 1 ? 's' : ''} activo{activeFiltersCount > 1 ? 's' : ''}
+                </span>
+              )}
             </span>
             <div className="flex gap-2">
               <button
@@ -188,7 +286,8 @@ export default function BuscadorPagosSubmodule() {
               </button>
               <button
                 onClick={handleExport}
-                className="flex items-center gap-2 px-4 py-1.5 bg-emerald-800/60 hover:bg-emerald-700/60 border border-emerald-700/50 text-emerald-300 font-bold text-xs rounded-xl transition-all"
+                disabled={!displayResults.length}
+                className="flex items-center gap-2 px-4 py-1.5 bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-700/50 text-emerald-300 font-bold text-xs rounded-xl transition-all"
               >
                 <Download className="w-3.5 h-3.5" />
                 Exportar Excel
@@ -196,7 +295,22 @@ export default function BuscadorPagosSubmodule() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
+          {/* Top scrollbar mirror */}
+          <div
+            ref={topScrollRef}
+            onScroll={handleTopScroll}
+            className="overflow-x-auto rounded-t-xl border-x border-t border-slate-700"
+            style={{ height: '14px' }}
+          >
+            <div style={{ width: tableContentWidth > 0 ? tableContentWidth : '100%', height: '1px' }} />
+          </div>
+
+          {/* Table */}
+          <div
+            ref={tableScrollRef}
+            onScroll={handleTableScroll}
+            className="overflow-x-auto rounded-b-xl border border-t-0 border-slate-700"
+          >
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-slate-800/80">
@@ -211,14 +325,14 @@ export default function BuscadorPagosSubmodule() {
                 </tr>
               </thead>
               <tbody>
-                {results.map((row, i) => (
+                {displayResults.map((row, i) => (
                   <tr key={i} className={i % 2 === 0 ? 'bg-slate-900' : 'bg-slate-800/30'}>
                     {columns.map(col => (
                       <td
                         key={col}
                         className="px-3 py-2 text-zinc-300 whitespace-nowrap border-b border-slate-800/60"
                       >
-                        {row[col] != null ? String(row[col]) : '—'}
+                        {formatCell(col, row[col])}
                       </td>
                     ))}
                   </tr>

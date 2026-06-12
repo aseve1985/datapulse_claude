@@ -933,7 +933,7 @@ async function startServer() {
   const COLLECTIONS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
   app.get("/api/collections-s3", async (req, res) => {
-    const { fecha_desde, fecha_hasta } = req.query;
+    const { fecha_desde, fecha_hasta, identificacion_cliente } = req.query;
 
     try {
       const now = Date.now();
@@ -978,6 +978,16 @@ async function startServer() {
           if (from && d < from) return false;
           if (to && d > to) return false;
           return true;
+        });
+      }
+
+      if (identificacion_cliente) {
+        const searchId = String(identificacion_cliente).trim();
+        const searchIdNum = Number(searchId);
+        data = data.filter((row: any) => {
+          if (row.identificacion_cliente == null) return false;
+          const rowVal = String(row.identificacion_cliente).trim();
+          return rowVal === searchId || (Number.isFinite(searchIdNum) && Number(rowVal) === searchIdNum);
         });
       }
 
