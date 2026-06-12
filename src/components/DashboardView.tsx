@@ -34,6 +34,7 @@ import { generateInsights, chatWithData } from '../services/gemini';
 import { EXCHANGE_RATES } from '../constants';
 import UifSubmodule from './submodules/UifSubmodule';
 import RiExperianSubmodule from './submodules/RiExperianSubmodule';
+import BuscadorPagosSubmodule from './submodules/BuscadorPagosSubmodule';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1464,6 +1465,8 @@ export default function DashboardView({
             <UifSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'ri-experian' ? (
             <RiExperianSubmodule />
+          ) : activeSubmodule.id === 'buscador-pagos' ? (
+            <BuscadorPagosSubmodule />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
