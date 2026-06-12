@@ -115,7 +115,27 @@ const modules = [
     description: 'Métricas de atención, tiempos de respuesta y satisfacción del cliente.',
     icon: Headphones,
     color: 'bg-indigo-800',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'operadores-ventas',
+        title: 'Operadores de Ventas',
+        description: 'Métricas de desempeño y gestión de operadores del equipo de ventas.',
+        color: 'bg-indigo-800'
+      },
+      {
+        id: 'operadores-cobranzas',
+        title: 'Operadores de Cobranzas',
+        description: 'Métricas de desempeño y gestión de operadores del equipo de cobranzas.',
+        color: 'bg-indigo-800'
+      },
+      {
+        id: 'buscador-pagos',
+        title: 'Buscador de Pagos',
+        description: 'Consulta de pagos por CUIL (Argentina) o Cédula (Colombia) sobre la base de cobranzas.',
+        color: 'bg-indigo-800'
+      }
+    ]
   },
   {
     id: 'legal',
