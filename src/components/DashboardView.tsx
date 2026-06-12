@@ -176,9 +176,11 @@ const StatCard = React.memo(({ title, value, icon: Icon, trend, color, onConfigC
           ) : (
             <h3 className="text-2xl font-bold text-white mt-1 truncate" title={String(value)}>{value}</h3>
           )}
-          <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-wider">
-            {currentType === 'COUNT' ? 'Registros Totales' : `${currentType} de ${currentField.replace(/_/g, ' ')}`}
-          </p>
+          {!(countryBreakdown && Object.keys(countryBreakdown).length > 1) && (
+            <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-wider">
+              {currentType === 'COUNT' ? 'Registros Totales' : `${currentType} de ${currentField.replace(/_/g, ' ')}`}
+            </p>
+          )}
         </>
       )}
     </div>
@@ -1609,28 +1611,25 @@ export default function DashboardView({
                 )}
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {filterSlots.map((slot, idx) => (
                   <div key={idx} className="flex flex-col gap-2 p-3 bg-slate-800/50 rounded-xl border border-slate-700">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-zinc-400 uppercase">Variable del Filtro</span>
-                      <select
-                        value={slot.field}
-                        onChange={(e) => {
-                          const newSlots = [...filterSlots];
-                          newSlots[idx] = { field: e.target.value, values: [] };
-                          setFilterSlots(newSlots);
-                        }}
-                        className="text-[10px] font-bold text-white bg-slate-950 hover:bg-slate-900 px-2 py-1 rounded-md transition-all focus:outline-none border border-slate-700"
-                      >
-                        <option value="" className="bg-slate-900 text-zinc-500">— elegir campo —</option>
-                        {availableFields.map(field => (
-                          <option key={field} value={field} className="bg-slate-900 text-white">{(field || '').replace(/_/g, ' ').toUpperCase()}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <MultiSelect 
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Variable de Filtro {idx + 1}</span>
+                    <select
+                      value={slot.field}
+                      onChange={(e) => {
+                        const newSlots = [...filterSlots];
+                        newSlots[idx] = { field: e.target.value, values: [] };
+                        setFilterSlots(newSlots);
+                      }}
+                      className="w-full text-[10px] font-bold text-white bg-slate-950 hover:bg-slate-900 px-2 py-1.5 rounded-md transition-all focus:outline-none border border-slate-700"
+                    >
+                      <option value="" className="bg-slate-900 text-zinc-500">— elegir campo —</option>
+                      {availableFields.map(field => (
+                        <option key={field} value={field} className="bg-slate-900 text-white">{(field || '').replace(/_/g, ' ').toUpperCase()}</option>
+                      ))}
+                    </select>
+                    <MultiSelect
                       options={filterOptions[slot.field] || []}
                       selected={slot.values}
                       onChange={(newValues: string[]) => {
