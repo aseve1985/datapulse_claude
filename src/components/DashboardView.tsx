@@ -848,25 +848,41 @@ export default function DashboardView({
         return c;
       }));
 
-      // Filter slots: 4 slots, first defaults to pais
+      // Filter slots: 4 slots, module-specific defaults
       if (filterSlots.length === 0) {
-        setFilterSlots([
-          { field: 'pais', values: [] },
-          { field: '', values: [] },
-          { field: '', values: [] },
-          { field: '', values: [] },
-        ]);
+        const defaultSlots = moduleId === 'marketing'
+          ? [
+              { field: 'pais', values: [] },
+              { field: 'tipo_cliente', values: [] },
+              { field: 'vendedor', values: [] },
+              { field: 'agrupacion_source_ultimo', values: [] },
+            ]
+          : [
+              { field: 'pais', values: [] },
+              { field: '', values: [] },
+              { field: '', values: [] },
+              { field: '', values: [] },
+            ];
+        setFilterSlots(defaultSlots);
       }
     } else {
       restoredFromReport.current = false;
-      // Filter slots: 4 slots, first defaults to pais
+      // Filter slots: 4 slots, module-specific defaults
       if (filterSlots.length === 0) {
-        setFilterSlots([
-          { field: 'pais', values: [] },
-          { field: '', values: [] },
-          { field: '', values: [] },
-          { field: '', values: [] },
-        ]);
+        const defaultSlots = moduleId === 'marketing'
+          ? [
+              { field: 'pais', values: [] },
+              { field: 'tipo_cliente', values: [] },
+              { field: 'vendedor', values: [] },
+              { field: 'agrupacion_source_ultimo', values: [] },
+            ]
+          : [
+              { field: 'pais', values: [] },
+              { field: '', values: [] },
+              { field: '', values: [] },
+              { field: '', values: [] },
+            ];
+        setFilterSlots(defaultSlots);
       }
     }
   }, [availableFields]);
