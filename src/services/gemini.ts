@@ -202,7 +202,9 @@ function createDataDigest(salesData: any[]) {
   });
 
   const financialSummaryByCountry = Object.entries(countryGroups).map(([country, data]) => {
-    const currency = country.includes('ARGENTIN') ? 'ARS' : (country.includes('COLOMB') ? 'COP' : 'USD');
+    const currency = (country.includes('ARGENTIN') || country === 'ARG') ? 'ARS'
+      : (country.includes('COLOMB') || country === 'COL') ? 'COP'
+      : 'USD';
     const rate = currency === 'ARS' ? EXCHANGE_RATES.ARS : (currency === 'COP' ? EXCHANGE_RATES.COP : 1);
 
     const globalTotals: Record<string, any> = {};
