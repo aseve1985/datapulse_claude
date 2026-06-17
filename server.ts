@@ -1002,13 +1002,17 @@ async function startServer() {
 
   let marketingS3Cache: { data: any[]; fetchedAt: number } | null = null;
   const MARKETING_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  // Singleton: prevents concurrent downloads if multiple requests arrive before cache is warm
+  let marketingLoadingPromise: Promise<void> | null = null;
 
-  app.get("/api/marketing-s3", async (req, res) => {
-    const { fecha_desde, fecha_hasta } = req.query;
+  async function loadMarketingCache(): Promise<void> {
+    const now = Date.now();
+    if (marketingS3Cache && now - marketingS3Cache.fetchedAt <= MARKETING_CACHE_TTL_MS) return;
+    // If already loading, wait for the in-flight download instead of starting another
+    if (marketingLoadingPromise) return marketingLoadingPromise;
 
-    try {
-      const now = Date.now();
-      if (!marketingS3Cache || now - marketingS3Cache.fetchedAt > MARKETING_CACHE_TTL_MS) {
+    marketingLoadingPromise = (async () => {
+      try {
         console.log("[Marketing-S3] Downloading marketing_platinum.parquet...");
         const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
         const cmd = new GetObjectCommand({
@@ -1017,6 +1021,7 @@ async function startServer() {
         });
         const response = await s3.send(cmd);
         const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
+        console.log(`[Marketing-S3] Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
 
         const asyncBuffer = {
           byteLength: bytes.byteLength,
@@ -1031,13 +1036,23 @@ async function startServer() {
           onComplete: (data: any[]) => { rows = data; },
         });
 
-        marketingS3Cache = { data: rows, fetchedAt: now };
+        marketingS3Cache = { data: rows, fetchedAt: Date.now() };
         console.log(`[Marketing-S3] Cached ${rows.length} records from parquet`);
-      } else {
-        console.log("[Marketing-S3] Serving from cache");
+      } finally {
+        marketingLoadingPromise = null;
       }
+    })();
 
-      let data = marketingS3Cache.data;
+    return marketingLoadingPromise;
+  }
+
+  app.get("/api/marketing-s3", async (req, res) => {
+    const { fecha_desde, fecha_hasta } = req.query;
+
+    try {
+      await loadMarketingCache();
+
+      let data = marketingS3Cache!.data;
 
       if (fecha_desde || fecha_hasta) {
         const from = fecha_desde ? new Date(String(fecha_desde)) : null;
@@ -1505,9 +1520,14 @@ async function startServer() {
     // Initial fetch of exchange rates
     console.log("[Server] Performing initial exchange rates fetch...");
     await updateExchangeRates();
-    
+
     // Set interval to update every 6 hours
     setInterval(updateExchangeRates, 6 * 60 * 60 * 1000);
+
+    // Pre-warm marketing cache in background so the first user request is instant
+    loadMarketingCache().catch(err =>
+      console.error("[Marketing-S3] Startup pre-warm failed:", err.message)
+    );
   });
 }
 
