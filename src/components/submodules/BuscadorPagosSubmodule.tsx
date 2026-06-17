@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Download, RotateCcw, Loader2, AlertCircle } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { Search, RotateCcw, Loader2, AlertCircle } from 'lucide-react';
 
 type Country = 'ARG' | 'COL';
 
@@ -15,8 +14,17 @@ const FILTER_FIELDS: { key: string; label: string }[] = [
 
 const EMPTY_FILTERS: Record<string, string> = Object.fromEntries(FILTER_FIELDS.map(f => [f.key, '']));
 
+function formatCurrency(num: number): string {
+  const [intPart, decPart] = num.toFixed(2).split('.');
+  return '$ ' + intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + decPart;
+}
+
 function formatCell(col: string, val: any): string {
   if (val == null || val === '') return '—';
+  if (col === 'monto_pago') {
+    const num = parseFloat(val);
+    return isNaN(num) ? '—' : formatCurrency(num);
+  }
   if (col.toLowerCase().includes('fecha')) {
     try {
       const d = new Date(val);
@@ -88,6 +96,13 @@ export default function BuscadorPagosSubmodule() {
     });
   }, [results, filters]);
 
+  const totalMontoPago = useMemo(() =>
+    displayResults.reduce((sum, row) => {
+      const val = parseFloat(row['monto_pago']);
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0)
+  , [displayResults]);
+
   const activeFiltersCount = Object.values(filters).filter(Boolean).length;
 
   const handleCountryChange = (c: Country) => {
@@ -135,21 +150,6 @@ export default function BuscadorPagosSubmodule() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleExport = () => {
-    if (!displayResults.length) return;
-    const exportData = displayResults.map(row =>
-      Object.fromEntries(columns.map(col => {
-        const formatted = formatCell(col, row[col]);
-        return [col, formatted === '—' ? '' : formatted];
-      }))
-    );
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Pagos');
-    const today = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `buscador_pagos_${inputValue}_${today}.xlsx`);
   };
 
   const handleReset = () => {
@@ -266,33 +266,35 @@ export default function BuscadorPagosSubmodule() {
           </div>
 
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-zinc-400">
-              <span className="font-bold text-white">{displayResults.length}</span>{' '}
-              de <span className="font-bold text-white">{results.length}</span> registros
-              {activeFiltersCount > 0 && (
-                <span className="text-indigo-400 ml-1.5">
-                  · {activeFiltersCount} filtro{activeFiltersCount > 1 ? 's' : ''} activo{activeFiltersCount > 1 ? 's' : ''}
-                </span>
-              )}
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={handleReset}
-                className="flex items-center gap-2 px-4 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-300 font-bold text-xs rounded-xl transition-all"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Nueva búsqueda
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={!displayResults.length}
-                className="flex items-center gap-2 px-4 py-1.5 bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-700/50 text-emerald-300 font-bold text-xs rounded-xl transition-all"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Exportar Excel
-              </button>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="text-sm text-zinc-400">
+                <span className="font-bold text-white">{displayResults.length}</span>{' '}
+                de <span className="font-bold text-white">{results.length}</span> registros
+                {activeFiltersCount > 0 && (
+                  <span className="text-indigo-400 ml-1.5">
+                    · {activeFiltersCount} filtro{activeFiltersCount > 1 ? 's' : ''} activo{activeFiltersCount > 1 ? 's' : ''}
+                  </span>
+                )}
+              </span>
+              <div className="flex gap-3">
+                <div className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-lg">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Cantidad pagos</p>
+                  <p className="text-sm font-bold text-white">{displayResults.length}</p>
+                </div>
+                <div className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-lg">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Total monto</p>
+                  <p className="text-sm font-bold text-emerald-400">{formatCurrency(totalMontoPago)}</p>
+                </div>
+              </div>
             </div>
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-2 px-4 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-300 font-bold text-xs rounded-xl transition-all"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Nueva búsqueda
+            </button>
           </div>
 
           {/* Top scrollbar mirror */}
