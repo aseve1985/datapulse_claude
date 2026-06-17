@@ -35,7 +35,7 @@ import { EXCHANGE_RATES } from '../constants';
 import UifSubmodule from './submodules/UifSubmodule';
 import RiExperianSubmodule from './submodules/RiExperianSubmodule';
 import BuscadorPagosSubmodule from './submodules/BuscadorPagosSubmodule';
-import CarteraFideicomisoSubmodule from '../submodules/CarteraFideicomisoSubmodule';
+import CarteraFideicomisoSubmodule from './submodules/CarteraFideicomisoSubmodule';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
