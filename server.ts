@@ -9,6 +9,7 @@ import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Pool } from "pg";
 import { parquetRead } from "hyparquet";
 import * as XLSX from "xlsx";
+import { generateCarteraExcel } from './carteraFideicomisoExcel';
 
 dotenv.config();
 
@@ -1401,6 +1402,65 @@ async function startServer() {
       if (!res.headersSent) {
         res.status(500).json({ error: "Error al exportar RI-EXPERIAN", details: error.message || String(error) });
       }
+    }
+  });
+
+  // ── Cartera Fideicomiso ARG ────────────────────────────────────────────────────
+  let carteraCache: { data: Record<string, unknown>[]; fetchedAt: number } | null = null;
+  const CARTERA_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+
+  const CARTERA_QUERY = `
+    SELECT
+      periodo, fecha_desembolso_periodo, tipo_cliente,
+      k_originado, k_precancelado, k_cancelado_no_precancelado,
+      k_pagado_total, k_saldo_total,
+      a_current, b_bucket_1_30, c_bucket_31_60,
+      d_bucket_61_90, e_bucket_91_120, f_bucket_mas_120
+    FROM finance_arg.cartera_fideicomiso_sumarizada_arg
+    ORDER BY periodo DESC, fecha_desembolso_periodo ASC, tipo_cliente ASC
+  `;
+
+  async function loadCarteraCache(): Promise<void> {
+    if (carteraCache && Date.now() - carteraCache.fetchedAt < CARTERA_CACHE_TTL_MS) return;
+    if (!redshiftPool) throw new Error('Redshift no configurado');
+    console.log('[CARTERA] Querying Redshift...');
+    const result = await redshiftPool.query(CARTERA_QUERY);
+    const safe = JSON.parse(JSON.stringify(result.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+    carteraCache = { data: safe, fetchedAt: Date.now() };
+    console.log(`[CARTERA] Cached ${safe.length} records`);
+  }
+
+  app.get('/api/cartera-fideicomiso', async (_req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+    try {
+      await loadCarteraCache();
+      res.json({ records: carteraCache!.data, total: carteraCache!.data.length, source: 'redshift' });
+    } catch (error: any) {
+      console.error('[CARTERA] Error:', error);
+      res.status(500).json({ error: 'Error al cargar datos de cartera', details: error.message });
+    }
+  });
+
+  app.get('/api/cartera-fideicomiso/export', async (_req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({ error: 'Conexión a Redshift no configurada' });
+    }
+    try {
+      await loadCarteraCache();
+      const buffer = await generateCarteraExcel(carteraCache!.data);
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="cartera_fideicomiso_ARG_${today}.xlsx"`);
+      res.send(buffer);
+      console.log(`[CARTERA] Excel exported: ${buffer.length} bytes`);
+    } catch (error: any) {
+      console.error('[CARTERA] Export error:', error);
+      if (!res.headersSent) res.status(500).json({ error: 'Error al exportar Excel', details: error.message });
     }
   });
 
