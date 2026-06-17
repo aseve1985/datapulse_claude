@@ -1417,6 +1417,7 @@ async function startServer() {
       a_current, b_bucket_1_30, c_bucket_31_60,
       d_bucket_61_90, e_bucket_91_120, f_bucket_mas_120
     FROM finance_arg.cartera_fideicomiso_sumarizada_arg
+    WHERE periodo < TO_CHAR(CURRENT_DATE, 'YYYYMM')
     ORDER BY periodo DESC, fecha_desembolso_periodo ASC, tipo_cliente ASC
   `;
 

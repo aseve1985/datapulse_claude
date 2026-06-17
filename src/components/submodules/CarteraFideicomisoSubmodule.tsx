@@ -53,10 +53,12 @@ function KpiCard({ label, value, sub, accent }: { label: string; value: string; 
 }
 
 // ── Chart Section ─────────────────────────────────────────────────────────────
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({ title, legend, children }: { title: string; legend?: string; children: React.ReactNode }) {
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
-      <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">{title}</p>
+      <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-1">{title}</p>
+      {legend && <p className="text-[11px] text-zinc-500 italic mb-3">{legend}</p>}
+      {!legend && <div className="mb-3" />}
       {children}
     </div>
   );
@@ -82,6 +84,8 @@ export default function CarteraFideicomisoSubmodule() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [filterCosecha, setFilterCosecha] = useState('');
+  const [filterTipo, setFilterTipo]       = useState('');
 
   const topScrollRef   = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -108,7 +112,7 @@ export default function CarteraFideicomisoSubmodule() {
     requestAnimationFrame(() => {
       if (tableScrollRef.current) setTableWidth(tableScrollRef.current.scrollWidth);
     });
-  }, [records]);
+  }, [records, filterCosecha, filterTipo]);
 
   const handleTopScroll = () => {
     if (isSyncingRef.current) return;
@@ -203,6 +207,22 @@ export default function CarteraFideicomisoSubmodule() {
     originado: fv(r.k_originado) / 1e6,
   })), [fotoSorted]);
 
+  // ── Filtros tabla ────────────────────────────────────────────────────────────
+  const cosechaOptions = useMemo(() =>
+    [...new Set(fotoRows.map(r => shortDate(r.fecha_desembolso_periodo)))].sort()
+  , [fotoRows]);
+
+  const tipoOptions = useMemo(() =>
+    [...new Set(fotoRows.map(r => r.tipo_cliente))].sort()
+  , [fotoRows]);
+
+  const tableRows = useMemo(() =>
+    fotoRows.filter(r =>
+      (!filterCosecha || shortDate(r.fecha_desembolso_periodo) === filterCosecha) &&
+      (!filterTipo    || r.tipo_cliente === filterTipo)
+    )
+  , [fotoRows, filterCosecha, filterTipo]);
+
   // ── Export ──────────────────────────────────────────────────────────────────
   const handleExport = async () => {
     setExporting(true);
@@ -278,7 +298,8 @@ export default function CarteraFideicomisoSubmodule() {
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
         className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-        <ChartCard title="Distribución de Saldo por Bucket">
+        <ChartCard title="Distribución de Saldo por Bucket"
+          legend="Muestra cómo se distribuye el saldo vigente total entre los buckets de mora. Mientras más proporción verde (Current), mejor salud de la cartera.">
           <ResponsiveContainer width="100%" height={240}>
             <PieChart>
               <Pie data={bucketData} dataKey="value" innerRadius="50%" outerRadius="75%"
@@ -300,7 +321,8 @@ export default function CarteraFideicomisoSubmodule() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="K Originado vs Saldo Vigente (Top 15 cosechas)">
+        <ChartCard title="K Originado vs Saldo Vigente (Top 15 cosechas)"
+          legend="Compara el capital originado (azul) contra el saldo aún vigente (teal) en las 15 cosechas más grandes. La diferencia entre ambas barras refleja lo pagado + precancelado.">
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={clusterData} margin={CHART_MARGIN}>
               <CartesianGrid {...GRID_STYLE} />
@@ -320,7 +342,8 @@ export default function CarteraFideicomisoSubmodule() {
 
       {/* Chart 3: Stacked */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-        <ChartCard title="Composición del Saldo por Cosecha (% sobre saldo vigente)">
+        <ChartCard title="Composición del Saldo por Cosecha (% sobre saldo vigente)"
+          legend="Cada barra suma 100% del saldo de esa cosecha, dividido en tramos de mora. Cosechas más verdes tienen mejor comportamiento de pago; las más rojas concentran mora tardía.">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={stackedData} margin={CHART_MARGIN}>
               <CartesianGrid {...GRID_STYLE} />
@@ -342,7 +365,8 @@ export default function CarteraFideicomisoSubmodule() {
 
       {/* Chart 4: Line mora */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <ChartCard title="% Mora 1+ sobre K Originado por Cosecha">
+        <ChartCard title="% Mora 1+ sobre K Originado por Cosecha"
+          legend="Indica qué porcentaje del capital originado de cada cosecha está en mora (saldo vigente menos la porción current). Cosechas más maduras tienden a tener mayor mora acumulada.">
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={moraData} margin={CHART_MARGIN}>
               <defs>
@@ -367,7 +391,8 @@ export default function CarteraFideicomisoSubmodule() {
 
       {/* Chart 5: Bar originación */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-        <ChartCard title="Evolución Mensual de Originación">
+        <ChartCard title="Evolución Mensual de Originación"
+          legend="Muestra el capital originado por período de desembolso dentro del período foto. Permite identificar meses con mayor volumen de colocación.">
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={origData} margin={CHART_MARGIN}>
               <CartesianGrid {...GRID_STYLE} />
@@ -385,10 +410,36 @@ export default function CarteraFideicomisoSubmodule() {
 
       {/* Tabla cosechas */}
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-        className="flex flex-col gap-1">
-        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-          Detalle por Cosecha — {fotoRows.length} registros
-        </p>
+        className="flex flex-col gap-3">
+
+        {/* Filtros */}
+        <div className="flex items-end gap-4 flex-wrap">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Cosecha</span>
+            <select
+              value={filterCosecha}
+              onChange={e => setFilterCosecha(e.target.value)}
+              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todas</option>
+              {cosechaOptions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Tipo</span>
+            <select
+              value={filterTipo}
+              onChange={e => setFilterTipo(e.target.value)}
+              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500 transition-colors"
+            >
+              <option value="">Todos</option>
+              {tipoOptions.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <p className="text-xs text-zinc-500 pb-1.5">
+            <span className="font-bold text-white">{tableRows.length}</span> de {fotoRows.length} registros
+          </p>
+        </div>
 
         {/* Top scrollbar mirror */}
         <div ref={topScrollRef} onScroll={handleTopScroll}
@@ -411,7 +462,7 @@ export default function CarteraFideicomisoSubmodule() {
               </tr>
             </thead>
             <tbody>
-              {fotoRows.map((row, i) => (
+              {tableRows.map((row, i) => (
                 <tr key={i} className={i % 2 === 0 ? 'bg-slate-900' : 'bg-slate-800/30'}>
                   {TABLE_COLS.map(col => (
                     <td key={String(col.key)}
