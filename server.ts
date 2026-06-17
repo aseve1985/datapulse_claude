@@ -1524,10 +1524,6 @@ async function startServer() {
     // Set interval to update every 6 hours
     setInterval(updateExchangeRates, 6 * 60 * 60 * 1000);
 
-    // Pre-warm marketing cache in background so the first user request is instant
-    loadMarketingCache().catch(err =>
-      console.error("[Marketing-S3] Startup pre-warm failed:", err.message)
-    );
   });
 }
 
