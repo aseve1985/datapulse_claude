@@ -107,7 +107,15 @@ const modules = [
     description: 'Gestión de presupuestos, flujo de caja y estados financieros.',
     icon: Banknote,
     color: 'bg-slate-800',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'cartera-fideicomiso-arg',
+        title: 'Cartera ARG – Fideicomiso',
+        description: 'Gestión y seguimiento de la cartera del fideicomiso en Argentina.',
+        color: 'bg-slate-800'
+      }
+    ]
   },
   {
     id: 'callcenter',
