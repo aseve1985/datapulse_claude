@@ -8,10 +8,8 @@ const C = {
   TEAL:   'FF13A8A8',
   GREEN:  'FF22C55E',
   YELLOW: 'FFF59E0B',
-  ORANGE: 'FFF97316',
   RED:    'FFDC2626',
   WHITE:  'FFFFFFFF',
-  GRAY:   'FF94A3B8',
   BG_GREEN:  'FFD9F2DD',
   BG_YELLOW: 'FFFFF3CD',
   BG_RED:    'FFFDECEA',
@@ -22,7 +20,7 @@ const BUCKET_LABELS  = ['Current','1-30d','31-60d','61-90d','91-120d','+120d'];
 const BUCKET_FIELDS  = ['a_current','b_bucket_1_30','c_bucket_31_60','d_bucket_61_90','e_bucket_91_120','f_bucket_mas_120'] as const;
 const MONEY_FIELDS   = ['k_originado','k_precancelado','k_cancelado_no_precancelado','k_pagado_total','k_saldo_total',...BUCKET_FIELDS] as const;
 
-export function fv(v: unknown): number {
+function fv(v: unknown): number {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') return parseFloat(v) || 0;
   return 0;
@@ -34,7 +32,7 @@ const thinBorder: ExcelJS.Borders = {
   left:     { style: 'thin', color: { argb: 'FFCCCCCC' } },
   bottom:   { style: 'thin', color: { argb: 'FFCCCCCC' } },
   right:    { style: 'thin', color: { argb: 'FFCCCCCC' } },
-  diagonal: { style: 'thin', color: { argb: 'FFCCCCCC' } },
+  diagonal: {},
 };
 
 function hCell(
@@ -173,7 +171,7 @@ function buildInsightsSheet(
     ws.getRow(row).height = 16; row++;
   });
   const totalSaldoBuckets = buckets.reduce((s, v) => s + v, 0);
-  totalRow(ws, row, ['TOTAL', totalSaldoBuckets/1e6, 1, saldo>0 ? saldo/orig : 0],
+  totalRow(ws, row, ['TOTAL', totalSaldoBuckets/1e6, saldo > 0 ? totalSaldoBuckets / saldo : 0, saldo>0 ? saldo/orig : 0],
     [undefined, '#,##0.0', '0.0%', '0.0%']); row++;
 
   ws.getRow(row).height = 8; row++;
@@ -253,11 +251,7 @@ function buildPeriodSheet(
   periodo: string,
   periodRows: Record<string, unknown>[]
 ) {
-  const moneyFields: string[] = [
-    'k_originado','k_precancelado','k_cancelado_no_precancelado','k_pagado_total',
-    'k_saldo_total','a_current','b_bucket_1_30','c_bucket_31_60',
-    'd_bucket_61_90','e_bucket_91_120','f_bucket_mas_120'
-  ];
+  const moneyFields = [...MONEY_FIELDS];
   const pctFields = moneyFields.slice(1);
   const allHeaders = [
     'cosecha', ...moneyFields.map(f => f.replace(/_/g,' ')),
