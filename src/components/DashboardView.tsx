@@ -35,6 +35,7 @@ import { EXCHANGE_RATES } from '../constants';
 import UifSubmodule from './submodules/UifSubmodule';
 import RiExperianSubmodule from './submodules/RiExperianSubmodule';
 import BuscadorPagosSubmodule from './submodules/BuscadorPagosSubmodule';
+import CarteraFideicomisoSubmodule from '../submodules/CarteraFideicomisoSubmodule';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1483,6 +1484,8 @@ export default function DashboardView({
             <RiExperianSubmodule />
           ) : activeSubmodule.id === 'buscador-pagos' ? (
             <BuscadorPagosSubmodule />
+          ) : activeSubmodule.id === 'cartera-fideicomiso-arg' ? (
+            <CarteraFideicomisoSubmodule />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
