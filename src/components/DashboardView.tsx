@@ -1158,12 +1158,12 @@ export default function DashboardView({
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="leading-tight">
+          <button onClick={onBack} className="leading-tight text-left hover:opacity-80 transition-opacity">
             <h1 className="text-base font-bold text-white">DataPulse <span className="text-blue-400">Libgot</span></h1>
             <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-widest">
               {activeSubmodule ? `${title} › ${activeSubmodule.title}` : title}
             </p>
-          </div>
+          </button>
         </div>
 
         {/* Hojas del Google Sheet — solo cuando hay múltiples */}

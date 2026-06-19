@@ -1000,78 +1000,55 @@ async function startServer() {
     }
   });
 
-  let marketingS3Cache: { data: any[]; fetchedAt: number } | null = null;
-  const MARKETING_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-  // Singleton: prevents concurrent downloads if multiple requests arrive before cache is warm
-  let marketingLoadingPromise: Promise<void> | null = null;
-
-  async function loadMarketingCache(): Promise<void> {
-    const now = Date.now();
-    if (marketingS3Cache && now - marketingS3Cache.fetchedAt <= MARKETING_CACHE_TTL_MS) return;
-    // If already loading, wait for the in-flight download instead of starting another
-    if (marketingLoadingPromise) return marketingLoadingPromise;
-
-    marketingLoadingPromise = (async () => {
-      try {
-        console.log("[Marketing-S3] Downloading marketing_platinum.parquet...");
-        const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
-        const cmd = new GetObjectCommand({
-          Bucket: "data-lake-libgot-externos",
-          Key: "platinum_ia/marketing_multipais/marketing_platinum.parquet",
-        });
-        const response = await s3.send(cmd);
-        const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
-        console.log(`[Marketing-S3] Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
-
-        const asyncBuffer = {
-          byteLength: bytes.byteLength,
-          slice: async (start: number, end?: number): Promise<ArrayBuffer> =>
-            bytes.buffer.slice(bytes.byteOffset + start, bytes.byteOffset + (end ?? bytes.byteLength)) as ArrayBuffer,
-        };
-
-        let rows: any[] = [];
-        await parquetRead({
-          file: asyncBuffer,
-          rowFormat: "object",
-          onComplete: (data: any[]) => { rows = data; },
-        });
-
-        marketingS3Cache = { data: rows, fetchedAt: Date.now() };
-        console.log(`[Marketing-S3] Cached ${rows.length} records from parquet`);
-      } finally {
-        marketingLoadingPromise = null;
-      }
-    })();
-
-    return marketingLoadingPromise;
-  }
+  // Cache por rango de fechas para evitar re-queries dentro de la misma hora
+  const marketingCacheMap = new Map<string, { data: any[]; fetchedAt: number }>();
+  const MARKETING_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
 
   app.get("/api/marketing-s3", async (req, res) => {
     const { fecha_desde, fecha_hasta } = req.query;
 
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+
+    const cacheKey = `${fecha_desde ?? ''}_${fecha_hasta ?? ''}`;
+    const now = Date.now();
+    const cached = marketingCacheMap.get(cacheKey);
+
+    if (cached && now - cached.fetchedAt <= MARKETING_CACHE_TTL_MS) {
+      console.log(`[Marketing-Redshift] Cache hit (${cacheKey}): ${cached.data.length} records`);
+      return res.json({ records: cached.data, total: cached.data.length, source: 'redshift' });
+    }
+
     try {
-      await loadMarketingCache();
+      const params: string[] = [];
+      const conditions: string[] = [];
+      if (fecha_desde) { params.push(String(fecha_desde)); conditions.push(`fecha_lead >= $${params.length}::date`); }
+      if (fecha_hasta) { params.push(String(fecha_hasta)); conditions.push(`fecha_lead <= ($${params.length}::date + interval '1 day' - interval '1 second')`); }
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-      let data = marketingS3Cache!.data;
+      console.log(`[Marketing-Redshift] Querying platinum_ia.funnel_marketing_multipais ${whereClause || '(sin filtro de fecha)'}`);
+      const result = await redshiftPool.query(
+        `SELECT * FROM platinum_ia.funnel_marketing_multipais ${whereClause} ORDER BY fecha_lead DESC`,
+        params
+      );
 
-      if (fecha_desde || fecha_hasta) {
-        const from = fecha_desde ? new Date(String(fecha_desde)) : null;
-        const to = fecha_hasta ? new Date(String(fecha_hasta) + "T23:59:59") : null;
-        data = data.filter((row: any) => {
-          const rawDate = row.fecha_lead;
-          if (!rawDate) return true;
-          const d = new Date(rawDate);
-          if (from && d < from) return false;
-          if (to && d > to) return false;
-          return true;
-        });
+      const safe = JSON.parse(JSON.stringify(result.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      marketingCacheMap.set(cacheKey, { data: safe, fetchedAt: now });
+      console.log(`[Marketing-Redshift] Cached ${safe.length} records for key "${cacheKey}"`);
+
+      // Limpiar entradas viejas del cache map
+      for (const [key, entry] of marketingCacheMap.entries()) {
+        if (now - entry.fetchedAt > MARKETING_CACHE_TTL_MS) marketingCacheMap.delete(key);
       }
 
-      const safe = JSON.parse(JSON.stringify(data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
-      res.json({ records: safe, total: safe.length, source: "s3" });
+      res.json({ records: safe, total: safe.length, source: 'redshift' });
     } catch (error: any) {
-      console.error("[Marketing-S3] Error loading parquet:", error);
-      res.status(500).json({ error: "Failed to load marketing data from S3", details: error.message });
+      console.error('[Marketing-Redshift] Error:', error);
+      res.status(500).json({ error: 'Error al cargar datos de marketing desde Redshift', details: error.message });
     }
   });
 
