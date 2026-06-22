@@ -811,7 +811,7 @@ async function startServer() {
 
   // ── Sales S3 Parquet Endpoint ────────────────────────────────────────────────
   let salesS3Cache: { data: any[]; fetchedAt: number } | null = null;
-  const SALES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  const SALES_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   app.get("/api/sales-s3", async (req, res) => {
     const { fecha_desde, fecha_hasta } = req.query;
@@ -872,7 +872,7 @@ async function startServer() {
 
   // ── Services S3 Parquet Endpoint ──────────────────────────────────────────
   let servicesS3Cache: { data: any[]; fetchedAt: number } | null = null;
-  const SERVICES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  const SERVICES_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   app.get("/api/services-s3", async (req, res) => {
     const { fecha_desde, fecha_hasta } = req.query;
@@ -933,7 +933,7 @@ async function startServer() {
 
   // ── Collections S3 Parquet Endpoint ────────────────────────────────────────
   let collectionsS3Cache: { data: any[]; fetchedAt: number } | null = null;
-  const COLLECTIONS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  const COLLECTIONS_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   app.get("/api/collections-s3", async (req, res) => {
     const { fecha_desde, fecha_hasta, identificacion_cliente } = req.query;
@@ -1004,7 +1004,7 @@ async function startServer() {
 
   // Cache por rango de fechas para evitar re-queries dentro de la misma hora
   const marketingCacheMap = new Map<string, { data: any[]; fetchedAt: number }>();
-  const MARKETING_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+  const MARKETING_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   app.get("/api/marketing-s3", async (req, res) => {
     const { fecha_desde, fecha_hasta } = req.query;
@@ -1218,7 +1218,7 @@ async function startServer() {
   }) : null;
 
   let uifCache: { data: any[]; fetchedAt: number } | null = null;
-  const UIF_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+  const UIF_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   app.get("/api/uif/records", async (req, res) => {
     if (!redshiftPool) {
@@ -1304,7 +1304,7 @@ async function startServer() {
 
   // ── Productos Argentina ──────────────────────────────────────────────────────
   let productosCache: { data: any[]; fetchedAt: number } | null = null;
-  const PRODUCTOS_CACHE_TTL_MS = 4 * 60 * 60 * 1000; // 4 horas
+  const PRODUCTOS_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   app.get("/api/productos-argentina", async (_req, res) => {
     try {
@@ -1335,7 +1335,7 @@ async function startServer() {
 
   // ── RI-EXPERIAN Endpoints ───────────────────────────────────────────────────
   let riExperianCache: { data: any[]; fetchedAt: number } | null = null;
-  const RI_EXPERIAN_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+  const RI_EXPERIAN_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   // Carga el cache (ejecuta SP + SELECT si expiró). Reutilizado por ambos endpoints.
   async function loadRiExperianCache() {
@@ -1401,7 +1401,7 @@ async function startServer() {
 
   // ── Cartera Fideicomiso ARG ────────────────────────────────────────────────────
   let carteraCache: { data: Record<string, unknown>[]; fetchedAt: number } | null = null;
-  const CARTERA_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+  const CARTERA_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   const CARTERA_QUERY = `
     SELECT

@@ -36,6 +36,7 @@ import UifSubmodule from './submodules/UifSubmodule';
 import RiExperianSubmodule from './submodules/RiExperianSubmodule';
 import BuscadorPagosSubmodule from './submodules/BuscadorPagosSubmodule';
 import CarteraFideicomisoSubmodule from './submodules/CarteraFideicomisoSubmodule';
+import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -277,65 +278,148 @@ const ChartContainer = React.memo(({ title, children, icon: Icon, onConfigChange
   );
 });
 
+const PAGE_SIZE = 100;
+
+function DualScrollTable({ children, minWidth = '2000px', maxHeight = '600px' }: { children: React.ReactNode; minWidth?: string; maxHeight?: string }) {
+  const topRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const syncing = useRef(false);
+
+  useEffect(() => {
+    if (!bodyRef.current || !topRef.current) return;
+    requestAnimationFrame(() => {
+      if (!bodyRef.current || !topRef.current) return;
+      const innerDiv = topRef.current.querySelector('div');
+      if (innerDiv) innerDiv.style.minWidth = `${bodyRef.current.scrollWidth}px`;
+      const vScrollbarWidth = bodyRef.current.offsetWidth - bodyRef.current.clientWidth;
+      topRef.current.style.marginRight = `${vScrollbarWidth}px`;
+    });
+  }, [children]);
+
+  const onTopScroll = () => {
+    if (syncing.current || !bodyRef.current || !topRef.current) return;
+    syncing.current = true;
+    bodyRef.current.scrollLeft = topRef.current.scrollLeft;
+    syncing.current = false;
+  };
+
+  const onBodyScroll = () => {
+    if (syncing.current || !topRef.current || !bodyRef.current) return;
+    syncing.current = true;
+    topRef.current.scrollLeft = bodyRef.current.scrollLeft;
+    syncing.current = false;
+  };
+
+  return (
+    <div>
+      <div
+        ref={topRef}
+        onScroll={onTopScroll}
+        className="overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-blue-500 [&::-webkit-scrollbar-track]:bg-slate-800"
+      >
+        <div style={{ minWidth, height: '1px' }} />
+      </div>
+      <div
+        ref={bodyRef}
+        onScroll={onBodyScroll}
+        style={{ maxHeight }}
+        className="overflow-x-auto overflow-y-scroll [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-blue-500 [&::-webkit-scrollbar-track]:bg-slate-800"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 const SalesTable = React.memo(({ sales }: { sales: any[] }) => {
+  const [page, setPage] = useState(0);
+
+  useEffect(() => { setPage(0); }, [sales]);
+
   const headers = useMemo(() => {
     if (sales.length === 0) return [];
-    // We take all keys from the first record as the source of truth for columns
     return Object.keys(sales[0]);
   }, [sales]);
 
-  return (
-    <div className="overflow-auto max-h-[600px] relative">
-      <table className="w-full text-left border-collapse min-w-[2000px]">
-        <thead className="sticky top-0 z-10 bg-slate-800">
-          <tr>
-            {headers.map((key) => (
-              <th key={key} className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap">
-                {key.replace(/_/g, ' ')}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800">
-          {sales.length > 0 ? (
-            sales.map((sale: any, idx) => (
-              <tr key={sale.id || idx} className="hover:bg-slate-800/50 transition-colors">
-                {headers.map((key) => {
-                  const value = sale[key];
-                  const numericValue = parseNumericValue(value);
-                  const isNumeric = !isNaN(numericValue);
-                  
-                  // Dynamic detection of currency-like fields
-                  const isCurrency = isNumeric && (
-                    key.toLowerCase().includes('monto') || 
-                    key.toLowerCase().includes('capital') || 
-                    key.toLowerCase().includes('total') || 
-                    key.toLowerCase().includes('precio') || 
-                    key.toLowerCase().includes('importe') ||
-                    key.toLowerCase().includes('k_mas_i') ||
-                    key.toLowerCase().includes('interest')
-                  );
+  const totalPages = Math.ceil(sales.length / PAGE_SIZE);
+  const pageRows = sales.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const from = page * PAGE_SIZE + 1;
+  const to = Math.min((page + 1) * PAGE_SIZE, sales.length);
 
-                  return (
-                    <td key={key} className={cn(
-                      "px-4 py-3 text-xs",
-                      isCurrency ? "font-bold text-blue-400" : "text-zinc-400"
-                    )}>
-                      {isCurrency ? formatCurrency(numericValue) : String(value ?? '-')}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))
-          ) : (
+  return (
+    <div className="flex flex-col">
+      <DualScrollTable minWidth="2000px" maxHeight="600px">
+        <table className="w-full text-left border-collapse min-w-[2000px]">
+          <thead className="sticky top-0 z-10 bg-slate-800">
             <tr>
-              <td colSpan={headers.length || 1} className="px-6 py-12 text-center text-zinc-500 text-sm">
-                No hay datos disponibles para mostrar.
-              </td>
+              {headers.map((key) => (
+                <th key={key} className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap">
+                  {key.replace(/_/g, ' ')}
+                </th>
+              ))}
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {pageRows.length > 0 ? (
+              pageRows.map((sale: any, idx) => (
+                <tr key={sale.id || idx} className="hover:bg-slate-800/50 transition-colors">
+                  {headers.map((key) => {
+                    const value = sale[key];
+                    const numericValue = parseNumericValue(value);
+                    const isNumeric = !isNaN(numericValue);
+                    const isCurrency = isNumeric && (
+                      key.toLowerCase().includes('monto') ||
+                      key.toLowerCase().includes('capital') ||
+                      key.toLowerCase().includes('total') ||
+                      key.toLowerCase().includes('precio') ||
+                      key.toLowerCase().includes('importe') ||
+                      key.toLowerCase().includes('k_mas_i') ||
+                      key.toLowerCase().includes('interest')
+                    );
+                    return (
+                      <td key={key} className={cn("px-4 py-3 text-xs", isCurrency ? "font-bold text-blue-400" : "text-zinc-400")}>
+                        {isCurrency ? formatCurrency(numericValue) : String(value ?? '-')}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={headers.length || 1} className="px-6 py-12 text-center text-zinc-500 text-sm">
+                  No hay datos disponibles para mostrar.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </DualScrollTable>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-800 bg-slate-900">
+          <span className="text-xs text-zinc-500">
+            Mostrando {from.toLocaleString()}–{to.toLocaleString()} de {sales.length.toLocaleString()} registros
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => p - 1)}
+              disabled={page === 0}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 text-zinc-300 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Anterior
+            </button>
+            <span className="text-xs text-zinc-400 font-bold">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={page === totalPages - 1}
+              className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 text-zinc-300 hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              Siguiente →
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 });
@@ -756,6 +840,30 @@ export default function DashboardView({
     setStartDate(format(start, 'yyyy-MM-dd'));
     setEndDate(format(end, 'yyyy-MM-dd'));
   };
+
+  const LOADING_MESSAGES = [
+    'Cargando datos...',
+    'Conectando con la fuente...',
+    'Procesando registros...',
+    'Ya falta poco...',
+    'Organizando la información...',
+    'Casi lo tenemos...',
+    'Un momento más...',
+  ];
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+  const [showSpinner, setShowSpinner] = useState(loading);
+  const hadLoadingRef = useRef(false);
+
+  useEffect(() => {
+    if (loading) { hadLoadingRef.current = true; setShowSpinner(true); }
+    else if (sales.length > 0 || !hadLoadingRef.current) { setShowSpinner(false); }
+  }, [loading, sales.length]);
+
+  useEffect(() => {
+    if (!showSpinner) return;
+    const t = setInterval(() => setLoadingMsgIdx(i => (i + 1) % LOADING_MESSAGES.length), 1800);
+    return () => clearInterval(t);
+  }, [showSpinner]);
 
   // Auto-fetch when opening from a saved report — only for API modules
   const didAutoFetch = useRef(false);
@@ -1397,7 +1505,20 @@ export default function DashboardView({
       </AnimatePresence>
 
       <main className="max-w-7xl mx-auto px-6 py-8 w-full flex-1 flex flex-col">
-        {isRawText ? (
+        {showSpinner ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-6 min-h-[70vh]">
+            <div className="relative">
+              <Loader2 className="w-16 h-16 animate-spin text-blue-500" />
+              <div className="absolute inset-0 w-16 h-16 rounded-full bg-blue-500/10 animate-ping" />
+            </div>
+            <div className="text-center space-y-2">
+              <p key={loadingMsgIdx} className="text-white text-base font-semibold transition-all">
+                {LOADING_MESSAGES[loadingMsgIdx]}
+              </p>
+              <p className="text-zinc-500 text-xs">DataPulse está procesando tu consulta</p>
+            </div>
+          </div>
+        ) : isRawText ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">
               <div className="bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-xl relative overflow-hidden">
@@ -1729,6 +1850,11 @@ export default function DashboardView({
                   </div>
               <ChatPanel chatMessages={chatMessages} chatLoading={chatLoading} onSendMessage={handleSendMessage} height="500px" />
             </div>
+
+            {/* Marketing Funnels */}
+            {moduleId === 'marketing' && filteredSales.length > 0 && (
+              <MarketingFunnelCharts records={filteredSales} />
+            )}
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
