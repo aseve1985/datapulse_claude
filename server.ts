@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import Papa from "papaparse";
 import path from "path";
@@ -118,6 +119,7 @@ function getVal(row: any, ...possibleKeys: string[]) {
 }
 
 const app = express();
+app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
