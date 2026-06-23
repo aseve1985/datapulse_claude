@@ -36,6 +36,7 @@ import UifSubmodule from './submodules/UifSubmodule';
 import RiExperianSubmodule from './submodules/RiExperianSubmodule';
 import BuscadorPagosSubmodule from './submodules/BuscadorPagosSubmodule';
 import CarteraFideicomisoSubmodule from './submodules/CarteraFideicomisoSubmodule';
+import RiBcraTasasSubmodule from './submodules/RiBcraTasasSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -1575,24 +1576,38 @@ export default function DashboardView({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {submodules.map((sub: any, idx: number) => (
-                  <motion.button
-                    key={sub.id}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.07 }}
-                    onClick={() => setActiveSubmodule(sub)}
-                    className="group flex flex-col items-start gap-3 p-5 bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-zinc-500 rounded-2xl text-left transition-all shadow-sm hover:shadow-md"
-                  >
-                    <div className="w-10 h-10 bg-zinc-800 group-hover:bg-zinc-700 rounded-xl flex items-center justify-center transition-colors border border-zinc-700">
-                      <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-white text-sm mb-1">{sub.title}</p>
-                      <p className="text-zinc-500 text-xs leading-relaxed">{sub.description}</p>
-                    </div>
-                  </motion.button>
-                ))}
+                {submodules.map((sub: any, idx: number) => {
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg'].includes(sub.id);
+                  return (
+                    <motion.button
+                      key={sub.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.07 }}
+                      onClick={() => setActiveSubmodule(sub)}
+                      className={`group flex flex-col items-start gap-3 p-5 rounded-2xl text-left transition-all shadow-sm hover:shadow-md border ${
+                        isLive
+                          ? 'bg-blue-950/40 hover:bg-blue-900/40 border-blue-700/50 hover:border-blue-500'
+                          : 'bg-slate-900 hover:bg-slate-800 border-slate-700 hover:border-zinc-500'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
+                        isLive
+                          ? 'bg-blue-900/60 border-blue-600/50 group-hover:bg-blue-800/60'
+                          : 'bg-zinc-800 border-zinc-700 group-hover:bg-zinc-700'
+                      }`}>
+                        <ChevronRight className={`w-5 h-5 transition-colors ${isLive ? 'text-blue-400 group-hover:text-blue-300' : 'text-zinc-400 group-hover:text-white'}`} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-bold text-white text-sm">{sub.title}</p>
+                          {isLive && <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 rounded-md border border-blue-500/30">Activo</span>}
+                        </div>
+                        <p className="text-zinc-500 text-xs leading-relaxed">{sub.description}</p>
+                      </div>
+                    </motion.button>
+                  );
+                })}
               </div>
             </motion.div>
           </div>
@@ -1605,6 +1620,8 @@ export default function DashboardView({
             <RiExperianSubmodule />
           ) : activeSubmodule.id === 'buscador-pagos' ? (
             <BuscadorPagosSubmodule />
+          ) : activeSubmodule.id === 'ri-bcra-tasas' ? (
+            <RiBcraTasasSubmodule />
           ) : activeSubmodule.id === 'cartera-fideicomiso-arg' ? (
             <CarteraFideicomisoSubmodule />
           ) : (

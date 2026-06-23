@@ -1459,6 +1459,72 @@ async function startServer() {
     }
   });
 
+  // ── RI-BCRA Tasas ─────────────────────────────────────────────────────────────
+  let riBcraTasasCache: { data: Record<string, unknown>[]; fetchedAt: number } | null = null;
+  const RI_BCRA_TASAS_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
+
+  async function loadRiBcraTasasCache(): Promise<void> {
+    if (riBcraTasasCache && Date.now() - riBcraTasasCache.fetchedAt < RI_BCRA_TASAS_CACHE_TTL_MS) return;
+    if (!redshiftPool) throw new Error('Redshift no configurado');
+    const result = await redshiftPool.query('SELECT * FROM auxiliary_tables.ri_bcra_tasas_export ORDER BY nombre_largo');
+    const safe = JSON.parse(JSON.stringify(result.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+    riBcraTasasCache = { data: safe, fetchedAt: Date.now() };
+    console.log(`[RI-BCRA-TASAS] Cache loaded: ${safe.length} rows`);
+  }
+
+  app.get('/api/ri-bcra-tasas', async (_req, res) => {
+    try {
+      if (!redshiftPool) return res.status(503).json({ error: 'Redshift no configurado' });
+      await loadRiBcraTasasCache();
+      res.json({ records: riBcraTasasCache!.data, cachedAt: new Date(riBcraTasasCache!.fetchedAt).toISOString() });
+    } catch (error: any) {
+      res.status(500).json({ error: 'Error al cargar RI-BCRA Tasas', details: error.message });
+    }
+  });
+
+  app.get('/api/ri-bcra-tasas/export', async (_req, res) => {
+    try {
+      if (!redshiftPool) return res.status(503).json({ error: 'Redshift no configurado' });
+      await loadRiBcraTasasCache();
+      const rows = riBcraTasasCache!.data;
+
+      const COLUMNS = [
+        'nombre_largo', 'nombre_corto', 'denominacion',
+        'maximo_capital_desembolsado', 'minimo_capital_desembolsado', 'maximo_plazo',
+        'ingreso_minimo_mensual_solicitado', 'antiguedad_laboral_minima', 'edad_maxima_solicitada',
+        'relacion_cuota_ingreso', 'todos_los_beneficiarios', 'cancelacion_anticipada',
+        'tea_maxima', 'tipo_de_tasa', 'cft_maxima', 'cuota_cada_1000000',
+        'territorio_nacional', 'mas_informacion',
+      ];
+
+      const formatVal = (val: unknown): string => {
+        if (val === null || val === undefined) return '';
+        const str = String(val);
+        // Replace decimal dot with comma, trim trailing zeros after decimal
+        if (/^\d+\.\d+$/.test(str)) {
+          return parseFloat(str).toString().replace('.', ',');
+        }
+        return str;
+      };
+
+      const lines = rows.map(row =>
+        COLUMNS.map(col => formatVal(row[col])).join(';')
+      );
+      const content = lines.join('\r\n');
+
+      const today = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const dateStr = `${today.getFullYear()}${pad(today.getMonth() + 1)}${pad(today.getDate())}`;
+      const filename = `PERSONALES_${dateStr}.txt`;
+
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(content);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Error al exportar RI-BCRA Tasas', details: error.message });
+    }
+  });
+
   // Catch-all for unhandled API routes
   app.all("/api/*", (req, res) => {
     console.warn(`[Server] Unhandled API route: ${req.method} ${req.path}`);
