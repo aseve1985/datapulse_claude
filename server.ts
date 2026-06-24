@@ -1231,7 +1231,24 @@ async function startServer() {
       const now = Date.now();
       if (!uifCache || now - uifCache.fetchedAt > UIF_CACHE_TTL_MS) {
         console.log("[UIF] Querying Redshift...");
-        const result = await redshiftPool.query("SELECT * FROM platinum_ia.monitor_uif_arg");
+        const result = await redshiftPool.query(`
+          SELECT
+            fecha_warning, cuil, dni, loan_id, fecha_desembolso, monto_desembolsado,
+            tipo_cliente, medio_pago, nse, actividad_empleador, actividad_laboral,
+            descripcion_actividad_laboral, razon_social_empleador, cuit_empleador,
+            region_loan, riesgo_region,
+            warning_cancelacion_anticipada, warning_pep_o_so, warning_smvm_men_anual, warning_pagador_indirecto,
+            total_cancelados_en_el_mes, salario_min, smvm_mes, smvm_anio, cvu_igual, es_so, es_pep,
+            riesgo,
+            auditoria_1, auditor_1, auditoria_fecha_1,
+            auditoria_2, auditor_2, auditoria_fecha_2,
+            auditoria_3, auditor_3, auditoria_fecha_3,
+            auditoria_4, auditor_4, auditoria_fecha_4,
+            auditoria_5, auditor_5, auditoria_fecha_5,
+            riesgo_auditado
+          FROM platinum_ia.monitor_uif_arg
+          ORDER BY fecha_warning DESC
+        `);
         uifCache = { data: result.rows, fetchedAt: now };
         console.log(`[UIF] Cached ${result.rows.length} records from Redshift`);
       } else {
@@ -1246,13 +1263,19 @@ async function startServer() {
   });
 
   app.patch("/api/uif/audit", async (req, res) => {
-    const { updates, auditor_legal } = req.body as {
-      auditor_legal: string;
-      updates: Array<{ record: Record<string, any>; auditoria_realizada: string }>
+    const body = req.body as {
+      loan_id: number;
+      cuil: string;
+      auditoria_1?: string | null; auditor_1?: string | null;
+      auditoria_2?: string | null; auditor_2?: string | null;
+      auditoria_3?: string | null; auditor_3?: string | null;
+      auditoria_4?: string | null; auditor_4?: string | null;
+      auditoria_5?: string | null; auditor_5?: string | null;
+      riesgo_auditado?: string | null;
     };
 
-    if (!updates || updates.length === 0) {
-      return res.status(400).json({ error: "No se enviaron registros para actualizar" });
+    if (!body.loan_id || !body.cuil) {
+      return res.status(400).json({ error: "loan_id y cuil son requeridos" });
     }
 
     if (!redshiftPool) {
@@ -1263,38 +1286,35 @@ async function startServer() {
     }
 
     const client = await redshiftPool.connect();
-    let updatedCount = 0;
     try {
-      await client.query("BEGIN");
-      for (const { record, auditoria_realizada } of updates) {
-        await client.query(
-          `UPDATE platinum_ia.monitor_uif_arg
-           SET auditoria_realizada = $1,
-               auditor_legal = $2
-           WHERE fecha_insercion = $3
-             AND cuil = $4
-             AND dni = $5
-             AND loan_id = $6
-             AND fecha = $7
-             AND aviso_2_1 = $8
-             AND aviso_2_2 = $9
-             AND aviso_2_3 = $10
-             AND aviso_2_4 = $11`,
-          [
-            auditoria_realizada,
-            auditor_legal || null,
-            record.fecha_insercion, record.cuil, record.dni, record.loan_id,
-            record.fecha, record.aviso_2_1, record.aviso_2_2, record.aviso_2_3, record.aviso_2_4,
-          ]
-        );
-        updatedCount++;
-      }
-      await client.query("COMMIT");
-      uifCache = null; // invalidar cache para que la próxima carga traiga datos frescos
-      console.log(`[UIF] Audit saved: ${updatedCount} records by ${req.headers["x-goog-authenticated-user-email"] || "unknown"}`);
-      res.json({ updated: updatedCount, message: "Auditoría guardada correctamente" });
+      await client.query(
+        `UPDATE platinum_ia.monitor_uif_arg
+         SET auditoria_1 = $1, auditor_1 = $2,
+             auditoria_fecha_1 = CASE WHEN $1 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
+             auditoria_2 = $3, auditor_2 = $4,
+             auditoria_fecha_2 = CASE WHEN $3 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
+             auditoria_3 = $5, auditor_3 = $6,
+             auditoria_fecha_3 = CASE WHEN $5 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
+             auditoria_4 = $7, auditor_4 = $8,
+             auditoria_fecha_4 = CASE WHEN $7 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
+             auditoria_5 = $9, auditor_5 = $10,
+             auditoria_fecha_5 = CASE WHEN $9 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
+             riesgo_auditado = $11
+         WHERE loan_id = $12 AND cuil = $13`,
+        [
+          body.auditoria_1 ?? null, body.auditor_1 ?? null,
+          body.auditoria_2 ?? null, body.auditor_2 ?? null,
+          body.auditoria_3 ?? null, body.auditor_3 ?? null,
+          body.auditoria_4 ?? null, body.auditor_4 ?? null,
+          body.auditoria_5 ?? null, body.auditor_5 ?? null,
+          body.riesgo_auditado ?? null,
+          body.loan_id, body.cuil,
+        ]
+      );
+      uifCache = null;
+      console.log(`[UIF] Audit saved: loan_id=${body.loan_id} by ${req.headers["x-goog-authenticated-user-email"] || "unknown"}`);
+      res.json({ ok: true });
     } catch (err: any) {
-      await client.query("ROLLBACK");
       console.error("[UIF] Redshift update error:", err);
       res.status(500).json({ error: "Error al guardar en Redshift", details: err.message });
     } finally {
