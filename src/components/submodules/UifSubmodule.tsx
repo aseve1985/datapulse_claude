@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo, useDeferredValue } from 'react';
 import {
   Database, Loader2, ShieldAlert, CheckCircle2, Clock, RefreshCcw,
-  AlertTriangle, ChevronDown, ChevronRight, Save, Filter, X
+  ChevronDown, ChevronRight, Save, Filter, X, RotateCcw
 } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -41,6 +41,8 @@ interface UifRecord {
   auditoria_4: string | null; auditor_4: string | null; auditoria_fecha_4: string | null;
   auditoria_5: string | null; auditor_5: string | null; auditoria_fecha_5: string | null;
   riesgo_auditado: string | null;
+  riesgo_auditado_auditor: string | null;
+  riesgo_auditado_fecha: string | null;
 }
 
 interface AuditDraft {
@@ -88,9 +90,29 @@ function draftFromRecord(r: UifRecord): AuditDraft {
   };
 }
 
+function isRealAudit(v: unknown): boolean {
+  if (!v) return false;
+  const s = String(v);
+  return s !== '' && s !== 'true' && s !== 'false';
+}
+
 function auditProgress(r: UifRecord): number {
   return [r.auditoria_1, r.auditoria_2, r.auditoria_3, r.auditoria_4, r.auditoria_5]
-    .filter(v => v && v !== 'true' && v !== 'false').length;
+    .filter(isRealAudit).length;
+}
+
+function isAuditado(r: UifRecord): boolean {
+  const slots: [unknown, unknown, unknown][] = [
+    [r.auditoria_1, r.auditor_1, r.auditoria_fecha_1],
+    [r.auditoria_2, r.auditor_2, r.auditoria_fecha_2],
+    [r.auditoria_3, r.auditor_3, r.auditoria_fecha_3],
+    [r.auditoria_4, r.auditor_4, r.auditoria_fecha_4],
+    [r.auditoria_5, r.auditor_5, r.auditoria_fecha_5],
+    [r.riesgo_auditado, r.riesgo_auditado_auditor, r.riesgo_auditado_fecha],
+  ];
+  return slots.some(([valor, auditor, fecha]) =>
+    isRealAudit(valor) && !!auditor && !!fecha
+  );
 }
 
 // ── Small components ─────────────────────────────────────────────────────────
@@ -121,6 +143,16 @@ function BoolBadge({ value }: { value: unknown }) {
   return bool
     ? <span className="text-[10px] font-bold text-emerald-400">Sí</span>
     : <span className="text-[10px] text-zinc-600">No</span>;
+}
+
+// Shows boolean as Sí/No, text as-is, null as —
+function SmartCell({ value }: { value: unknown }) {
+  if (value === null || value === undefined) return <span className="text-zinc-600">—</span>;
+  if (value === true) return <span className="text-[10px] font-bold text-emerald-400">Sí</span>;
+  if (value === false) return <span className="text-[10px] text-zinc-600">No</span>;
+  const s = String(value);
+  if (s === '' || s === 'null') return <span className="text-zinc-600">—</span>;
+  return <span className="text-xs text-zinc-300">{s}</span>;
 }
 
 // ── DualScroll (ResizeObserver — no reflow on expand) ────────────────────────
@@ -192,12 +224,12 @@ const DISPLAY_COLS: { key: keyof UifRecord; label: string; render?: (v: unknown,
   { key: 'monto_desembolsado', label: 'Monto Desemb.', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
   { key: 'tipo_cliente', label: 'Tipo Cliente' },
   { key: 'medio_pago', label: 'Medio de Pago' },
-  { key: 'nse', label: 'NSE', render: v => <BoolBadge value={v} /> },
-  { key: 'actividad_empleador', label: 'Act. Empleador', render: v => <BoolBadge value={v} /> },
+  { key: 'nse', label: 'NSE', render: v => <SmartCell value={v} /> },
+  { key: 'actividad_empleador', label: 'Act. Empleador', render: v => <SmartCell value={v} /> },
   { key: 'actividad_laboral', label: 'Act. Laboral' },
-  { key: 'descripcion_actividad_laboral', label: 'Desc. Act. Lab.', render: v => <BoolBadge value={v} /> },
-  { key: 'razon_social_empleador', label: 'Razón Social', render: v => <BoolBadge value={v} /> },
-  { key: 'cuit_empleador', label: 'CUIT Empl.', render: v => <BoolBadge value={v} /> },
+  { key: 'descripcion_actividad_laboral', label: 'Desc. Act. Lab.', render: v => <SmartCell value={v} /> },
+  { key: 'razon_social_empleador', label: 'Razón Social', render: v => <SmartCell value={v} /> },
+  { key: 'cuit_empleador', label: 'CUIT Empl.', render: v => <SmartCell value={v} /> },
   { key: 'region_loan', label: 'Región' },
   { key: 'riesgo_region', label: 'Riesgo Región', render: v => v ? <span className="text-[10px] text-zinc-400">{String(v).replace(/_/g, ' ')}</span> : <span className="text-zinc-600">—</span> },
   { key: 'warning_cancelacion_anticipada', label: 'W. Cancelac.', render: v => <WarnDot active={!!v} /> },
@@ -219,29 +251,26 @@ const DISPLAY_COLS: { key: keyof UifRecord; label: string; render?: (v: unknown,
 
 const SLOTS = [1, 2, 3, 4, 5] as const;
 
-type SlotN = typeof SLOTS[number];
+
+const EMPTY_DRAFT: AuditDraft = { auditoria_1: '', auditoria_2: '', auditoria_3: '', auditoria_4: '', auditoria_5: '', riesgo_auditado: '' };
 
 const AuditPanel = memo(function AuditPanel({
   record,
   userEmail,
   onSave,
+  onReset,
 }: {
   record: UifRecord;
   userEmail: string;
   onSave: (loan_id: number, cuil: string, draft: AuditDraft) => Promise<void>;
+  onReset: (loan_id: number, cuil: string, riesgo: string | null) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<AuditDraft>(() => draftFromRecord(record));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const colSpan = DISPLAY_COLS.length + 1;
-
-  const setField = (field: keyof AuditDraft) => (
-    e: React.ChangeEvent<HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    setSaved(false);
-    setDraft(d => ({ ...d, [field]: e.target.value }));
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -253,74 +282,105 @@ const AuditPanel = memo(function AuditPanel({
     }
   };
 
-  return (
-    <tr className="bg-slate-950/80">
-      <td colSpan={colSpan} className="px-6 py-5 border-b border-slate-800">
-        <div className="flex flex-col gap-0 max-w-3xl divide-y divide-slate-800/60">
+  const handleReset = async () => {
+    if (!window.confirm('¿Resetear toda la auditoría de este registro? El registro quedará como no auditado.')) return;
+    setResetting(true);
+    try {
+      await onReset(record.loan_id, record.cuil, record.riesgo);
+      setDraft(EMPTY_DRAFT);
+      setSaved(false);
+    } finally {
+      setResetting(false);
+    }
+  };
 
-          {/* Audit rounds — one per row */}
+  return (
+    <tr className="bg-slate-950/70">
+      <td colSpan={colSpan} className="border-b border-slate-800 px-3">
+        {/* Max-width container so the grid doesn't stretch across 3200px */}
+        <div className="max-w-3xl divide-y divide-slate-800/50">
+
+          {/* 5 compact rows: [label 4rem] [input flex] [auditor 10rem] [fecha 8rem] */}
           {SLOTS.map(n => {
             const auditKey = `auditoria_${n}` as keyof AuditDraft;
             const auditorVal = record[`auditor_${n}` as keyof UifRecord];
             const fechaVal = record[`auditoria_fecha_${n}` as keyof UifRecord];
-            const auditorDisplay = typeof auditorVal === 'string' && auditorVal !== 'true'
+            const auditorDisplay = typeof auditorVal === 'string' && auditorVal !== 'true' && auditorVal !== 'false'
               ? auditorVal
-              : (draft[auditKey] ? userEmail : null);
+              : (draft[auditKey] ? userEmail : '');
 
             return (
-              <div key={n} className="py-3 first:pt-0">
-                {/* Row header: label + auditor + fecha */}
-                <div className="flex items-center gap-4 mb-1.5">
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider w-20 shrink-0">
-                    Auditoría {n}
-                  </span>
-                  {auditorDisplay && (
-                    <span className="text-[10px] text-zinc-500 truncate" title={auditorDisplay}>
-                      {auditorDisplay}
-                    </span>
-                  )}
-                  {fechaVal && (
-                    <span className="text-[10px] text-zinc-600 ml-auto shrink-0">
-                      {fmtDateTime(fechaVal)}
-                    </span>
-                  )}
-                </div>
-                <textarea
-                  value={draft[auditKey as keyof AuditDraft]}
-                  onChange={setField(auditKey as keyof AuditDraft)}
-                  rows={2}
-                  placeholder={`Notas auditoría ${n}…`}
-                  className="w-full bg-slate-800 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 text-xs text-zinc-200 placeholder-zinc-600 rounded-lg px-3 py-2 resize-none outline-none transition-colors"
+              <div key={n} className="grid gap-2 py-2" style={{ gridTemplateColumns: '4rem 1fr 10rem 8rem' }}>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider self-center">
+                  Aud. {n}
+                </span>
+                <input
+                  type="text"
+                  value={draft[auditKey]}
+                  onChange={e => { setSaved(false); setDraft(d => ({ ...d, [auditKey]: e.target.value })); }}
+                  placeholder={`Auditoría ${n}…`}
+                  className="bg-slate-800 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-xs text-zinc-200 placeholder-zinc-600 rounded px-2.5 py-1.5 outline-none transition-colors w-full"
                 />
+                <span className="text-[10px] text-zinc-500 self-center truncate" title={auditorDisplay}>
+                  {auditorDisplay || <span className="text-zinc-700">—</span>}
+                </span>
+                <span className="text-[10px] text-zinc-600 self-center font-mono">
+                  {fechaVal ? fmtDateTime(fechaVal) : <span className="text-zinc-700">—</span>}
+                </span>
               </div>
             );
           })}
 
-          {/* Footer */}
-          <div className="flex items-center gap-4 pt-3">
-            <div className="flex items-center gap-2">
-              <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">
-                Riesgo Auditado
-              </label>
-              <select
-                value={draft.riesgo_auditado}
-                onChange={setField('riesgo_auditado')}
-                className="bg-slate-800 border border-slate-700 focus:border-blue-500 text-xs text-zinc-200 rounded-lg px-3 py-1.5 outline-none"
-              >
-                <option value="">— Sin clasificar —</option>
-                <option value="BAJO">BAJO</option>
-                <option value="MEDIO">MEDIO</option>
-                <option value="ALTO">ALTO</option>
-              </select>
-            </div>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors"
+          {/* Riesgo auditado — same grid layout as audit rows */}
+          <div className="grid gap-2 py-2" style={{ gridTemplateColumns: '4rem 1fr 10rem 8rem' }}>
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider self-center">
+              Riesgo
+            </span>
+            <select
+              value={draft.riesgo_auditado}
+              onChange={e => { setSaved(false); setDraft(d => ({ ...d, riesgo_auditado: e.target.value })); }}
+              className="bg-slate-800 border border-slate-700 focus:border-blue-500 text-xs text-zinc-200 rounded px-2.5 py-1.5 outline-none w-36"
             >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              {saving ? 'Guardando…' : saved ? '✓ Guardado' : 'Guardar'}
-            </button>
+              <option value="">— Sin clasificar —</option>
+              <option value="BAJO">BAJO</option>
+              <option value="MEDIO">MEDIO</option>
+              <option value="ALTO">ALTO</option>
+            </select>
+            <span className="text-[10px] text-zinc-500 self-center truncate" title={record.riesgo_auditado_auditor ?? ''}>
+              {record.riesgo_auditado_auditor && record.riesgo_auditado_auditor !== 'true'
+                ? record.riesgo_auditado_auditor
+                : (draft.riesgo_auditado ? userEmail : <span className="text-zinc-700">—</span>)
+              }
+            </span>
+            <span className="text-[10px] text-zinc-600 self-center font-mono">
+              {record.riesgo_auditado_fecha
+                ? fmtDateTime(record.riesgo_auditado_fecha)
+                : <span className="text-zinc-700">—</span>
+              }
+            </span>
+          </div>
+
+          {/* Guardar / Resetear */}
+          <div className="grid gap-2 py-2" style={{ gridTemplateColumns: '4rem 1fr 10rem 8rem' }}>
+            <span />
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSave}
+                disabled={saving || resetting}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded text-xs font-bold transition-colors"
+              >
+                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                {saving ? 'Guardando…' : saved ? '✓ Guardado' : 'Guardar'}
+              </button>
+              <button
+                onClick={handleReset}
+                disabled={saving || resetting}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-transparent hover:bg-rose-900/40 border border-zinc-700 hover:border-rose-700 text-zinc-500 hover:text-rose-400 disabled:opacity-50 rounded text-xs transition-colors"
+              >
+                {resetting ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                {resetting ? 'Reseteando…' : 'Resetear'}
+              </button>
+            </div>
           </div>
         </div>
       </td>
@@ -336,12 +396,14 @@ const UifRow = memo(function UifRow({
   userEmail,
   onToggle,
   onSave,
+  onReset,
 }: {
   row: UifRecord;
   isOpen: boolean;
   userEmail: string;
   onToggle: (key: string) => void;
   onSave: (loan_id: number, cuil: string, draft: AuditDraft) => Promise<void>;
+  onReset: (loan_id: number, cuil: string, riesgo: string | null) => Promise<void>;
 }) {
   const key = rowKey(row);
   const progress = auditProgress(row);
@@ -376,7 +438,7 @@ const UifRow = memo(function UifRow({
         ))}
       </tr>
       {isOpen && (
-        <AuditPanel record={row} userEmail={userEmail} onSave={onSave} />
+        <AuditPanel record={row} userEmail={userEmail} onSave={onSave} onReset={onReset} />
       )}
     </React.Fragment>
   );
@@ -386,13 +448,15 @@ const UifRow = memo(function UifRow({
 
 interface Filters {
   loan_id: string;
+  cuil: string;
   fecha_from: string;
   fecha_to: string;
+  warning: string;
   riesgo: string;
   riesgo_auditado: string;
 }
 
-const EMPTY_FILTERS: Filters = { loan_id: '', fecha_from: '', fecha_to: '', riesgo: 'all', riesgo_auditado: 'all' };
+const EMPTY_FILTERS: Filters = { loan_id: '', cuil: '', fecha_from: '', fecha_to: '', warning: 'all', riesgo: 'all', riesgo_auditado: 'all' };
 
 export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
   const [records, setRecords] = useState<UifRecord[]>([]);
@@ -401,6 +465,7 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const deferredFilters = useDeferredValue(filters);
 
   const handleLoad = useCallback(async () => {
     setLoading(true);
@@ -422,7 +487,7 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
   }, []);
 
   const handleSave = useCallback(async (loan_id: number, cuil: string, draft: AuditDraft) => {
-    const now = new Date().toISOString();
+    const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
     const res = await fetch('/api/uif/audit', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -440,12 +505,14 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
         auditoria_5: draft.auditoria_5 || null,
         auditor_5: draft.auditoria_5 ? (userEmail || null) : null,
         riesgo_auditado: draft.riesgo_auditado || null,
+        auditor_riesgo: draft.riesgo_auditado ? (userEmail || null) : null,
       }),
     });
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error || 'Error al guardar');
     }
+    const riesgo = draft.riesgo_auditado || null;
     setRecords(prev => prev.map(r =>
       r.loan_id === loan_id && r.cuil === cuil ? {
         ...r,
@@ -464,10 +531,43 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
         auditoria_5: draft.auditoria_5 || null,
         auditor_5: draft.auditoria_5 ? (userEmail || null) : r.auditor_5,
         auditoria_fecha_5: draft.auditoria_5 ? now : null,
-        riesgo_auditado: draft.riesgo_auditado || null,
+        riesgo_auditado: riesgo,
+        riesgo_auditado_auditor: riesgo ? (userEmail || null) : null,
+        riesgo_auditado_fecha: riesgo ? now : null,
       } : r
     ));
   }, [userEmail]);
+
+  const handleReset = useCallback(async (loan_id: number, cuil: string, riesgo: string | null) => {
+    const res = await fetch('/api/uif/audit', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        loan_id, cuil,
+        auditoria_1: null, auditor_1: null,
+        auditoria_2: null, auditor_2: null,
+        auditoria_3: null, auditor_3: null,
+        auditoria_4: null, auditor_4: null,
+        auditoria_5: null, auditor_5: null,
+        riesgo_auditado: riesgo, auditor_riesgo: null,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Error al resetear');
+    }
+    setRecords(prev => prev.map(r =>
+      r.loan_id === loan_id && r.cuil === cuil ? {
+        ...r,
+        auditoria_1: null, auditor_1: null, auditoria_fecha_1: null,
+        auditoria_2: null, auditor_2: null, auditoria_fecha_2: null,
+        auditoria_3: null, auditor_3: null, auditoria_fecha_3: null,
+        auditoria_4: null, auditor_4: null, auditoria_fecha_4: null,
+        auditoria_5: null, auditor_5: null, auditoria_fecha_5: null,
+        riesgo_auditado: riesgo, riesgo_auditado_auditor: null, riesgo_auditado_fecha: null,
+      } : r
+    ));
+  }, []);
 
   const toggleExpand = useCallback((key: string) => {
     setExpanded(prev => {
@@ -479,33 +579,39 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
 
   const stats = useMemo(() => {
     const total = records.length;
-    const sinAuditoria = records.filter(r => !r.auditoria_1 || r.auditoria_1 === 'true').length;
-    const cerrados = records.filter(r => !!r.riesgo_auditado).length;
-    const enRevision = total - sinAuditoria - cerrados;
-    const warnings = records.filter(r =>
-      r.warning_cancelacion_anticipada || r.warning_pep_o_so ||
-      r.warning_smvm_men_anual || r.warning_pagador_indirecto
-    ).length;
-    return { total, sinAuditoria, cerrados, enRevision, warnings };
+    const auditados = records.filter(isAuditado).length;
+    const sinAuditoria = total - auditados;
+    const riesgoAlto = records.filter(r => r.riesgo_auditado === 'ALTO').length;
+    return { total, sinAuditoria, auditados, riesgoAlto };
   }, [records]);
 
   const filtered = useMemo(() => records.filter(r => {
-    if (filters.loan_id && !String(r.loan_id ?? '').includes(filters.loan_id)) return false;
-    if (filters.fecha_from && r.fecha_warning && r.fecha_warning < filters.fecha_from) return false;
-    if (filters.fecha_to && r.fecha_warning && r.fecha_warning > filters.fecha_to) return false;
-    if (filters.riesgo !== 'all' && r.riesgo !== filters.riesgo) return false;
-    if (filters.riesgo_auditado === 'pendiente' && r.riesgo_auditado) return false;
-    if (filters.riesgo_auditado === 'cerrado' && !r.riesgo_auditado) return false;
-    if (
-      filters.riesgo_auditado !== 'all' &&
-      filters.riesgo_auditado !== 'pendiente' &&
-      filters.riesgo_auditado !== 'cerrado' &&
-      r.riesgo_auditado !== filters.riesgo_auditado
-    ) return false;
+    if (deferredFilters.loan_id && !String(r.loan_id ?? '').includes(deferredFilters.loan_id)) return false;
+    if (deferredFilters.cuil && !String(r.cuil ?? '').includes(deferredFilters.cuil)) return false;
+    if (deferredFilters.fecha_from && r.fecha_warning && r.fecha_warning < deferredFilters.fecha_from) return false;
+    if (deferredFilters.fecha_to && r.fecha_warning && r.fecha_warning > deferredFilters.fecha_to) return false;
+    if (deferredFilters.warning !== 'all' && !r[deferredFilters.warning as keyof UifRecord]) return false;
+    if (deferredFilters.riesgo !== 'all' && r.riesgo_auditado !== deferredFilters.riesgo) return false;
+    if (deferredFilters.riesgo_auditado !== 'all') {
+      const auditado = isAuditado(r);
+      if (deferredFilters.riesgo_auditado === 'auditado' && !auditado) return false;
+      if (deferredFilters.riesgo_auditado === 'no_auditado' && auditado) return false;
+    }
     return true;
-  }), [records, filters]);
+  }), [records, deferredFilters]);
 
   const hasFilters = Object.entries(filters).some(([, v]) => v !== '' && v !== 'all');
+
+  const cuilRanking = useMemo(() => {
+    const map = new Map<string, { cuil: string; warnings: number; riesgoAlto: number }>();
+    for (const r of records) {
+      const entry = map.get(r.cuil) ?? { cuil: r.cuil, warnings: 0, riesgoAlto: 0 };
+      entry.warnings++;
+      if (r.riesgo_auditado === 'ALTO' || r.riesgo === 'ALTO') entry.riesgoAlto++;
+      map.set(r.cuil, entry);
+    }
+    return Array.from(map.values()).sort((a, b) => b.warnings - a.warnings);
+  }, [records]);
 
   // ── Initial screen ────────────────────────────────────────────────────────
   if (!loaded) {
@@ -544,19 +650,18 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
     <div className="flex-1 p-4 space-y-4 max-w-full overflow-hidden">
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Total', value: stats.total, color: 'text-zinc-200', icon: null },
           { label: 'Sin Auditar', value: stats.sinAuditoria, color: 'text-amber-400', icon: <Clock className="w-4 h-4" /> },
-          { label: 'En Revisión', value: stats.enRevision, color: 'text-blue-400', icon: <AlertTriangle className="w-4 h-4" /> },
-          { label: 'Cerrados', value: stats.cerrados, color: 'text-emerald-400', icon: <CheckCircle2 className="w-4 h-4" /> },
-          { label: 'Con Warnings', value: stats.warnings, color: 'text-rose-400', icon: <ShieldAlert className="w-4 h-4" /> },
+          { label: 'Auditados', value: stats.auditados, color: 'text-blue-400', icon: <CheckCircle2 className="w-4 h-4" /> },
+          { label: 'Riesgo Alto', value: stats.riesgoAlto, color: 'text-rose-400', icon: <ShieldAlert className="w-4 h-4" /> },
         ].map(s => (
           <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{s.label}</p>
             <div className={`flex items-center gap-1.5 ${s.color}`}>
               {s.icon}
-              <span className="text-xl font-black">{s.value.toLocaleString('es-AR')}</span>
+              <span className="text-xl font-black">{(s.value ?? 0).toLocaleString('es-AR')}</span>
             </div>
           </div>
         ))}
@@ -580,7 +685,7 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+        <div className="grid gap-2" style={{ gridTemplateColumns: '7rem 7rem 9rem 9rem 1.4fr 1.6fr' }}>
           <input
             type="text"
             value={filters.loan_id}
@@ -588,28 +693,44 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
             placeholder="Loan ID…"
             className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-zinc-500 placeholder-zinc-600"
           />
+          <input
+            type="text"
+            value={filters.cuil}
+            onChange={e => setFilters(f => ({ ...f, cuil: e.target.value }))}
+            placeholder="CUIL…"
+            className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-zinc-500 placeholder-zinc-600"
+          />
           <input type="date" value={filters.fecha_from}
+            title="Fecha Warning — desde"
             onChange={e => setFilters(f => ({ ...f, fecha_from: e.target.value }))}
             className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-zinc-500 [color-scheme:dark]" />
           <input type="date" value={filters.fecha_to}
+            title="Fecha Warning — hasta"
             onChange={e => setFilters(f => ({ ...f, fecha_to: e.target.value }))}
             className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-zinc-500 [color-scheme:dark]" />
-          <select value={filters.riesgo} onChange={e => setFilters(f => ({ ...f, riesgo: e.target.value }))}
+          <select value={filters.warning} onChange={e => setFilters(f => ({ ...f, warning: e.target.value }))}
             className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
-            <option value="all">Riesgo: Todos</option>
-            <option value="BAJO">BAJO</option>
-            <option value="MEDIO">MEDIO</option>
-            <option value="ALTO">ALTO</option>
+            <option value="all">Warning: Todos</option>
+            <option value="warning_cancelacion_anticipada">Cancelación anticipada</option>
+            <option value="warning_pep_o_so">PEP / SO</option>
+            <option value="warning_smvm_men_anual">SMVM mensual/anual</option>
+            <option value="warning_pagador_indirecto">Pagador indirecto</option>
           </select>
-          <select value={filters.riesgo_auditado} onChange={e => setFilters(f => ({ ...f, riesgo_auditado: e.target.value }))}
-            className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
-            <option value="all">Estado: Todos</option>
-            <option value="pendiente">Sin cerrar</option>
-            <option value="cerrado">Cerrado</option>
-            <option value="BAJO">Auditado BAJO</option>
-            <option value="MEDIO">Auditado MEDIO</option>
-            <option value="ALTO">Auditado ALTO</option>
-          </select>
+          <div className="grid grid-cols-2 gap-2">
+            <select value={filters.riesgo} onChange={e => setFilters(f => ({ ...f, riesgo: e.target.value }))}
+              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
+              <option value="all">Riesgo: Todos</option>
+              <option value="BAJO">BAJO</option>
+              <option value="MEDIO">MEDIO</option>
+              <option value="ALTO">ALTO</option>
+            </select>
+            <select value={filters.riesgo_auditado} onChange={e => setFilters(f => ({ ...f, riesgo_auditado: e.target.value }))}
+              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
+              <option value="all">Estado: Todos</option>
+              <option value="auditado">Auditado</option>
+              <option value="no_auditado">No auditado</option>
+            </select>
+          </div>
         </div>
         {hasFilters && (
           <p className="text-[10px] text-zinc-600 mt-2">
@@ -647,11 +768,49 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
                   userEmail={userEmail || ''}
                   onToggle={toggleExpand}
                   onSave={handleSave}
+                  onReset={handleReset}
                 />
               ))}
             </tbody>
           </table>
         </DualScroll>
+      </div>
+
+      {/* Ranking por CUIL */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-rose-400" />
+          <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Ranking CUIL por cantidad de warnings</span>
+        </div>
+        <div className="overflow-y-auto max-h-72">
+        <table className="w-full text-left border-collapse">
+          <thead className="sticky top-0 bg-slate-800">
+            <tr>
+              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider w-10">#</th>
+              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">CUIL</th>
+              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Warnings</th>
+              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Riesgo Alto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cuilRanking.slice(0, 50).map((entry, i) => (
+              <tr key={entry.cuil} className="border-t border-slate-800/60 hover:bg-slate-800/30 transition-colors">
+                <td className="px-4 py-2 text-[11px] text-zinc-600 font-mono">{i + 1}</td>
+                <td className="px-4 py-2 text-xs font-mono text-zinc-200">{entry.cuil}</td>
+                <td className="px-4 py-2 text-right">
+                  <span className="text-sm font-black text-blue-400">{entry.warnings}</span>
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {entry.riesgoAlto > 0
+                    ? <span className="text-sm font-black text-rose-400">{entry.riesgoAlto}</span>
+                    : <span className="text-zinc-700">—</span>
+                  }
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        </div>
       </div>
     </div>
   );

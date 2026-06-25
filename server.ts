@@ -1245,7 +1245,7 @@ async function startServer() {
             auditoria_3, auditor_3, auditoria_fecha_3,
             auditoria_4, auditor_4, auditoria_fecha_4,
             auditoria_5, auditor_5, auditoria_fecha_5,
-            riesgo_auditado
+            riesgo_auditado, riesgo_auditado_auditor, riesgo_auditado_fecha
           FROM platinum_ia.monitor_uif_arg
           ORDER BY fecha_warning DESC
         `);
@@ -1272,6 +1272,7 @@ async function startServer() {
       auditoria_4?: string | null; auditor_4?: string | null;
       auditoria_5?: string | null; auditor_5?: string | null;
       riesgo_auditado?: string | null;
+      auditor_riesgo?: string | null;
     };
 
     if (!body.loan_id || !body.cuil) {
@@ -1287,28 +1288,32 @@ async function startServer() {
 
     const client = await redshiftPool.connect();
     try {
+      const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      const a1 = body.auditoria_1 ?? null, a2 = body.auditoria_2 ?? null;
+      const a3 = body.auditoria_3 ?? null, a4 = body.auditoria_4 ?? null;
+      const a5 = body.auditoria_5 ?? null;
+      const riesgo = body.riesgo_auditado ?? null;
       await client.query(
         `UPDATE platinum_ia.monitor_uif_arg
-         SET auditoria_1 = $1, auditor_1 = $2,
-             auditoria_fecha_1 = CASE WHEN $1 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
-             auditoria_2 = $3, auditor_2 = $4,
-             auditoria_fecha_2 = CASE WHEN $3 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
-             auditoria_3 = $5, auditor_3 = $6,
-             auditoria_fecha_3 = CASE WHEN $5 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
-             auditoria_4 = $7, auditor_4 = $8,
-             auditoria_fecha_4 = CASE WHEN $7 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
-             auditoria_5 = $9, auditor_5 = $10,
-             auditoria_fecha_5 = CASE WHEN $9 IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END,
-             riesgo_auditado = $11
-         WHERE loan_id = $12 AND cuil = $13`,
+         SET auditoria_1 = $1, auditor_1 = $2, auditoria_fecha_1 = $3,
+             auditoria_2 = $4, auditor_2 = $5, auditoria_fecha_2 = $6,
+             auditoria_3 = $7, auditor_3 = $8, auditoria_fecha_3 = $9,
+             auditoria_4 = $10, auditor_4 = $11, auditoria_fecha_4 = $12,
+             auditoria_5 = $13, auditor_5 = $14, auditoria_fecha_5 = $15,
+             riesgo_auditado = $16,
+             riesgo_auditado_auditor = $17,
+             riesgo_auditado_fecha = $18
+         WHERE loan_id = $19 AND cuil = $20`,
         [
-          body.auditoria_1 ?? null, body.auditor_1 ?? null,
-          body.auditoria_2 ?? null, body.auditor_2 ?? null,
-          body.auditoria_3 ?? null, body.auditor_3 ?? null,
-          body.auditoria_4 ?? null, body.auditor_4 ?? null,
-          body.auditoria_5 ?? null, body.auditor_5 ?? null,
-          body.riesgo_auditado ?? null,
-          body.loan_id, body.cuil,
+          a1, body.auditor_1 ?? null, a1 ? now : null,
+          a2, body.auditor_2 ?? null, a2 ? now : null,
+          a3, body.auditor_3 ?? null, a3 ? now : null,
+          a4, body.auditor_4 ?? null, a4 ? now : null,
+          a5, body.auditor_5 ?? null, a5 ? now : null,
+          riesgo,
+          riesgo ? (body.auditor_riesgo ?? null) : null,
+          riesgo ? now : null,
+          Number(body.loan_id), body.cuil,
         ]
       );
       uifCache = null;
