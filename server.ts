@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import { parquetRead } from "hyparquet";
 import * as XLSX from "xlsx";
 import { generateCarteraExcel } from './carteraFideicomisoExcel';
+import chatRouter from './dwh-chat/router';
 
 dotenv.config();
 
@@ -121,9 +122,11 @@ function getVal(row: any, ...possibleKeys: string[]) {
 const app = express();
 app.use(compression());
 app.use(express.json({ limit: '50mb' }));
+app.use('/api/dwh-chat', chatRouter);
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
 const MODULE_MAPPING: Record<string, string> = {
+  'DataChat': 'consultas',
   'Ventas': 'sales',
   'Cobranzas': 'collections',
   'Riesgos': 'risks',

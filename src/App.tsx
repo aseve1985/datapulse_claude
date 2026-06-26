@@ -422,6 +422,7 @@ export default function App() {
     // API Modules - Fast entry
     let title = '';
     switch (id) {
+      case 'consultas': title = 'DataChat'; break;
       case 'sales': title = 'Módulo de Ventas'; break;
       case 'collections': title = 'Módulo de Cobranzas'; break;
       case 'risks': title = 'Módulo de Riesgos'; break;

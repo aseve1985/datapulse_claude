@@ -33,6 +33,7 @@ import { ChatMessage } from '../types';
 import { generateInsights, chatWithData } from '../services/gemini';
 import { EXCHANGE_RATES } from '../constants';
 import UifSubmodule from './submodules/UifSubmodule';
+import ConsultasGeneralesModule from './submodules/ConsultasGeneralesModule';
 import RiExperianSubmodule from './submodules/RiExperianSubmodule';
 import BuscadorPagosSubmodule from './submodules/BuscadorPagosSubmodule';
 import CarteraFideicomisoSubmodule from './submodules/CarteraFideicomisoSubmodule';
@@ -1304,7 +1305,7 @@ export default function DashboardView({
         <div className="max-w-7xl mx-auto flex items-center justify-end gap-2 pb-2 flex-wrap">
 
           {/* Shortcuts de período */}
-          {moduleType === 'api' && submodules.length === 0 && (
+          {moduleType === 'api' && submodules.length === 0 && moduleId !== 'consultas' && (
             <div className="flex items-center gap-0.5 bg-slate-800/60 p-0.5 rounded-lg">
               {(['current_month', 'last_month', 'last_quarter'] as const).map((key, i) => (
                 <button key={key} onClick={() => setDateRange(key)}
@@ -1316,7 +1317,7 @@ export default function DashboardView({
           )}
 
           {/* Rango de fechas */}
-          {moduleType === 'api' && submodules.length === 0 && (
+          {moduleType === 'api' && submodules.length === 0 && moduleId !== 'consultas' && (
             <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-lg border border-slate-700">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
                 className="text-xs font-bold text-white focus:outline-none bg-transparent w-[100px] [color-scheme:dark]" />
@@ -1327,10 +1328,10 @@ export default function DashboardView({
           )}
 
           {/* Separador visual — solo si hay controles de fecha */}
-          {submodules.length === 0 && <div className="w-px h-5 bg-slate-700 mx-1" />}
+          {submodules.length === 0 && moduleId !== 'consultas' && <div className="w-px h-5 bg-slate-700 mx-1" />}
 
           {/* Tabs Overview / Datos — oculto en módulos con sub-módulos */}
-          {submodules.length === 0 && (
+          {submodules.length === 0 && moduleId !== 'consultas' && (
             <div className="flex bg-slate-800 p-0.5 rounded-lg">
               <button onClick={() => setActiveTab('overview')}
                 className={cn("px-4 py-1 text-xs font-bold rounded-md transition-all", activeTab === 'overview' ? "bg-slate-700 text-blue-400" : "text-zinc-500 hover:text-zinc-300")}>
@@ -1559,6 +1560,8 @@ export default function DashboardView({
               />
             </div>
           </div>
+        ) : moduleId === 'consultas' ? (
+          <ConsultasGeneralesModule userEmail={userEmail} />
         ) : sales.length === 0 && moduleType === 'api' && submodules.length > 0 && !activeSubmodule ? (
           /* Pantalla de selección de sub-módulos */
           <div className="flex-1 flex flex-col items-center justify-center py-20 px-6">
