@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Download, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import MultiSelect from '../ui/MultiSelect';
 import {
   PieChart, Pie, Cell, Tooltip as RTooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -84,8 +85,8 @@ export default function CarteraFideicomisoSubmodule() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [filterCosecha, setFilterCosecha] = useState('');
-  const [filterTipo, setFilterTipo]       = useState('');
+  const [filterCosecha, setFilterCosecha] = useState<string[]>([]);
+  const [filterTipo, setFilterTipo]       = useState<string[]>([]);
 
   const topScrollRef   = useRef<HTMLDivElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -218,8 +219,8 @@ export default function CarteraFideicomisoSubmodule() {
 
   const tableRows = useMemo(() =>
     fotoRows.filter(r =>
-      (!filterCosecha || shortDate(r.fecha_desembolso_periodo) === filterCosecha) &&
-      (!filterTipo    || r.tipo_cliente === filterTipo)
+      (filterCosecha.length === 0 || filterCosecha.includes(shortDate(r.fecha_desembolso_periodo))) &&
+      (filterTipo.length === 0    || filterTipo.includes(r.tipo_cliente))
     )
   , [fotoRows, filterCosecha, filterTipo]);
 
@@ -414,28 +415,20 @@ export default function CarteraFideicomisoSubmodule() {
 
         {/* Filtros */}
         <div className="flex items-end gap-4 flex-wrap">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Cosecha</span>
-            <select
-              value={filterCosecha}
-              onChange={e => setFilterCosecha(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500 transition-colors"
-            >
-              <option value="">Todas</option>
-              {cosechaOptions.map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Tipo</span>
-            <select
-              value={filterTipo}
-              onChange={e => setFilterTipo(e.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500 transition-colors"
-            >
-              <option value="">Todos</option>
-              {tipoOptions.map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
+          <MultiSelect
+            label="Cosecha"
+            options={cosechaOptions}
+            value={filterCosecha}
+            onChange={setFilterCosecha}
+            placeholder="Todas"
+          />
+          <MultiSelect
+            label="Tipo"
+            options={tipoOptions}
+            value={filterTipo}
+            onChange={setFilterTipo}
+            placeholder="Todos"
+          />
           <p className="text-xs text-zinc-500 pb-1.5">
             <span className="font-bold text-white">{tableRows.length}</span> de {fotoRows.length} registros
           </p>

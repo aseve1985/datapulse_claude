@@ -3,6 +3,7 @@ import {
   Database, Loader2, ShieldAlert, CheckCircle2, Clock, RefreshCcw,
   ChevronDown, ChevronRight, Save, Filter, X, RotateCcw
 } from 'lucide-react';
+import MultiSelect from '../ui/MultiSelect';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -451,12 +452,25 @@ interface Filters {
   cuil: string;
   fecha_from: string;
   fecha_to: string;
-  warning: string;
-  riesgo: string;
-  riesgo_auditado: string;
+  warning: string[];
+  riesgo: string[];
+  riesgo_auditado: string[];
 }
 
-const EMPTY_FILTERS: Filters = { loan_id: '', cuil: '', fecha_from: '', fecha_to: '', warning: 'all', riesgo: 'all', riesgo_auditado: 'all' };
+const EMPTY_FILTERS: Filters = { loan_id: '', cuil: '', fecha_from: '', fecha_to: '', warning: [], riesgo: [], riesgo_auditado: [] };
+
+const WARNING_OPTIONS = [
+  'warning_cancelacion_anticipada',
+  'warning_pep_o_so',
+  'warning_smvm_men_anual',
+  'warning_pagador_indirecto',
+];
+const WARNING_LABELS: Record<string, string> = {
+  warning_cancelacion_anticipada: 'Cancelación anticipada',
+  warning_pep_o_so: 'PEP / SO',
+  warning_smvm_men_anual: 'SMVM mensual/anual',
+  warning_pagador_indirecto: 'Pagador indirecto',
+};
 
 export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
   const [records, setRecords] = useState<UifRecord[]>([]);
@@ -590,17 +604,24 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
     if (deferredFilters.cuil && !String(r.cuil ?? '').includes(deferredFilters.cuil)) return false;
     if (deferredFilters.fecha_from && r.fecha_warning && r.fecha_warning < deferredFilters.fecha_from) return false;
     if (deferredFilters.fecha_to && r.fecha_warning && r.fecha_warning > deferredFilters.fecha_to) return false;
-    if (deferredFilters.warning !== 'all' && !r[deferredFilters.warning as keyof UifRecord]) return false;
-    if (deferredFilters.riesgo !== 'all' && r.riesgo_auditado !== deferredFilters.riesgo) return false;
-    if (deferredFilters.riesgo_auditado !== 'all') {
+    // warning: OR logic — record must have at least one of the selected warning flags
+    if (deferredFilters.warning.length > 0 && !deferredFilters.warning.some(w => r[w as keyof UifRecord])) return false;
+    // riesgo: record's riesgo_auditado must be in the selected list
+    if (deferredFilters.riesgo.length > 0 && !deferredFilters.riesgo.includes(r.riesgo_auditado as string)) return false;
+    // estado: auditado / no auditado
+    if (deferredFilters.riesgo_auditado.length > 0) {
       const auditado = isAuditado(r);
-      if (deferredFilters.riesgo_auditado === 'auditado' && !auditado) return false;
-      if (deferredFilters.riesgo_auditado === 'no_auditado' && auditado) return false;
+      const match = (deferredFilters.riesgo_auditado.includes('auditado') && auditado) ||
+                    (deferredFilters.riesgo_auditado.includes('no_auditado') && !auditado);
+      if (!match) return false;
     }
     return true;
   }), [records, deferredFilters]);
 
-  const hasFilters = Object.entries(filters).some(([, v]) => v !== '' && v !== 'all');
+  const hasFilters =
+    filters.loan_id !== '' || filters.cuil !== '' ||
+    filters.fecha_from !== '' || filters.fecha_to !== '' ||
+    filters.warning.length > 0 || filters.riesgo.length > 0 || filters.riesgo_auditado.length > 0;
 
   const cuilRanking = useMemo(() => {
     const map = new Map<string, { cuil: string; warnings: number; riesgoAlto: number }>();
@@ -708,28 +729,27 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
             title="Fecha Warning — hasta"
             onChange={e => setFilters(f => ({ ...f, fecha_to: e.target.value }))}
             className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-2 py-1.5 focus:outline-none focus:border-zinc-500 [color-scheme:dark]" />
-          <select value={filters.warning} onChange={e => setFilters(f => ({ ...f, warning: e.target.value }))}
-            className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
-            <option value="all">Warning: Todos</option>
-            <option value="warning_cancelacion_anticipada">Cancelación anticipada</option>
-            <option value="warning_pep_o_so">PEP / SO</option>
-            <option value="warning_smvm_men_anual">SMVM mensual/anual</option>
-            <option value="warning_pagador_indirecto">Pagador indirecto</option>
-          </select>
+          <MultiSelect
+            label="Warning"
+            options={WARNING_OPTIONS}
+            optionLabels={WARNING_LABELS}
+            value={filters.warning}
+            onChange={vals => setFilters(f => ({ ...f, warning: vals }))}
+          />
           <div className="grid grid-cols-2 gap-2">
-            <select value={filters.riesgo} onChange={e => setFilters(f => ({ ...f, riesgo: e.target.value }))}
-              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
-              <option value="all">Riesgo: Todos</option>
-              <option value="BAJO">BAJO</option>
-              <option value="MEDIO">MEDIO</option>
-              <option value="ALTO">ALTO</option>
-            </select>
-            <select value={filters.riesgo_auditado} onChange={e => setFilters(f => ({ ...f, riesgo_auditado: e.target.value }))}
-              className="bg-slate-800 border border-slate-700 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none">
-              <option value="all">Estado: Todos</option>
-              <option value="auditado">Auditado</option>
-              <option value="no_auditado">No auditado</option>
-            </select>
+            <MultiSelect
+              label="Riesgo"
+              options={['BAJO', 'MEDIO', 'ALTO']}
+              value={filters.riesgo}
+              onChange={vals => setFilters(f => ({ ...f, riesgo: vals }))}
+            />
+            <MultiSelect
+              label="Estado"
+              options={['auditado', 'no_auditado']}
+              optionLabels={{ auditado: 'Auditado', no_auditado: 'No auditado' }}
+              value={filters.riesgo_auditado}
+              onChange={vals => setFilters(f => ({ ...f, riesgo_auditado: vals }))}
+            />
           </div>
         </div>
         {hasFilters && (

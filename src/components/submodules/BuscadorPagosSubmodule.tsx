@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Search, RotateCcw, Loader2, AlertCircle } from 'lucide-react';
+import MultiSelect from '../ui/MultiSelect';
 
 type Country = 'ARG' | 'COL';
 
@@ -12,7 +13,7 @@ const FILTER_FIELDS: { key: string; label: string }[] = [
   { key: 'concepto_imputacion_detallado', label: 'Concepto' },
 ];
 
-const EMPTY_FILTERS: Record<string, string> = Object.fromEntries(FILTER_FIELDS.map(f => [f.key, '']));
+const EMPTY_FILTERS: Record<string, string[]> = Object.fromEntries(FILTER_FIELDS.map(f => [f.key, []]));
 
 function formatCurrency(num: number): string {
   const [intPart, decPart] = num.toFixed(2).split('.');
@@ -41,7 +42,7 @@ export default function BuscadorPagosSubmodule() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
-  const [filters, setFilters] = useState<Record<string, string>>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<Record<string, string[]>>(EMPTY_FILTERS);
   const [tableContentWidth, setTableContentWidth] = useState(0);
 
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -88,9 +89,9 @@ export default function BuscadorPagosSubmodule() {
   const displayResults = useMemo(() => {
     return results.filter(row => {
       for (const { key } of FILTER_FIELDS) {
-        const filterVal = filters[key];
-        if (!filterVal) continue;
-        if (formatCell(key, row[key]) !== filterVal) return false;
+        const selected = filters[key];
+        if (!selected || selected.length === 0) continue;
+        if (!selected.includes(formatCell(key, row[key]))) return false;
       }
       return true;
     });
@@ -103,7 +104,7 @@ export default function BuscadorPagosSubmodule() {
     }, 0)
   , [displayResults]);
 
-  const activeFiltersCount = Object.values(filters).filter(Boolean).length;
+  const activeFiltersCount = Object.values(filters).filter(v => v.length > 0).length;
 
   const handleCountryChange = (c: Country) => {
     setCountry(c);
@@ -247,22 +248,24 @@ export default function BuscadorPagosSubmodule() {
           className="flex flex-col gap-3"
         >
           {/* Filters */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4 bg-slate-900/50 border border-slate-700 rounded-xl">
-            {FILTER_FIELDS.map(({ key, label: flabel }) => (
-              <div key={key} className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{flabel}</span>
-                <select
+          <div className="flex flex-col gap-1.5">
+            {activeFiltersCount > 0 && (
+              <p className="text-[11px] text-indigo-400">
+                {activeFiltersCount} filtro{activeFiltersCount > 1 ? 's' : ''} activo{activeFiltersCount > 1 ? 's' : ''}
+                {' '}· {displayResults.length} de {results.length} registros
+              </p>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-4 bg-slate-900/50 border border-slate-700 rounded-xl">
+              {FILTER_FIELDS.map(({ key, label: flabel }) => (
+                <MultiSelect
+                  key={key}
+                  label={flabel}
+                  options={filterOptions[key] ?? []}
                   value={filters[key]}
-                  onChange={e => setFilters(prev => ({ ...prev, [key]: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none focus:border-indigo-500 transition-colors"
-                >
-                  <option value="">Todos</option>
-                  {filterOptions[key]?.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
+                  onChange={vals => setFilters(prev => ({ ...prev, [key]: vals }))}
+                />
+              ))}
+            </div>
           </div>
 
           {/* Header */}
@@ -271,11 +274,6 @@ export default function BuscadorPagosSubmodule() {
               <span className="text-sm text-zinc-400">
                 <span className="font-bold text-white">{displayResults.length}</span>{' '}
                 de <span className="font-bold text-white">{results.length}</span> registros
-                {activeFiltersCount > 0 && (
-                  <span className="text-indigo-400 ml-1.5">
-                    · {activeFiltersCount} filtro{activeFiltersCount > 1 ? 's' : ''} activo{activeFiltersCount > 1 ? 's' : ''}
-                  </span>
-                )}
               </span>
               <div className="flex gap-3">
                 <div className="px-3 py-1 bg-slate-800 border border-slate-700 rounded-lg">

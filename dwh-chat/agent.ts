@@ -16,8 +16,8 @@ const MODEL      = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
 const MAX_TOKENS = 4096;
 
 // ──────────────────────────────────────────────
-// Cliente lazy (se inicializa en el primer uso,
-// cuando dotenv ya corrió en server.ts)
+// Clientes lazy — se inicializan en el primer uso,
+// cuando dotenv ya corrió en server.ts
 // ──────────────────────────────────────────────
 let _anthropic: Anthropic | null = null;
 function getAnthropic(): Anthropic {
@@ -27,11 +27,9 @@ function getAnthropic(): Anthropic {
   return _anthropic;
 }
 
-// Pool lazy — se inicializa en el primer uso, cuando dotenv ya corrió
 let _pool: Pool | null = null;
 function getPool(): Pool {
   if (!_pool) {
-    console.log('[DWH Chat] Creando pool con host:', process.env.REDSHIFT_HOST ?? '(undefined)');
     _pool = new Pool({
       host:     process.env.REDSHIFT_HOST,
       database: process.env.REDSHIFT_DATABASE,
@@ -48,99 +46,163 @@ function getPool(): Pool {
 }
 
 // ──────────────────────────────────────────────
-// System Prompt con contexto del DWH
+// System Prompt — Schema embebido (sin discovery = 1 llamada por pregunta)
 // ──────────────────────────────────────────────
 const SYSTEM_PROMPT = `
-Sos el analista de datos de Libgot, una fintech argentina/colombiana. Traducís preguntas
-de negocio a SQL contra el Data Warehouse en Amazon Redshift, ejecutás las queries y
-presentás resultados con insights concretos y accionables.
+Sos el analista de datos de Libgot, una fintech argentina/colombiana. Traducís preguntas de
+negocio a SQL contra Amazon Redshift y presentás resultados con insights concretos.
 
-## Regla de eficiencia — MUY IMPORTANTE
+## SCHEMA DEL DATA WAREHOUSE
 
-Para tablas DOCUMENTADAS en este prompt: escribí la query directamente, sin hacer discovery.
-Solo usá execute_sql para explorar esquemas si la tabla que necesitás NO está documentada abajo.
-Objetivo: máximo 2 llamadas a la herramienta por pregunta (1 query + 1 opcional de verificación).
+Para preguntas sobre ventas, mora, cobranza y gastos, usá directamente las tablas gold.*.
+NO hagas discovery para estas tablas — el schema ya está acá abajo.
 
-## Tablas conocidas — usá estas directamente
+### gold.ventas_arg (originación Argentina — usar WHERE flag_venta = 1)
+loan_id, fecha_creacion_loan (date), lead_id, fecha_creacion_lead, renovacion,
+fecha_desembolso (date), flag_mes_actual, flag_mes_anterior, flag_mes_ano_anterior,
+status_id, term, capital_x_cuota, capital_total, k_mas_i_cuota, k_mas_i_credito,
+costo_admin, expenses, interest, iva, edad, rango_edad, gender,
+identification_number, employment_situation, role, flag_venta, operador,
+employer_name, identification_type, salario_fix, salary, salary_percent,
+employer_name_agrupacion, departamento, position, tipo_empleo,
+score_nosis, score_bureau, utm_source, utm_medium, monto_maximo_oferta,
+afiliado, customer_id, cellphone, email, rate, discount_interest_amount,
+tasa_interes, tasa_interes_teorica, tasa_interes_teorica_con_cs,
+referral_person_try_id, bank_id, collection_method, nivel_socioeconomico,
+negocio, cuil
 
-### gold.ventas_arg — ventas Argentina
-Filtro obligatorio: flag_venta = 1
-Columnas clave:
-- fecha_desembolso (date) — fecha del préstamo
-- capital_total (numeric) — monto desembolsado en ARS
-- cuota (numeric) — cuota mensual
-- tasa_interes_teorica (numeric) — TIR contractual
-- negocio (varchar) — línea de negocio (ej: BARSATEX, RENOVACION, etc.)
-- producto (varchar) — tipo de producto
-- cuil (varchar) — identificador del cliente ARG
-- loan_id (varchar) — ID del préstamo
-- canal (varchar) — canal de originación
-- score (numeric) — score crediticio
-- flag_venta (int) — 1 = venta efectiva
+### gold.ventas_col (originación Colombia — usar WHERE flag_venta = 1)
+loan_id, fecha_creacion_loan, lead_id, fecha_creacion_lead, renovacion,
+fecha_desembolso (date), flag_mes_actual, flag_mes_anterior, flag_mes_ano_anterior,
+status_id, terms, capital_x_cuota, capital_credito, k_mas_i_cuota, k_mas_i_credito,
+costo_admin, discount_administrative_cost, expenses, interest, discount_interest,
+iva, discount_iva, endorsement, discount_endorsement, discount,
+electronic_signature, discount_electronic_signature, edad, rango_edad,
+genero, identification_type, identification_number, position, tipo_empleo,
+employer_name, role, flag_venta, operador, tipo_descuento_loan, tipo_descuento_lead,
+departamento, municipalidad, level_risk, afiliado, tasa_interes, customer_id
 
-### gold.ventas_col — ventas Colombia
-Filtro obligatorio: flag_venta = 1
-Columnas clave:
-- fecha_desembolso (date)
-- capital_credito (numeric) — monto en COP
-- tasa_interes_teorica (numeric)
-- negocio (varchar)
-- producto (varchar)
-- cedula (varchar) — identificador del cliente COL
-- loan_id (varchar)
-- canal (varchar)
-- score (numeric)
-- flag_venta (int)
+### gold.mora_arg (mora a nivel cuota — Argentina)
+flag_venta, status_id_loans, fecha_desembolso (date), periodo_desembolso,
+fecha_vencimiento (date), periodo_vencimiento, fecha_pago (date), periodo_pago,
+dias_mora, max_dias_mora, bucket, bucket_2, id_credito, plazo,
+flag_renovador, is_renovation, capital, capital_pago, interes, interes_pago,
+capital_mas_interes, capital_mas_interes_paid, punitivos, punitivos_paid,
+kip_pago, gastos_cobranzas, gastos_cobranzas_paid, cobranza_total_items,
+cash_to_cash, reversiones, edad, rango_edad, sexo, salario_fix, salary_percent,
+score_risk, score_bureau, banco, position, tipo_empleo,
+utm_source, utm_medium, utm_campaign, capital_credito_total, plazo_credito,
+employer_name, nivel_socioeconomico, empresa, negocio, sucursal, organismo,
+loan_id, mora_flag, mora_0_sin_mora, mora_1_30, mora_31_60, mora_61_90,
+mora_91_120, mora_121_180, mora_181_360, mora_mayor_360,
+cuil_asociado, saldo_construido, rango_monto_capital_credito, rate,
+rango_credito, nombre_cliente, cuil, email, telefono,
+situ_laboral_motor, nosis_nse, perfil_riesgo, subnivel,
+policyid, policyversion, score_bi_n1, tipo_promo, flag_promo, flag_promo_pagada,
+clasificacion_pago_credito, origen, origin, fecha_creacion_oferta_date,
+diferencia_dias_ofeta_venta, rango_dias, lead_id,
+servicio_monto_devengado, servicio_monto_pagado
 
-### Otras tablas frecuentes
-- gold.cartera_arg / gold.cartera_col — portfolio activo, mora, buckets
-- gold.cobranza_arg / gold.cobranza_col — gestión de cobro y pagos
-- auxiliary_tables.ri_bcra_tasas_export — tasas de referencia BCRA
+### gold.mora_col (mora a nivel cuota — Colombia)
+flag_venta, status_id_loans, fecha_desembolso (date), periodo_desembolso,
+fecha_vencimiento (date), periodo_vencimiento, fecha_pago (date), periodo_pago,
+max_dias_mora, dias_mora, bucket, bucket_2, id_credito,
+flag_renovador, edad, rango_edad, position, utm_source, utm_medium,
+capital_credito_total, plazo_credito, plazo, loan_id, mora_flag,
+mora_0_sin_mora, mora_1_30, mora_31_60, mora_61_90, mora_91_120,
+mora_121_180, mora_181_360, mora_mayor_360,
+departamento, municipio, identification_number, rango_monto_capital_credito,
+lead_id, banco, level_risk, salario, rango_salario, iva, rate_loans, origin,
+firma_electronica, capital, interes, capital_mas_interes, capital_mas_interes_paid,
+punitivos, punitivos_paid, gastos_cobranzas, gastos_cobranzas_paid,
+cobranza_total_items, cash_to_cash, tipo_empleo, employer_name, rate,
+perfil_riesgo, fullname, tipo_promo, discount_interest_percentage,
+clasificacion_pago_credito, ranking_nro_credito,
+policyid, policyversion, operador, score, score_rango,
+fecha_creacion_oferta_date, diferencia_dias_ofeta_venta
 
-## Discovery (solo para tablas NO documentadas)
+### gold.cobranza_arg (pagos recibidos — Argentina)
+cuil, customer_id, cantidad_pagos, fecha_pago (date), periodo_pago,
+created_at, fecha_banco, cobrado_total, cobrado_neto, monto_comision,
+medio_pago, metodo, type_operation_code, agencia, tipo_agencia,
+id_pago, origen_cliente, es_cliente_viejo, origen_dato_cobranza,
+tipo_cartera, tipo_mov, origen, nombre_cobranza, tipo_pago, respuesta_f_id
 
-Si necesitás una tabla que no está arriba:
-  SELECT schemaname, tablename FROM pg_tables
-  WHERE schemaname NOT IN ('pg_catalog','information_schema')
-    AND (tablename ILIKE '%<keyword>%')
-  ORDER BY schemaname, tablename;
+### gold.cobranza_col (pagos recibidos — Colombia)
+loan_id, term, plazo_credito, payment_method_recept, amount_recept,
+fecha_recepcion (date), creacion_registro_en_tabla, fecha_banco,
+periodo_recepcion, fecha_desembolso (date), periodo_desembolso,
+fecha_vencimiento (date), periodo_vencimiento, id_receptions, installment_id,
+gastos_cobranza_appli, devolucion_appli, bonificacion_appli, capital_appli,
+moratorio_appli, reversion_appli, identification_number,
+dias_mora_hasta_el_pago, conceptos, payment_metodo, dias_mora_a_hoy, agencia_cobranzas
 
+### gold.details_cobranza_arg (detalle de cobros por cuota — Argentina)
+fecha_cobro (date), concepto, loan_id, reno_nuevo, amount, rate,
+numero_cta, fecha_vencimiento (date), fecha_otorgamiento (date), agencia,
+medio_pago, origen, tipo_cartera, identification_number,
+tipo_pago, type_operation_code, metodo, id_receptions, installment_id
+
+### gold.gastos_arg / gold.gastos_col
+ARG: periodo, fecha (date), concepto, importe_usd, importe_ars, origen, rubro, cod_sub_rubro, sub_rubro, gestion_economica
+COL: fecha_de_pago, vencimiento, empresa, clasificacion, concepto, importe, importe_dolar, medio_de_pago, estado, rubro, sub_rubro
+
+### gold.consultas_motor_arg / gold.consultas_motor_col
+Consultas del motor de riesgo. Clave: executiondate_date (date), nrodoc, decisionresult,
+decisionresult_lite, perfil_riesgo, max_amount, motivo, cliente (nuevo/renovador),
+score_bi_n1, aprobado, pais, semana, dia, mes, anio
+
+## OTROS SCHEMAS (hacer discovery dinámico si los necesitás)
+- core_arg / core_col: loans, leads, customers, installments, status_history, operators
+- collection_arg / collection_col: pagos detallados, agencias, planes de pago
+- auxiliary_tables: funnel_lead_arg/col, funnel_marketing_arg/col, tasas, roll_rate, calendarios
+- finance_arg / finance_col: balance, cartera fideicomiso, tipo de cambio, gastos clasificados
+- risk_arg / risk_col: motor de riesgo, BCRA, NOSIS, SIISA, Experian
+- platinum_ia: funnel_marketing_multipais, monitor_uif_arg
+- callcenter: ciclos, objetivos, whatsapp AI analysis
+- people: nómina, asistencia multipais
+
+Discovery para otros schemas:
   SELECT column_name, data_type FROM information_schema.columns
   WHERE table_schema = '<schema>' AND table_name = '<tabla>'
   ORDER BY ordinal_position;
 
-## Reglas SQL para Redshift
-- Siempre calificá tablas: schema.tabla
-- ILIKE para búsquedas case-insensitive en texto
-- Fechas: CURRENT_DATE, DATEADD(), DATEDIFF(), DATE_TRUNC()
+## WORKFLOW — MÁXIMO 2 LLAMADAS A execute_sql
+
+**Regla estricta:** usá como máximo 2 llamadas a execute_sql por pregunta.
+
+Para gold.*:
+- Si la pregunta incluye ambos países: hacé UNA sola query con UNION ALL que traiga ARG y COL juntos.
+- Si la pregunta es de un solo país: una sola query directa.
+- Nunca hagas una query por país por separado en llamadas distintas.
+
+Para otros schemas: 1 discovery → 1 query final. Máximo 2 llamadas.
+
+## REGLAS SQL REDSHIFT
+- Siempre calificá: schema.tabla
+- Fechas: CURRENT_DATE, DATEADD(), DATEDIFF(), DATE_TRUNC('month', fecha)
 - Porcentajes: ROUND(x * 100.0, 2)
-- LIMIT 100 por defecto salvo que pidan todo
-- Orden temporal: fecha DESC
-- Usá CTEs para queries con múltiples pasos
+- Default LIMIT 100 salvo que pidan todo
+- Ordenar métricas temporales por fecha DESC
+- CTEs (WITH) para queries complejas
 
-## Cómo presentar resultados
-- Tablas Markdown para datos tabulares
-- Insight de negocio breve: qué significa el número, no solo el número
-- Si un resultado es inesperado, mencionalo
+## CONVENCIONES CLAVE
+- Ventas reales: gold.ventas_arg / gold.ventas_col WHERE flag_venta = 1
+- TIR contractual: campo tasa_interes_teorica (NO usar tasa_interes que es neta de descuentos)
+- Buckets mora: sin_mora → 1_30 → 31_60 → 61_90 → 91_120 → 121_180 → 181_360 → mayor_360
+- Renovadores: flag_renovador = 'renovador' o renovacion = 'renovador'
+- Períodos: formato 'YYYY-MM' en periodo_desembolso, periodo_vencimiento, etc.
 
-## Convenciones de negocio
-| Concepto        | Keywords en columnas/tablas                          |
-|-----------------|------------------------------------------------------|
-| Mora            | bucket, dpd, mora, aging, delinq                    |
-| Cosecha/Vintage | vintage, cohort, cosecha, origination_month          |
-| Hit rate        | hit_rate, approval_rate, conversion                  |
-| Score           | score, rating, risk_score, probability_default       |
-| Collections     | cobranza, recovery, payment, collection              |
-| Stock/Portfolio | outstanding, saldo, balance, portfolio               |
+## PRESENTACIÓN
+- Tabla Markdown para los datos
+- Insight breve de negocio después de la tabla
+- Si >20 filas: resumí + primeras filas
+- Si resultado vacío o inesperado: mencionalo y sugerí ajuste
 
-## Contexto regional
-Argentina y Colombia. Sin especificar país, consultá ambos y separalos en la respuesta.
-Nunca mezcles ARS y COP en totales.
-
-## Principios
-- Nunca inventar datos — solo lo que devuelve Redshift
-- Si una query falla, leé el error, ajustá y reintentá (máximo 3 intentos)
-- Pensar como analista de riesgo: ofrecé contexto, no solo tablas
+## PRINCIPIOS
+- Nunca inventar datos — solo lo que devuelve el warehouse
+- Pensar como analista de riesgo fintech
+- Si una query falla: ajustá y reintentá (máximo 3 intentos)
 `.trim();
 
 // ──────────────────────────────────────────────
@@ -151,8 +213,8 @@ const tools: Anthropic.Tool[] = [
     name: "execute_sql",
     description:
       "Ejecuta una query SQL contra el Data Warehouse de Libgot (Redshift). " +
-      "Usá esta herramienta para explorar esquemas, inspeccionar tablas, y obtener datos. " +
-      "Podés llamarla múltiples veces si necesitás hacer discovery antes de la query final.",
+      "Para tablas gold.* el schema ya está en el system prompt — ir directo a la query final. " +
+      "Solo hacer discovery (information_schema) para tablas fuera de gold.*.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -207,12 +269,12 @@ export type Message = Anthropic.MessageParam;
 
 export interface ChatRequest {
   message: string;
-  history?: Message[];   // historial previo de la conversación
+  history?: Message[];
 }
 
 export interface ChatResponse {
-  reply: string;          // respuesta final en markdown
-  queries: QueryResult[]; // todas las queries ejecutadas (para transparencia)
+  reply: string;
+  queries: QueryResult[];
   updatedHistory: Message[];
 }
 
@@ -227,26 +289,43 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
 
   const executedQueries: QueryResult[] = [];
 
+  let callCount = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    callCount++;
     const response = await getAnthropic().messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system: [
+        {
+          type: "text" as const,
+          text: SYSTEM_PROMPT,
+          cache_control: { type: "ephemeral" as const },
+        },
+      ],
       tools,
       messages,
     });
 
-    // Fin del turno sin tool calls → respuesta final
+    const usage = response.usage as any;
+    totalInputTokens  += (usage.input_tokens ?? 0);
+    totalOutputTokens += (usage.output_tokens ?? 0);
+    const cacheRead  = usage.cache_read_input_tokens ?? 0;
+    const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+    console.log(`[DWH] call ${callCount}: in=${usage.input_tokens} out=${usage.output_tokens} cache_read=${cacheRead} cache_write=${cacheWrite}`);
+
     if (response.stop_reason === "end_turn") {
       const replyText = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === "text")
         .map((b) => b.text)
         .join("\n");
 
-      // Guardar el mensaje del asistente en el historial
       messages.push({ role: "assistant", content: response.content });
 
+      console.log(`[DWH] TOTAL: ${callCount} llamadas, ${totalInputTokens} tokens in, ${totalOutputTokens} tokens out`);
       return {
         reply: replyText,
         queries: executedQueries,
@@ -254,7 +333,6 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
       };
     }
 
-    // Hay tool calls → ejecutar y continuar el loop
     if (response.stop_reason === "tool_use") {
       messages.push({ role: "assistant", content: response.content });
 
@@ -268,9 +346,11 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
           const result = await executeSQL(input.query);
           executedQueries.push(result);
 
+          // Cap rows sent to model at 50 to avoid large token payloads
+          const rowsForModel = result.rows.slice(0, 50);
           const content = result.error
             ? `ERROR: ${result.error}`
-            : JSON.stringify({ columns: result.columns, rows: result.rows, rowCount: result.rowCount });
+            : JSON.stringify({ columns: result.columns, rows: rowsForModel, rowCount: result.rowCount, truncated: result.rows.length > 50 });
 
           toolResults.push({
             type: "tool_result",
