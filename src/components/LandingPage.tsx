@@ -87,6 +87,34 @@ const modules = [
     type: 'api'
   },
   {
+    id: 'bi',
+    title: 'BI',
+    description: 'Documentación, herramientas y recursos del área de Business Intelligence.',
+    icon: BarChart3,
+    color: 'bg-violet-800',
+    type: 'api',
+    submodules: [
+      {
+        id: 'bi-documentacion',
+        title: 'Documentación',
+        description: 'Base de conocimiento y documentación del área de BI.',
+        color: 'bg-violet-800'
+      },
+      {
+        id: 'bi-obsidian',
+        title: 'Obsidian',
+        description: 'Notas y documentación interna del equipo de BI.',
+        color: 'bg-violet-800'
+      },
+      {
+        id: 'bi-tools',
+        title: 'Tools',
+        description: 'Herramientas y utilidades del área de BI.',
+        color: 'bg-violet-800'
+      }
+    ]
+  },
+  {
     id: 'collections',
     title: 'Cobranzas',
     description: 'Seguimiento de pagos, cartera vencida y eficiencia de recaudación.',

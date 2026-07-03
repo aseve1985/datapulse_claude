@@ -40,6 +40,7 @@ import CarteraFideicomisoSubmodule from './submodules/CarteraFideicomisoSubmodul
 import RiBcraTasasSubmodule from './submodules/RiBcraTasasSubmodule';
 import RiAnaliticoSubmodule from './submodules/RiAnaliticoSubmodule';
 import RiAsistenteSubmodule from './submodules/RiAsistenteSubmodule';
+import BiDocumentacionSubmodule from './submodules/BiDocumentacionSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -1582,8 +1583,8 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente'].includes(sub.id);
-                  const isDisabled = sub.id === 'ri-analitico';
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'bi-documentacion'].includes(sub.id);
+                  const isDisabled = ['ri-analitico', 'bi-obsidian', 'bi-tools'].includes(sub.id);
                   return (
                     <motion.button
                       key={sub.id}
@@ -1640,6 +1641,8 @@ export default function DashboardView({
             <RiAnaliticoSubmodule />
           ) : activeSubmodule.id === 'ri-asistente' ? (
             <RiAsistenteSubmodule />
+          ) : activeSubmodule.id === 'bi-documentacion' ? (
+            <BiDocumentacionSubmodule />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
