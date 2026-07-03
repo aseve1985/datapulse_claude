@@ -88,7 +88,7 @@ const modules = [
   },
   {
     id: 'bi',
-    title: 'BI',
+    title: 'Business Intelligence',
     description: 'Documentación, herramientas y recursos del área de Business Intelligence.',
     icon: BarChart3,
     color: 'bg-violet-800',
@@ -757,25 +757,37 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onOpenFeature
             />
             
             <div className="flex flex-col sm:flex-row gap-4 w-full">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="group flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl transition-all shadow-[0_0_30px_rgba(37,99,235,0.3)] hover:shadow-[0_0_40px_rgba(37,99,235,0.5)] uppercase tracking-widest text-sm"
+              <button
+                onClick={() => checkAccess('ingesta') && fileInputRef.current?.click()}
+                disabled={!checkAccess('ingesta')}
+                title={!checkAccess('ingesta') ? 'No tenés permisos para usar esta función' : undefined}
+                className={`group flex-1 flex items-center justify-center gap-3 px-8 py-5 font-black rounded-2xl transition-all uppercase tracking-widest text-sm ${
+                  checkAccess('ingesta')
+                    ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_0_30px_rgba(37,99,235,0.3)] hover:shadow-[0_0_40px_rgba(37,99,235,0.5)]'
+                    : 'bg-blue-600/30 text-white/30 cursor-not-allowed'
+                }`}
               >
-                <FileUp size={20} className="group-hover:-translate-y-1 transition-transform" />
+                <FileUp size={20} className={checkAccess('ingesta') ? 'group-hover:-translate-y-1 transition-transform' : ''} />
                 Subir Archivo
               </button>
 
-              <button 
-                onClick={() => setIsSheetInputVisible(!isSheetInputVisible)}
-                className="group flex-1 flex items-center justify-center gap-3 px-8 py-5 bg-slate-800 hover:bg-slate-700 text-white font-black rounded-2xl transition-all border border-slate-700 hover:border-blue-500/50 uppercase tracking-widest text-sm"
+              <button
+                onClick={() => checkAccess('ingesta') && setIsSheetInputVisible(!isSheetInputVisible)}
+                disabled={!checkAccess('ingesta')}
+                title={!checkAccess('ingesta') ? 'No tenés permisos para usar esta función' : undefined}
+                className={`group flex-1 flex items-center justify-center gap-3 px-8 py-5 font-black rounded-2xl transition-all border uppercase tracking-widest text-sm ${
+                  checkAccess('ingesta')
+                    ? 'bg-slate-800 hover:bg-slate-700 text-white border-slate-700 hover:border-blue-500/50'
+                    : 'bg-slate-800/40 text-white/30 border-slate-700/40 cursor-not-allowed'
+                }`}
               >
-                <ExternalLink size={20} className="group-hover:rotate-12 transition-transform" />
+                <ExternalLink size={20} className={checkAccess('ingesta') ? 'group-hover:rotate-12 transition-transform' : ''} />
                 Google Sheet
               </button>
             </div>
 
             <AnimatePresence>
-              {isSheetInputVisible && (
+              {isSheetInputVisible && checkAccess('ingesta') && (
                 <motion.form 
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}

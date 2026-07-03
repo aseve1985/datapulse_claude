@@ -426,7 +426,7 @@ export default function App() {
       case 'sales': title = 'Módulo de Ventas'; break;
       case 'collections': title = 'Módulo de Cobranzas'; break;
       case 'risks': title = 'Módulo de Riesgos'; break;
-      case 'bi':    title = 'Módulo de BI'; break;
+      case 'bi':    title = 'Business Intelligence'; break;
       case 'marketing': title = 'Módulo de Marketing'; break;
       case 'finance': title = 'Módulo de Finanzas'; break;
       case 'callcenter': title = 'Módulo de Callcenter'; break;
