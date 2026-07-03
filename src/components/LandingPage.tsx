@@ -99,7 +99,21 @@ const modules = [
     description: 'Evaluación de perfiles crediticios y alertas de comportamiento.',
     icon: AlertTriangle,
     color: 'bg-slate-700',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'ri-analitico',
+        title: 'Analítico',
+        description: 'Dashboard analítico de cartera y comportamiento crediticio.',
+        color: 'bg-slate-700'
+      },
+      {
+        id: 'ri-asistente',
+        title: 'Asistente',
+        description: 'Políticas de riesgo, documentación y acceso a herramientas del área.',
+        color: 'bg-slate-700'
+      }
+    ]
   },
   {
     id: 'marketing',
