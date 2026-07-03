@@ -109,7 +109,7 @@ const modules = [
       },
       {
         id: 'ri-asistente',
-        title: 'Asistente',
+        title: 'Políticas de Riesgo',
         description: 'Políticas de riesgo, documentación y acceso a herramientas del área.',
         color: 'bg-slate-700'
       }

@@ -54,7 +54,7 @@ export default function RiAsistenteSubmodule() {
     <div className="flex-1 flex flex-col p-6 gap-6 overflow-auto">
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <h2 className="text-lg font-bold text-white">Riesgos › Asistente</h2>
+        <h2 className="text-lg font-bold text-white">Riesgos › Políticas de Riesgo</h2>
         <p className="text-zinc-500 text-sm mt-0.5">Recursos, políticas y herramientas del área de Riesgos</p>
       </motion.div>
 
@@ -95,7 +95,7 @@ export default function RiAsistenteSubmodule() {
         <div className="max-w-lg">
           <ResourceCard
             href="https://editorv3.motor.siisa.com.ar/login"
-            title="SIISA — Editor de Política v3"
+            title="Editor de Política - Uflow"
             description="Motor de decisión crediticia. Configuración de reglas, scorecard y flujos de aprobación para ARG y COL."
             badge="SIISA"
             badgeColor="bg-indigo-900/60 text-indigo-300"
