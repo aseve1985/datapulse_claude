@@ -61,14 +61,15 @@ interface LandingPageProps {
 }
 
 const modules = [
-  {
-    id: 'consultas',
-    title: 'DataChat',
-    description: 'Consultá cualquier métrica del warehouse en lenguaje natural. Mora, cosechas, venta, cobranza y más.',
-    icon: Brain,
-    color: 'bg-violet-700',
-    type: 'api'
-  },
+  // DataChat temporalmente desactivado
+  // {
+  //   id: 'consultas',
+  //   title: 'DataChat',
+  //   description: 'Consultá cualquier métrica del warehouse en lenguaje natural. Mora, cosechas, venta, cobranza y más.',
+  //   icon: Brain,
+  //   color: 'bg-violet-700',
+  //   type: 'api'
+  // },
   {
     id: 'sales',
     title: 'Ventas',
