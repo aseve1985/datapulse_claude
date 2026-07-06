@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Datawarehouse Libgot</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0f1923; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+
+#tooltip {
+  position:fixed; background:rgba(13,17,23,0.97);
+  border:1px solid rgba(255,255,255,0.12); border-radius:10px;
+  padding:10px 14px; pointer-events:none; opacity:0;
+  transition:opacity 0.1s; font-size:12px; line-height:1.65;
+  color:#e6edf3; z-index:100; max-width:260px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.8); backdrop-filter:blur(12px);
+}
+#tooltip.show { opacity:1; }
+#tooltip .tname { font-size:12px; font-weight:700; font-family:'Courier New',monospace; color:#79c0ff; margin-bottom:3px; }
+#tooltip .tdesc { color:#8b949e; font-size:11px; line-height:1.5; margin-bottom:6px; }
+#tooltip .badge {
+  display:inline-block; padding:2px 8px; border-radius:20px;
+  font-size:10px; font-weight:600; margin-right:4px; margin-top:2px;
+}
+#tooltip .tablename { font-family:'Courier New',monospace; font-size:11px; color:#56d364; }
+#tooltip .schemaref { font-size:10px; color:#6e7681; margin-top:3px; }
+
+#hdr { position:fixed; top:14px; left:16px; z-index:10; }
+#hdr h1 { font-size:15px; font-weight:700; color:#e6edf3; letter-spacing:-0.2px; }
+#hdr p  { font-size:11px; color:#6e7681; margin-top:2px; }
+
+#srch-wrap { position:fixed; top:14px; left:50%; transform:translateX(-50%); z-index:10; }
+#srch {
+  background:rgba(22,27,34,0.92); border:1px solid #30363d;
+  border-radius:20px; padding:7px 16px 7px 34px; color:#e6edf3;
+  font-size:12px; width:240px; outline:none; backdrop-filter:blur(6px);
+}
+#srch:focus { border-color:#58a6ff; box-shadow:0 0 0 2px rgba(88,166,255,0.15); }
+#srch::placeholder { color:#6e7681; }
+#srch-ico { position:absolute; left:12px; top:50%; transform:translateY(-50%); font-size:12px; pointer-events:none; }
+
+#stats {
+  position:fixed; top:14px; right:16px; z-index:10;
+  background:rgba(22,27,34,0.92); border:1px solid #30363d;
+  border-radius:10px; padding:10px 16px; text-align:right; backdrop-filter:blur(6px);
+}
+#stats .n { font-size:22px; font-weight:800; color:#e6edf3; line-height:1; }
+#stats .l { font-size:10px; color:#6e7681; text-transform:uppercase; letter-spacing:.5px; }
+
+#legend {
+  position:fixed; bottom:16px; left:16px; z-index:10;
+  background:rgba(22,27,34,0.92); border:1px solid #30363d;
+  border-radius:10px; padding:10px 14px; backdrop-filter:blur(6px);
+}
+#legend .lh { font-size:10px; text-transform:uppercase; letter-spacing:.6px; color:#6e7681; margin-bottom:7px; }
+.li { display:flex; align-items:center; gap:8px; margin-bottom:4px; font-size:11px; color:#c9d1d9; }
+.dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+
+#info-panel {
+  position:fixed; bottom:16px; right:16px; z-index:10;
+  background:rgba(22,27,34,0.92); border:1px solid #30363d;
+  border-radius:10px; padding:12px 16px; max-width:220px;
+  backdrop-filter:blur(6px); opacity:0; transition:opacity 0.2s;
+  font-size:11px; color:#c9d1d9; line-height:1.7;
+}
+#info-panel.show { opacity:1; }
+#info-panel .ip-name { font-size:13px; font-weight:700; color:#e6edf3; margin-bottom:6px; font-family:'Courier New',monospace; }
+#info-panel .ip-row { display:flex; justify-content:space-between; gap:12px; }
+#info-panel .ip-val { font-weight:600; color:#79c0ff; }
+#info-panel .ip-hint { font-size:10px; color:#484f58; margin-top:8px; border-top:1px solid #21262d; padding-top:7px; }
+
+#hint-base {
+  position:fixed; bottom:16px; right:16px; z-index:9;
+  font-size:10px; color:#484f58; text-align:right; line-height:1.9;
+}
+#hint-base.hidden { display:none; }
+
+#rst {
+  position:fixed; top:172px; right:16px; z-index:10;
+  background:#21262d; border:1px solid #30363d; border-radius:6px;
+  padding:6px 12px; color:#c9d1d9; font-size:11px; cursor:pointer;
+}
+#rst:hover { background:#30363d; }
+
+/* Zoom-level table labels */
+.table-label {
+  font-size:8px; fill:#c9d1d9; text-anchor:middle;
+  pointer-events:none; user-select:none;
+  dominant-baseline:central;
+}
+
+/* ── Side Panel ── */
+#side-panel {
+  position:fixed; top:0; right:0; bottom:0; width:300px; z-index:20;
+  background:rgba(10,14,20,0.97); border-left:1px solid #1e2d3d;
+  backdrop-filter:blur(16px);
+  transform:translateX(100%);
+  transition:transform 0.28s cubic-bezier(0.4,0,0.2,1);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+#side-panel.open { transform:translateX(0); }
+
+#sp-header {
+  padding:18px 18px 14px;
+  border-bottom:1px solid #1a2332;
+  flex-shrink:0;
+}
+#sp-accent {
+  width:100%; height:3px; border-radius:2px; margin-bottom:14px;
+  transition:background 0.2s;
+}
+#sp-close {
+  position:absolute; top:12px; right:14px;
+  background:none; border:none; color:#4b5563; cursor:pointer;
+  font-size:18px; line-height:1; padding:2px 6px; border-radius:4px;
+}
+#sp-close:hover { background:#1e2d3d; color:#c9d1d9; }
+#sp-name {
+  font-size:16px; font-weight:700; color:#e6edf3;
+  font-family:'Courier New',monospace; margin-bottom:6px;
+  padding-right:28px; word-break:break-all; line-height:1.3;
+}
+#sp-desc { font-size:11px; color:#6e7681; line-height:1.55; margin-bottom:10px; }
+#sp-meta { display:flex; gap:6px; flex-wrap:wrap; }
+.sp-badge {
+  padding:2px 9px; border-radius:20px; font-size:10px; font-weight:600;
+  border:1px solid transparent;
+}
+
+#sp-filter-wrap {
+  padding:10px 14px 8px;
+  border-bottom:1px solid #1a2332;
+  flex-shrink:0;
+}
+#sp-filter {
+  width:100%; background:#0d1520; border:1px solid #1e2d3d;
+  border-radius:6px; padding:6px 10px; color:#c9d1d9; font-size:11px;
+  outline:none; font-family:'Courier New',monospace;
+}
+#sp-filter:focus { border-color:#2a4a6b; }
+#sp-filter::placeholder { color:#374151; }
+#sp-filter-wrap .sp-count { font-size:10px; color:#374151; margin-top:5px; text-align:right; }
+
+#sp-tables {
+  flex:1; overflow-y:auto; padding:6px 0;
+}
+#sp-tables::-webkit-scrollbar { width:4px; }
+#sp-tables::-webkit-scrollbar-track { background:transparent; }
+#sp-tables::-webkit-scrollbar-thumb { background:#1e2d3d; border-radius:2px; }
+
+.sp-table-row {
+  display:flex; align-items:center; gap:10px;
+  padding:5px 16px; cursor:pointer;
+  transition:background 0.12s;
+  font-family:'Courier New',monospace; font-size:11px; color:#8b949e;
+}
+.sp-table-row:hover { background:#0d1520; color:#c9d1d9; }
+.sp-table-row.active { background:#0d2137; color:#93c5fd; }
+.sp-table-row .sp-dot {
+  width:6px; height:6px; border-radius:50%; flex-shrink:0; opacity:0.7;
+}
+.sp-table-row .sp-tname { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sp-table-row .sp-idx { font-size:9px; color:#374151; min-width:20px; text-align:right; }
+
+#sp-conn-section {
+  padding:10px 16px 12px;
+  border-top:1px solid #1a2332;
+  flex-shrink:0;
+}
+#sp-conn-section .sp-conn-title { font-size:10px; text-transform:uppercase; letter-spacing:.6px; color:#374151; margin-bottom:7px; }
+#sp-conn-chips { display:flex; flex-wrap:wrap; gap:5px; }
+.sp-conn-chip {
+  padding:2px 8px; border-radius:4px; font-size:10px;
+  background:#0d1520; border:1px solid #1e2d3d;
+  color:#6e7681; cursor:pointer; font-family:'Courier New',monospace;
+}
+.sp-conn-chip:hover { border-color:#2a4a6b; color:#93c5fd; }
+</style>
+</head>
+<body>
+<svg id="g" style="width:100vw;height:100vh;display:block;"></svg>
+
+<div id="hdr"><h1>🗺️ Datawarehouse Libgot</h1><p>Amazon Redshift · 24 schemas · 441 tablas</p></div>
+
+<div id="srch-wrap">
+  <span id="srch-ico">🔍</span>
+  <input id="srch" placeholder="Buscar schema o tabla..." autocomplete="off" spellcheck="false">
+</div>
+
+<div id="stats">
+  <div class="n">24</div><div class="l">schemas</div>
+  <div style="margin-top:8px"><div class="n">441</div><div class="l">tablas</div></div>
+  <div style="margin-top:8px"><div class="n">77</div><div class="l">vínculos</div></div>
+</div>
+
+<div id="legend">
+  <div class="lh">Grupos</div>
+  <div class="li"><div class="dot" style="background:#93c5fd"></div>Argentina</div>
+  <div class="li"><div class="dot" style="background:#fde68a"></div>Colombia</div>
+  <div class="li"><div class="dot" style="background:#c4b5fd"></div>Analytics / IA</div>
+  <div class="li"><div class="dot" style="background:#86efac"></div>Transversal</div>
+  <div class="li"><div class="dot" style="background:#94a3b8"></div>Staging</div>
+  <div class="li"><div class="dot" style="background:#e2e8f0"></div>MOC Central</div>
+</div>
+
+<div id="hint-base">Hover → info · Click → foco · Scroll → zoom<br>Doble click sobre nodo → liberar</div>
+
+<div id="tooltip"></div>
+<button id="rst">↺ Reset</button>
+
+<!-- Side Panel -->
+<div id="side-panel">
+  <div id="sp-accent"></div>
+  <button id="sp-close" title="Cerrar">×</button>
+  <div id="sp-header">
+    <div id="sp-name"></div>
+    <div id="sp-desc"></div>
+    <div id="sp-meta"></div>
+  </div>
+  <div id="sp-filter-wrap">
+    <input id="sp-filter" placeholder="Filtrar tablas..." autocomplete="off" spellcheck="false">
+    <div class="sp-count" id="sp-count"></div>
+  </div>
+  <div id="sp-tables"></div>
+  <div id="sp-conn-section">
+    <div class="sp-conn-title">Schemas conectados</div>
+    <div id="sp-conn-chips"></div>
+  </div>
+</div>
+
+<script>
+// ── Tabla real de nombres por schema ─────────────────────────────────────────
+const TABLE_NAMES = {
+  "auxiliary_tables": ["amortizacion_frances_arg","amortizacion_frances_col","asignacion_mora_manual","asignacion_mora_manual_arg","black_list_ar","blacklist_multipais","bureau_arg","calendar","calendar_habil","campanas_marketing_variables","cobranza_performance_operadores","contactabilidad_multipais","cuantificacion_cuil_arg","cuantificacion_cuil_col","devengamiento_diario_multi_pais","exclusiones_deudores_arg","frances_detalle_arg","frances_detalle_col","funnel_lead_arg","funnel_lead_col","funnel_marketing_arg","funnel_marketing_col","historico_importes_bcra","historico_proveedores_bcra","ingreso_datos","installment_details_arg_20240801","lead_asignacion_arg","lead_asignacion_col","lead_oferta_arg","lead_oferta_col","lead_venta_arg","lead_venta_col","licencias_user_ms365","loan_installments_arg_20240801","loan_installments_col_20240801","maestro_permisos_usuarios","mango_acuerdos","mango_estado_cartera","mango_gestiones","marketing_communications_costs","marketing_investment","mkt_campanas_details","mkt_score_2","motivo_reclamo_bcra","movimientos_bancarios_arg","objetivos_call_arg","objetivos_cobranza_multipais","objetivos_diarios_cobranza_arg","objetivos_diarios_cobranza_col","objetivos_diarios_negocio","objetivos_negocio_multipais","pivot_lead_status_arg","pivot_lead_status_col","pivot_loan_status_arg","pivot_loan_status_col","planes_pago_arg","power_bi_users_workspace","proveedores_arg","razon_social_arg","reclamos_legales_arg","rectificaciones_historicas_ar","ri_bcra_tasas","ri_bcra_tasas_export","ri_experian_historico","roll_rate_2_arg","roll_rate_arg","roll_rate_col","salario_minimo_vital_movil","score_set_datos_arg","score_set_datos_col","seguimiento_promociones_multipais","sp_maestro_total","tasa_loan_arg","tasas_arg","tasas_col","web_users_google_analytics"],
+  "callcenter": ["ciclos_multipais","objetivos_mora_multipais","objetivos_venta_multipais","whatsapp_conversation_ai_analysis"],
+  "casarsa": ["vw_organismos","vwe_asociado","vwe_cobranza","vwe_creditos","vwe_ctacte","vwe_detalle_ctas_residual","vwe_detalle_ctas_residual_2","vwe_org_envio","vwe_org_recep","vwe_punitorios","vwe_reversiones"],
+  "collection_arg": ["asignacion_agencias_arg","asignacion_agencias_cr_arg","asignacion_operadores_internos_arg","asignaciones_agencias_arg","asignaciones_historicas_arg","bajas_agencias_arg","bill_details_arg","bills_arg","bind_cvu_arg","bind_transacciones_cvu_arg","cobranza_arg","cod_organismo_arg","collection_agencies_arg","collection_detail_configurations_arg","collection_details_arg","collection_file_responses_arg","collection_files_arg","collection_response_detail_configs_arg","companies_recovery_arg","comportamiento_de_pago_arg","customer_cvu_arg","customers_arg","details_cobranza_arg","detalle_comisiones_operadores_cobranzas_arg","external_company_recovery_arg","financial_entities_arg","gestores_arg","loans_recovery_arg","objetivos_forzados_operadores_arg","operadores_internos","pagos_brutos_agencias_arg","payment_imputations_arg","payment_method_by_financial_entities_arg","payment_methods_arg","payment_plan_arg","payment_receptions_arg","reclamaciones_libre_deuda_arg","recovery_assignments_arg","sintesis_comisiones_operadores_cobranzas_arg","ventas_arg"],
+  "collection_col": ["asignacion_operadores_internos","bancos_comision_col","bank_reject_code_col","companies_recovery","customer_debit_settings_col","debit_order_details_col","debit_orders_col","detalle_comisiones_operadores_cobranzas_col","installment_payments_col","loan_collections_report_view_col","loans_recovery","loans_recovery_history","mango_correo_col","mango_cuentas_col","mango_telefono_col","montos_asignados_cobranza_col","objetivos_forzados_operadores_col","operadores_internos","payment_applications_col","payment_methods_col","payment_plan_col","payment_receptions_col","sintesis_comisiones_operadores_cobranzas_col","ventas_col"],
+  "collection_new_col": ["bill_details_col","bills_col","collection_agencies_col","collection_detail_configurations_col","collection_details_col","collection_file_responses_col","collection_files_col","collection_response_detail_configs_col","customers_col","financial_entities_col","payment_imputations_col","payment_method_by_financial_entities_col","payment_methods_col","payment_receptions_col"],
+  "core_arg": ["banks_arg","banned_customers_arg","customer_activities_arg","customer_addresses_arg","customer_cellphones_arg","customer_emails_arg","customers_arg","employment_situations_arg","foto_cartera_arg","installment_details_arg","lead_comments_arg","lead_due_dates_arg","lead_offer_rate_info_arg","lead_offers_arg","lead_operator_status_history_arg","lead_operators_arg","lead_status_history_arg","lead_utms_arg","leads_arg","loan_comments_arg","loan_installments_arg","loan_status_history_arg","loans_arg","loans_ranking_arg","loans_ranking_arg_2","operators_arg","referrals_arg","regions_arg","reject_reasons_arg","risk_execute_arg","roles_arg","status_arg","users_arg"],
+  "core_col": ["banks_col","banned_customers_col","customer_accounts_col","customer_activities_col","customer_addresses_col","customer_cellphones_col","customer_emails_col","customers_col","departments_col","installment_details_col","job_situations_col","lead_comments_col","lead_jobs_col","lead_offers_col","lead_operator_assignment_history_col","lead_operator_col","lead_operator_status_history_col","lead_risks_col","lead_status_history_col","lead_utms_col","leads_col","loan_comments_col","loan_installments_col","loan_status_history_col","loans_col","loans_ranking_col","municipalities_col","operators_col","referrals_col","reject_reasons_col","risk_executions_col","status_col","users_col"],
+  "customer_support": ["chatwoot_arg","chatwoot_conversations_arg","chatwoot_messages_analisis_arg","chatwoot_messages_arg","claim_inbox_arg","claim_inbox_col","neotel_call_log","neotel_campanas","neotel_estados","neotel_operador","neotel_subestados","reclamos_unificados_detalle","reclamos_unificados_detalle_2","reclamos_unificados_detalle_total","whatsapp_assignment_chat","whatsapp_assignment_queue","whatsapp_assignment_queue_user","whatsapp_branch","whatsapp_conversation_messages","whatsapp_instance","whatsapp_origin_type","whatsapp_sessions","whatsapp_whatsapp_chats","whatsapp_whatsapp_contacts","whatsapp_whatsapp_messages"],
+  "datacredito_col": ["experian_consultas","experian_obligaciones","experian_obligaciones_historico","experian_persona","experian_saldos_historico","history_accounts","history_consults","history_credits","history_global_debts","history_portfolios","person_address","person_emails","person_phones","person_queries","person_queries_as","person_query_leads"],
+  "discounts": ["branches","discount_campaign_concepts","discount_campaigns","discount_item_statuses","discount_items","statuses"],
+  "finance_arg": ["account_account","account_move_line","aux_cartera_forecast_detalle_arg","aux_cartera_forecast_sumarizada_arg","balance_arg","balance_arg_v","cajas_mp_arg","cartera_fideicomiso_detalle_arg","cartera_fideicomiso_sumarizada_arg","cartera_prescrita","expenses_arg","expenses_arg_v","expenses_b_arg","expenses_clasificacion_b_arg","expenses_clasificacion_odoo_arg","expenses_classification_arg","expenses_op_arg","gastos_evolutivos_arg","gastos_prorrateados_arg","internal_transfers_arg","movimientos_bancarios_v","proveedores_criticidad_arg","ri_reclamos_bcra","ri_reclamos_otros_bcra","roll_rate_forecast_detalle_arg","roll_rate_forecast_sumarizado_arg","saldo_cartera_arg_diario","tipo_cambio_arg"],
+  "finance_col": ["balance_col","expenses_classification_col","expenses_col","gastos_evolutivos_col","gastos_prorrateados_col","internal_transfers_col","proveedores_criticidad_col","saldo_cartera_col_diario","tipo_cambio_col"],
+  "gold": ["cobranza_arg"],
+  "mareigua_col": ["mareigua_aportantes","mareigua_pagos","mareigua_persona","person_query","person_query_leads"],
+  "notifications": ["branches","notification_types","notifications"],
+  "payments_arg": ["banks_arg","payment_orders_arg"],
+  "payments_col": ["bank_accounts_col","banks_col","payment_orders_col"],
+  "people": ["ingresos_nomina_multipais","maestro_asistencia_horarios_multipais","maestro_asistencia_multipais","nomina_arg"],
+  "platinum_ia": ["funnel_marketing_multipais","monitor_uif_arg","vw_cobranzas_multipais","vw_servicios_multipais","vw_ventas_multipais"],
+  "referral": ["referral","referral_person_contacts","referral_person_logs","referral_person_tries","referral_persons","statuses"],
+  "risk_arg": ["afip_ddjj","anses_personas","bcra_deudores","bcra_deudores_pro","bcra_entidades_pro","bcra_importes_ri","bcra_padron","bcra_padron_actividades","bcra_personas_pro","bcra_proveedores_ri","entidades_laborales_arg","monitor_legales","nosis_importes_ri","nosis_proveedores_ri","nosis_respuesta_arg","peype_respuesta_arg","risk_engine_arg","seon_parsed_arg","siisa_respuesta_arg","staging_bcra_deudores","staging_bcra_entidades","staging_bcra_personas","uif_detalle_arg","uif_sintesis_arg","variables_modelo_mora_arg"],
+  "risk_col": ["db_companies_nit","ri_datacredito_exclusiones","risk_engine_2_col","risk_engine_col","seon_parsed_col","variables_modelo_mora_col"],
+  "staging": ["analisis_fraude_inteno","asignaciones_historicas_arg","asignaciones_historicas_arg_","bancodebogota_col","bancolombia_cuenta30_col","bancolombia_cuenta54_col","bapro_nidiseb_ar","base_analizada_trustfull","base_analizada_trustfull_arg_target","base_analizada_trustfull_arg_target_con_trustfull","base_analizada_trustfull_col","base_analizada_trustfull_col_target","base_analizada_trustfull_col_target_con_trustfull","bbva_col","bbva_romachi_ar","bbva_worldtech_ar","bd_enriquecimiento_bureau_prueba_col","bind_barsatex_ar","bind_nuevatex_ar","bind_worldtech_ar","capital_real_residual_arg","chat_id_ingestados","chat_id_ingestados_int","chatwoot_messages_arg","collection_file_responses_col_bi","collection_response_detail_configs_col_bi","comercio_barsatex_ar","comercio_worldtech_ar","detalle_ofertas_vivas","galicia_barsatex_ar","insolvencia_col","loans_rechazados_arg","mango_gestiones","mercado_pago_1_ar","mercado_pago_2_ar","muestra_datarobot_20241009","muestra_datarobot_20241010","nacion_nidiseb_ar","patagonia000_ar","patagonia001_ar","payment_imputations_col_bi","payment_plan_col","payment_receptions_col_bi","pichincha_cajadeahorro_col","prueba_batch_motor_10_20250903_arg","prueba_super","rectificaciones_ar","ri_experian_mes_en_curso","ri_experian_mes_en_curso_export","risk_fail_pana","rrhh_ingresos_arg","rrhh_ingresos_col","santander_barsatex_ar","santander_nidiseb_ar","seon_multipais_enriquecimiento","seon_multipais_enriquecimiento_2","seon_multipais_enriquecimiento_3","seon_multipais_enriquecimiento_poc_2","seon_multipais_enriquecimiento_poc_2_3","stg_whatsapp_conversation_ai_analysis","trustfull_argentina_enriquecimiento","trustfull_colombia_enriquecimiento"]
+};
+
+// ── Schemas ───────────────────────────────────────────────────────────────────
+const SCHEMAS = [
+  {id:"Datawarehouse-Libgot",tables:0,pais:"moc",capa:"moc",desc:"Índice central del DWH Libgot",emoji:"🗺️"},
+  {id:"auxiliary_tables",tables:76,pais:"multipais",capa:"soporte",desc:"Soporte transversal: calendarios, blacklists, funnels, scoring, roll rates.",emoji:"🧩"},
+  {id:"callcenter",tables:4,pais:"multipais",capa:"operacional",desc:"Ciclos de cobranza, objetivos mora/venta, análisis IA de conversaciones.",emoji:"📞"},
+  {id:"casarsa",tables:11,pais:"ARG",capa:"operacional",desc:"Sistema externo de recupero. Vistas de organismos, créditos, cobranza.",emoji:"🏛️"},
+  {id:"collection_arg",tables:40,pais:"ARG",capa:"operacional",desc:"Cobranza Argentina. Pagos, agencias, operadores, planes de pago.",emoji:""},
+  {id:"collection_col",tables:24,pais:"COL",capa:"operacional",desc:"Cobranza Colombia. Pagos, débito automático, operadores.",emoji:""},
+  {id:"collection_new_col",tables:14,pais:"COL",capa:"operacional",desc:"Nuevo sistema de cobranza Colombia.",emoji:""},
+  {id:"core_arg",tables:33,pais:"ARG",capa:"transaccional",desc:"Core transaccional ARG. Clientes, leads, préstamos y cuotas.",emoji:""},
+  {id:"core_col",tables:33,pais:"COL",capa:"transaccional",desc:"Core transaccional COL. Clientes, leads, préstamos y cuotas.",emoji:""},
+  {id:"customer_support",tables:25,pais:"multipais",capa:"operacional",desc:"Chatwoot, WhatsApp, call center Neotel, reclamos unificados.",emoji:"🎧"},
+  {id:"datacredito_col",tables:16,pais:"COL",capa:"riesgo",desc:"Bureau Experian/Datacredito Colombia. Historial crediticio.",emoji:""},
+  {id:"discounts",tables:6,pais:"multipais",capa:"operacional",desc:"Campañas de descuentos, items, estados y branches multipais.",emoji:"🎁"},
+  {id:"finance_arg",tables:28,pais:"ARG",capa:"financiero",desc:"P&L ARG, gastos, cartera fideicomiso, balance, tipo de cambio.",emoji:""},
+  {id:"finance_col",tables:9,pais:"COL",capa:"financiero",desc:"P&L COL, gastos, balance y saldo de cartera.",emoji:""},
+  {id:"gold",tables:1,pais:"multipais",capa:"analitica",desc:"Capa analítica lista para consumo. Tablas curadas ARG+COL.",emoji:"🥇"},
+  {id:"mareigua_col",tables:5,pais:"COL",capa:"riesgo",desc:"Bureau Mareigua Colombia. Aportantes, pagos, personas.",emoji:""},
+  {id:"notifications",tables:3,pais:"multipais",capa:"operacional",desc:"Notificaciones enviadas por provider/canal multipais.",emoji:"📨"},
+  {id:"payments_arg",tables:2,pais:"ARG",capa:"operacional",desc:"Órdenes de pago y bancos Argentina.",emoji:""},
+  {id:"payments_col",tables:3,pais:"COL",capa:"operacional",desc:"Órdenes de pago, cuentas bancarias y bancos Colombia.",emoji:""},
+  {id:"people",tables:4,pais:"multipais",capa:"operacional",desc:"RRHH y Nómina. Asistencia, horarios e ingresos multipais.",emoji:"👥"},
+  {id:"platinum_ia",tables:5,pais:"multipais",capa:"analitica",desc:"IA y modelos analíticos. Funnel marketing multipais, monitor UIF.",emoji:"🤖"},
+  {id:"referral",tables:6,pais:"multipais",capa:"operacional",desc:"Programa de referidos. Tracking, contactos, intentos y estados.",emoji:"🔗"},
+  {id:"risk_arg",tables:25,pais:"ARG",capa:"riesgo",desc:"Riesgo y Scoring ARG. BCRA, NOSIS, SIISA, SEON, AFIP, ANSES.",emoji:""},
+  {id:"risk_col",tables:6,pais:"COL",capa:"riesgo",desc:"Riesgo y Scoring COL. Experian/Datacredito, Mareigua.",emoji:""},
+  {id:"staging",tables:62,pais:"multipais",capa:"staging",desc:"Tablas temporales, enriquecimiento, extractos bancarios.",emoji:"🧪"}
+];
+
+const EDGES_RAW = [
+  ["auxiliary_tables","callcenter"],["auxiliary_tables","collection_arg"],["auxiliary_tables","collection_col"],
+  ["auxiliary_tables","core_arg"],["auxiliary_tables","core_col"],["auxiliary_tables","discounts"],
+  ["auxiliary_tables","finance_arg"],["auxiliary_tables","gold"],["auxiliary_tables","notifications"],
+  ["auxiliary_tables","people"],["auxiliary_tables","platinum_ia"],["auxiliary_tables","referral"],
+  ["auxiliary_tables","risk_arg"],["callcenter","collection_arg"],["callcenter","collection_col"],
+  ["callcenter","customer_support"],["casarsa","collection_arg"],["casarsa","finance_arg"],
+  ["collection_arg","collection_col"],["collection_arg","collection_new_col"],["collection_arg","core_arg"],
+  ["collection_arg","finance_arg"],["collection_arg","gold"],["collection_arg","payments_arg"],
+  ["collection_arg","staging"],["collection_col","core_col"],["collection_col","finance_col"],
+  ["collection_col","gold"],["collection_col","payments_col"],["collection_col","staging"],
+  ["core_arg","core_col"],["core_arg","customer_support"],["core_arg","discounts"],
+  ["core_arg","finance_arg"],["core_arg","gold"],["core_arg","notifications"],
+  ["core_arg","payments_arg"],["core_arg","platinum_ia"],["core_arg","referral"],
+  ["core_arg","risk_arg"],["core_arg","staging"],["core_col","customer_support"],
+  ["core_col","datacredito_col"],["core_col","discounts"],["core_col","finance_col"],
+  ["core_col","gold"],["core_col","mareigua_col"],["core_col","notifications"],
+  ["core_col","payments_col"],["core_col","platinum_ia"],["core_col","referral"],
+  ["core_col","risk_col"],["core_col","staging"],["customer_support","discounts"],
+  ["customer_support","finance_arg"],["customer_support","notifications"],["customer_support","staging"],
+  ["datacredito_col","mareigua_col"],["datacredito_col","risk_arg"],["datacredito_col","risk_col"],
+  ["finance_arg","finance_col"],["finance_arg","gold"],["finance_arg","payments_arg"],
+  ["finance_arg","people"],["finance_col","gold"],["finance_col","payments_col"],
+  ["gold","platinum_ia"],["gold","risk_arg"],["gold","risk_col"],["gold","staging"],
+  ["mareigua_col","risk_arg"],["mareigua_col","risk_col"],["payments_arg","payments_col"],
+  ["platinum_ia","risk_arg"],["risk_arg","risk_col"],["risk_arg","staging"],["risk_col","staging"]
+];
+
+// ── Colors ────────────────────────────────────────────────────────────────────
+const COLOR_MAP = {
+  'moc': '#f1f5f9',
+  'analitica': '#a78bfa',
+  'ARG_transaccional': '#3b82f6', 'ARG_operacional': '#60a5fa', 'ARG_financiero': '#93c5fd',
+  'ARG_riesgo': '#bfdbfe', 'ARG_staging': '#6b7280',
+  'COL_transaccional': '#f59e0b', 'COL_operacional': '#fbbf24', 'COL_financiero': '#fcd34d',
+  'COL_riesgo': '#fde68a',
+  'multipais_staging': '#6b7280', 'multipais_soporte': '#34d399',
+  'multipais_operacional': '#34d399', 'multipais_analitica': '#a78bfa',
+};
+
+function schemaColor(d) {
+  if (!d) return '#94a3b8';
+  if (d.id === 'Datawarehouse-Libgot' || d.pais === 'moc') return '#e2e8f0';
+  if (d.capa === 'analitica') return '#c4b5fd';
+  if (d.capa === 'staging') return '#94a3b8';
+  if (d.pais === 'ARG') return '#93c5fd';
+  if (d.pais === 'COL') return '#fde68a';
+  return '#86efac';
+}
+
+function schemaR(d) {
+  if (d.id === 'Datawarehouse-Libgot') return 32;
+  return Math.max(12, Math.min(34, 7 + Math.sqrt(d.tables) * 2.2));
+}
+
+// ── Build nodes ───────────────────────────────────────────────────────────────
+const schemaMap = {};
+SCHEMAS.forEach(s => schemaMap[s.id] = s);
+
+const ALL_NODES   = SCHEMAS.map(s => ({...s, tipo:'schema'}));
+const TABLE_EDGES = [];
+const SCHEMA_EDGES = EDGES_RAW.map(([a,b]) => ({source:a, target:b, tipo:'ss'}));
+const MOC_EDGES    = SCHEMAS.filter(s => s.id !== 'Datawarehouse-Libgot')
+                            .map(s => ({source:'Datawarehouse-Libgot', target:s.id, tipo:'moc'}));
+
+// Table nodes with real names
+const tableNodesBySchema = {};
+for (const schema of SCHEMAS) {
+  if (schema.id === 'Datawarehouse-Libgot') continue;
+  const names = TABLE_NAMES[schema.id] || [];
+  tableNodesBySchema[schema.id] = [];
+  names.forEach(tname => {
+    const tn = {
+      id: `${schema.id}.${tname}`,
+      name: tname,
+      fullname: `${schema.id}.${tname}`,
+      tipo: 'tabla',
+      schema: schema.id,
+      tables: 0,
+      pais: schema.pais,
+      capa: schema.capa
+    };
+    ALL_NODES.push(tn);
+    tableNodesBySchema[schema.id].push(tn);
+    TABLE_EDGES.push({source: schema.id, target: tn.id, tipo: 'st'});
+  });
+}
+
+// Lookup for nodes
+const nodeById = {};
+ALL_NODES.forEach(n => nodeById[n.id] = n);
+
+const ALL_FORCE = [...MOC_EDGES, ...SCHEMA_EDGES, ...TABLE_EDGES];
+
+// ── SVG + zoom ────────────────────────────────────────────────────────────────
+const W = window.innerWidth, H = window.innerHeight;
+const svg = d3.select('#g').attr('width', W).attr('height', H);
+
+const defs = svg.append('defs');
+['glow-moc','glow-schema','glow-hi','glow-table'].forEach((id, i) => {
+  const sd = [10, 4, 12, 6][i];
+  const f = defs.append('filter').attr('id', id).attr('x','-100%').attr('y','-100%').attr('width','300%').attr('height','300%');
+  f.append('feGaussianBlur').attr('stdDeviation', sd).attr('result','blur');
+  const m = f.append('feMerge');
+  m.append('feMergeNode').attr('in','blur');
+  m.append('feMergeNode').attr('in','SourceGraphic');
+});
+
+const root = svg.append('g');
+let currentZoom = 1;
+
+const zoom = d3.zoom().scaleExtent([0.04, 12])
+  .on('zoom', e => {
+    root.attr('transform', e.transform);
+    currentZoom = e.transform.k;
+    updateTableLabels();
+  });
+svg.call(zoom).on('dblclick.zoom', null);
+
+// Fix MOC at center
+const moc = ALL_NODES.find(n => n.id === 'Datawarehouse-Libgot');
+moc.fx = W/2; moc.fy = H/2;
+
+// ── Simulation ────────────────────────────────────────────────────────────────
+const sim = d3.forceSimulation(ALL_NODES)
+  .force('link', d3.forceLink(ALL_FORCE).id(d => d.id)
+    .distance(l => l.tipo==='moc' ? 230 : l.tipo==='st' ? 38 : 95)
+    .strength(l => l.tipo==='moc' ? 0.5 : l.tipo==='st' ? 0.85 : 0.3))
+  .force('charge', d3.forceManyBody()
+    .strength(d => d.tipo==='tabla' ? -14 : (d.id==='Datawarehouse-Libgot' ? -1400 : -280)))
+  .force('collide', d3.forceCollide()
+    .radius(d => d.tipo==='tabla' ? 6 : schemaR(d) + 10).strength(0.65))
+  .force('x', d3.forceX(W/2).strength(0.014))
+  .force('y', d3.forceY(H/2).strength(0.014))
+  .alphaDecay(0.01).velocityDecay(0.32);
+
+// ── Layers ────────────────────────────────────────────────────────────────────
+const mocLinkL   = root.append('g');
+const ssLinkL    = root.append('g');
+const stLinkL    = root.append('g');
+const tableL     = root.append('g');
+const tableLblL  = root.append('g');  // table labels layer
+const schemaL    = root.append('g');
+
+// MOC links
+const mocLinks = mocLinkL.selectAll('line').data(MOC_EDGES).enter()
+  .append('line')
+  .attr('stroke', d => schemaColor(schemaMap[d.target] || schemaMap[typeof d.target === 'string' ? d.target : d.target.id]))
+  .attr('stroke-width', 1.2).attr('stroke-opacity', 0.32)
+  .attr('stroke-dasharray', '4,6');
+
+// Schema-schema links
+const ssLinks = ssLinkL.selectAll('line').data(SCHEMA_EDGES).enter()
+  .append('line')
+  .attr('stroke', '#374151').attr('stroke-width', 1.5).attr('stroke-opacity', 0.48);
+
+// Schema-table links
+const stLinks = stLinkL.selectAll('line').data(TABLE_EDGES).enter()
+  .append('line')
+  .attr('stroke', d => schemaColor(schemaMap[typeof d.source === 'string' ? d.source : d.source.id]))
+  .attr('stroke-width', 0.5).attr('stroke-opacity', 0.16);
+
+// Table nodes
+const tableNodes = tableL.selectAll('circle').data(ALL_NODES.filter(n => n.tipo === 'tabla')).enter()
+  .append('circle')
+  .attr('r', 3)
+  .attr('fill', d => schemaColor(schemaMap[d.schema]))
+  .attr('fill-opacity', 0.65)
+  .attr('stroke', 'none')
+  .style('cursor', 'pointer');
+
+// Table labels (hidden until zoom > threshold)
+const tableLabels = tableLblL.selectAll('text').data(ALL_NODES.filter(n => n.tipo === 'tabla')).enter()
+  .append('text')
+  .attr('class', 'table-label')
+  .text(d => d.name)
+  .attr('fill', d => schemaColor(schemaMap[d.schema]))
+  .attr('fill-opacity', 0)
+  .attr('dy', '-5px')
+  .style('pointer-events', 'none');
+
+function updateTableLabels() {
+  const LABEL_ZOOM = 1.8;
+  if (currentZoom >= LABEL_ZOOM) {
+    // Fade in suave: empieza a 1.8x, completamente visible a 3x
+    const opacity = Math.min(1, (currentZoom - LABEL_ZOOM) / 1.2) * 0.9;
+    tableLabels.attr('fill-opacity', opacity);
+    // Font size inversamente proporcional al zoom para que no crezca demasiado
+    tableLabels.style('font-size', Math.max(4, 8 / currentZoom) + 'px');
+  } else {
+    tableLabels.attr('fill-opacity', 0);
+  }
+}
+
+// Schema nodes
+const schemaG = schemaL.selectAll('g').data(ALL_NODES.filter(n => n.tipo === 'schema')).enter()
+  .append('g').style('cursor', 'pointer')
+  .call(d3.drag()
+    .on('start', (e, d) => { d._dragged = false; if (!e.active) sim.alphaTarget(0.25).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag',  (e, d) => { d._dragged = true; d.fx = e.x; d.fy = e.y; })
+    .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0.003); if (!d._dragged) { d.fx = null; d.fy = null; } }))
+  .on('dblclick', (e, d) => {
+    if (d.id !== 'Datawarehouse-Libgot') { d.fx = null; d.fy = null; sim.alpha(0.15).restart(); }
+  });
+
+schemaG.append('circle')
+  .attr('r', d => schemaR(d))
+  .attr('fill', d => schemaColor(d))
+  .attr('fill-opacity', 0.88)
+  .attr('stroke', d => { const c = d3.color(schemaColor(d)); return c ? c.darker(0.6).formatHex() : '#fff'; })
+  .attr('stroke-width', 2)
+  .style('filter', d => d.id === 'Datawarehouse-Libgot' ? 'url(#glow-moc)' : 'url(#glow-schema)');
+
+schemaG.each(function(d) {
+  const el = d3.select(this);
+  const isMoc = d.id === 'Datawarehouse-Libgot';
+  const label = isMoc ? 'DWH · Libgot' : d.id.replace(/_/g, ' ');
+  const words = label.split(' ');
+  const sz = isMoc ? '10px' : (schemaR(d) > 22 ? '9px' : '8px');
+  // Split into max 2 lines
+  const mid = Math.ceil(words.length / 2);
+  const lines = words.length > 2 ? [words.slice(0, mid).join(' '), words.slice(mid).join(' ')] : [label];
+  lines.forEach((ln, i) => {
+    el.append('text')
+      .attr('dy', lines.length === 1 ? '0.35em' : (i === 0 ? '-0.2em' : '0.9em'))
+      .style('font-size', sz)
+      .style('font-weight', isMoc ? '800' : '600')
+      .style('fill', '#1e293b')
+      .style('text-anchor', 'middle')
+      .style('pointer-events', 'none')
+      .style('user-select', 'none')
+      .style('paint-order', 'stroke')
+      .style('stroke', 'rgba(255,255,255,0.4)')
+      .style('stroke-width', '2px')
+      .text(ln);
+  });
+});
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const tt = d3.select('#tooltip');
+
+function showTT(e, html) {
+  tt.classed('show', true).html(html);
+  moveTT(e);
+}
+function moveTT(e) {
+  const x = e.pageX + 18, y = e.pageY - 14;
+  tt.style('left', Math.min(x, window.innerWidth - 280) + 'px').style('top', y + 'px');
+}
+function hideTT() { tt.classed('show', false); }
+
+schemaG
+  .on('mouseover', (e, d) => {
+    if (focusedNode && focusedNode.id !== d.id) return;
+    const col = schemaColor(d);
+    const connCount = EDGES_RAW.filter(([a,b]) => a===d.id || b===d.id).length;
+    showTT(e, `
+      <div class="tname">${d.emoji} ${d.id}</div>
+      ${d.desc ? `<div class="tdesc">${d.desc}</div>` : ''}
+      <span class="badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${d.capa}</span>
+      <span class="badge" style="background:${col}22;color:${col};border:1px solid ${col}44">${d.pais}</span>
+      ${d.tables > 0 ? `<span class="badge" style="background:#21262d;color:#8b949e;border:1px solid #30363d">${d.tables} tablas</span>` : ''}
+      ${connCount > 0 ? `<span class="badge" style="background:#21262d;color:#8b949e;border:1px solid #30363d">${connCount} conexiones</span>` : ''}
+    `);
+  })
+  .on('mousemove', (e) => moveTT(e))
+  .on('mouseout',  () => hideTT())
+  .on('click', (e, d) => { e.stopPropagation(); focusNode(d); });
+
+tableNodes
+  .call(d3.drag()
+    .on('start', (e, d) => { d._dragged = false; if (!e.active) sim.alphaTarget(0.2).restart(); d.fx = d.x; d.fy = d.y; hideTT(); })
+    .on('drag',  (e, d) => { d._dragged = true; d.fx = e.x; d.fy = e.y; })
+    .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0.003); if (!d._dragged) { d.fx = null; d.fy = null; } }))
+  .on('dblclick', (e, d) => { e.stopPropagation(); d.fx = null; d.fy = null; sim.alpha(0.1).restart(); })
+  .on('mouseover', (e, d) => {
+    const col = schemaColor(schemaMap[d.schema]);
+    showTT(e, `
+      <div class="tablename">${d.fullname}</div>
+      <div class="schemaref">schema: <span style="color:${col}">${d.schema}</span></div>
+    `);
+    d3.select(e.currentTarget).attr('r', 5).attr('fill-opacity', 1)
+      .style('filter', 'url(#glow-table)');
+  })
+  .on('mousemove', (e) => moveTT(e))
+  .on('mouseout', (e) => {
+    hideTT();
+    d3.select(e.currentTarget).attr('r', 3).attr('fill-opacity', 0.65)
+      .style('filter', 'none');
+  })
+  .on('click', (e, d) => { e.stopPropagation(); focusTable(d); });
+
+// ── Focus / Obsidian-style highlight ─────────────────────────────────────────
+let focusedNode = null;
+
+function focusNode(d) {
+  // If clicking the same node, unfocus
+  if (focusedNode && focusedNode.id === d.id) { resetFocus(); return; }
+  focusedNode = d;
+
+  // Build connected set — incluye edges de MOC y schema-schema
+  const directConn = new Set([d.id]);
+  SCHEMA_EDGES.forEach(e => {
+    const sid = typeof e.source === 'string' ? e.source : e.source.id;
+    const tid = typeof e.target === 'string' ? e.target : e.target.id;
+    if (sid === d.id) directConn.add(tid);
+    if (tid === d.id) directConn.add(sid);
+  });
+  MOC_EDGES.forEach(e => {
+    const sid = typeof e.source === 'string' ? e.source : e.source.id;
+    const tid = typeof e.target === 'string' ? e.target : e.target.id;
+    if (sid === d.id) directConn.add(tid);
+    if (tid === d.id) directConn.add(sid);
+  });
+  // MOC siempre visible
+  directConn.add('Datawarehouse-Libgot');
+
+  // Schema nodes
+  schemaG.each(function(n) {
+    const isFocus  = n.id === d.id;
+    const isLinked = directConn.has(n.id);
+    const isMoc    = n.id === 'Datawarehouse-Libgot';
+    d3.select(this).select('circle')
+      .transition().duration(280)
+      .attr('fill-opacity',   isFocus ? 1 : isLinked ? 0.85 : 0.06)
+      .attr('stroke-opacity', isFocus ? 1 : isLinked ? 0.7  : 0.05)
+      .style('filter', isFocus ? 'url(#glow-hi)' : isMoc ? 'url(#glow-moc)' : isLinked ? 'url(#glow-schema)' : 'none');
+    d3.select(this).selectAll('text')
+      .transition().duration(280)
+      .attr('fill-opacity', isFocus ? 1 : isLinked ? 0.9 : 0.06);
+  });
+
+  // Schema-schema links
+  ssLinks.transition().duration(280)
+    .attr('stroke', l => {
+      const sid = typeof l.source === 'string' ? l.source : l.source.id;
+      const tid = typeof l.target === 'string' ? l.target : l.target.id;
+      return (sid === d.id || tid === d.id) ? schemaColor(d) : '#374151';
+    })
+    .attr('stroke-opacity', l => {
+      const sid = typeof l.source === 'string' ? l.source : l.source.id;
+      const tid = typeof l.target === 'string' ? l.target : l.target.id;
+      return (sid === d.id || tid === d.id) ? 0.85 : 0.04;
+    })
+    .attr('stroke-width', l => {
+      const sid = typeof l.source === 'string' ? l.source : l.source.id;
+      const tid = typeof l.target === 'string' ? l.target : l.target.id;
+      return (sid === d.id || tid === d.id) ? 2.5 : 1.5;
+    });
+
+  // MOC links
+  mocLinks.transition().duration(280)
+    .attr('stroke-opacity', l => {
+      const tid = typeof l.target === 'string' ? l.target : l.target.id;
+      return tid === d.id ? 0.65 : 0.04;
+    })
+    .attr('stroke-width', l => {
+      const tid = typeof l.target === 'string' ? l.target : l.target.id;
+      return tid === d.id ? 2 : 1.2;
+    });
+
+  // Table nodes and links for focused schema
+  tableNodes.transition().duration(280)
+    .attr('fill-opacity', t => t.schema === d.id ? 0.9 : directConn.has(t.schema) ? 0.25 : 0.04)
+    .attr('r', t => t.schema === d.id ? 4 : 3);
+  stLinks.transition().duration(280)
+    .attr('stroke-opacity', l => {
+      const sid = typeof l.source === 'string' ? l.source : l.source.id;
+      return sid === d.id ? 0.45 : 0.02;
+    })
+    .attr('stroke-width', l => {
+      const sid = typeof l.source === 'string' ? l.source : l.source.id;
+      return sid === d.id ? 1 : 0.5;
+    });
+
+  tableLabels.attr('fill-opacity', t => {
+    if (currentZoom < 3.2) return 0;
+    const base = Math.min(1, (currentZoom - 3.2) / 1.5) * 0.85;
+    return t.schema === d.id ? base : 0;
+  });
+
+  showSidePanel(d);
+  nudge(d, 3);
+}
+
+function focusTable(d) {
+  focusedNode = d;
+  const parentSchema = d.schema;
+
+  schemaG.each(function(n) {
+    const isParent = n.id === parentSchema;
+    const isMoc = n.id === 'Datawarehouse-Libgot';
+    d3.select(this).select('circle')
+      .transition().duration(280)
+      .attr('fill-opacity',   isParent ? 0.9 : isMoc ? 0.6 : 0.06)
+      .attr('stroke-opacity', isParent ? 1   : isMoc ? 0.4 : 0.04)
+      .style('filter', isParent ? 'url(#glow-schema)' : 'none');
+    d3.select(this).selectAll('text')
+      .transition().duration(280)
+      .attr('fill-opacity', isParent ? 1 : 0.06);
+  });
+
+  tableNodes.transition().duration(280)
+    .attr('fill-opacity', t => t.id === d.id ? 1 : t.schema === parentSchema ? 0.35 : 0.04)
+    .attr('r', t => t.id === d.id ? 6 : t.schema === parentSchema ? 3 : 2.5)
+    .style('filter', t => t.id === d.id ? 'url(#glow-table)' : 'none');
+
+  ssLinks.transition().duration(280).attr('stroke-opacity', 0.04);
+  mocLinks.transition().duration(280).attr('stroke-opacity', 0.04);
+  stLinks.transition().duration(280)
+    .attr('stroke-opacity', l => {
+      const sid = typeof l.source === 'string' ? l.source : l.source.id;
+      const tid = typeof l.target === 'string' ? l.target : l.target.id;
+      return sid === parentSchema && tid === d.id ? 0.7 : sid === parentSchema ? 0.2 : 0.02;
+    });
+
+  // Highlight active row in side panel if open
+  document.querySelectorAll('.sp-table-row').forEach(r => {
+    r.classList.toggle('active', r.dataset.id === d.id);
+  });
+
+  // Zoom to table
+  if (d.x && d.y) {
+    svg.transition().duration(500).call(zoom.transform,
+      d3.zoomIdentity.translate(W/2, H/2).scale(Math.max(currentZoom, 5)).translate(-d.x, -d.y));
+  }
+}
+
+// ── Side Panel logic ──────────────────────────────────────────────────────────
+let spCurrentSchema = null;
+let spAllTables = [];
+
+function showSidePanel(d) {
+  spCurrentSchema = d;
+  const col = schemaColor(d);
+  const isMoc = d.id === 'Datawarehouse-Libgot';
+
+  // Para el MOC los "hijos" son los 24 schemas; para schemas normales son sus tablas
+  const items = isMoc
+    ? SCHEMAS.filter(s => s.id !== 'Datawarehouse-Libgot').map(s => s.id)
+    : (TABLE_NAMES[d.id] || []);
+  spAllTables = items;
+
+  // Accent bar
+  document.getElementById('sp-accent').style.background = col;
+
+  // Header
+  document.getElementById('sp-name').textContent = (d.emoji ? d.emoji + ' ' : '') + d.id;
+  document.getElementById('sp-desc').textContent = d.desc || '';
+
+  // Meta badges
+  const meta = document.getElementById('sp-meta');
+  const countLabel = isMoc ? '24 schemas' : `${items.length} tablas`;
+  meta.innerHTML = `
+    <span class="sp-badge" style="background:${col}18;color:${col};border-color:${col}33">${d.pais}</span>
+    <span class="sp-badge" style="background:${col}18;color:${col};border-color:${col}33">${d.capa}</span>
+    <span class="sp-badge" style="background:#0d1520;color:#6e7681;border-color:#1e2d3d">${countLabel}</span>
+  `;
+
+  // Sección de conexiones (vacía para MOC, ya que conecta a todos)
+  const chips = document.getElementById('sp-conn-chips');
+  if (isMoc) {
+    chips.innerHTML = '<span style="font-size:10px;color:#374151">Raíz del grafo — conecta a todos los schemas</span>';
+  } else {
+    const conns = EDGES_RAW
+      .filter(([a,b]) => a===d.id || b===d.id)
+      .map(([a,b]) => a===d.id ? b : a);
+    chips.innerHTML = conns.map(s => {
+      const sc = schemaColor(schemaMap[s]);
+      return `<span class="sp-conn-chip" data-schema="${s}" style="border-color:${sc}33;color:${sc}">${s}</span>`;
+    }).join('');
+    chips.querySelectorAll('.sp-conn-chip').forEach(chip => {
+      chip.addEventListener('click', e => {
+        e.stopPropagation();
+        const s = schemaMap[chip.dataset.schema];
+        if (s) focusNode(s);
+      });
+    });
+  }
+
+  // Filter + list
+  document.getElementById('sp-filter').value = '';
+  document.getElementById('sp-filter').placeholder = isMoc ? 'Filtrar schemas...' : 'Filtrar tablas...';
+  renderTableList(items, col, isMoc);
+
+  document.getElementById('sp-filter').oninput = function() {
+    const q = this.value.toLowerCase();
+    renderTableList(q ? items.filter(t => t.includes(q)) : items, col, isMoc);
+  };
+
+  document.getElementById('side-panel').classList.add('open');
+  document.getElementById('hint-base').classList.add('hidden');
+}
+
+function renderTableList(items, col, isMoc) {
+  const container = document.getElementById('sp-tables');
+  const label = isMoc ? 'schema' : 'tabla';
+  document.getElementById('sp-count').textContent = `${items.length} ${label}${items.length !== 1 ? 's' : ''}`;
+
+  if (isMoc) {
+    // Lista de schemas — click navega al schema
+    container.innerHTML = items.map((s, i) => {
+      const sc = schemaMap[s];
+      const sc_col = schemaColor(sc);
+      return `<div class="sp-table-row" data-schema-id="${s}">
+        <span class="sp-dot" style="background:${sc_col}"></span>
+        <span class="sp-tname" title="${s}">${sc ? (sc.emoji ? sc.emoji + ' ' : '') + s : s}</span>
+        <span class="sp-idx">${i+1}</span>
+      </div>`;
+    }).join('');
+    container.querySelectorAll('.sp-table-row').forEach(row => {
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        const s = schemaMap[row.dataset.schemaId];
+        if (s) {
+          document.querySelectorAll('.sp-table-row').forEach(r => r.classList.remove('active'));
+          row.classList.add('active');
+          focusNode(s);
+        }
+      });
+    });
+  } else {
+    // Lista de tablas — click hace focusTable
+    container.innerHTML = items.map((t, i) => {
+      const fullId = `${spCurrentSchema.id}.${t}`;
+      return `<div class="sp-table-row" data-id="${fullId}" data-schema="${spCurrentSchema.id}">
+        <span class="sp-dot" style="background:${col}"></span>
+        <span class="sp-tname" title="${fullId}">${t}</span>
+        <span class="sp-idx">${i+1}</span>
+      </div>`;
+    }).join('');
+    container.querySelectorAll('.sp-table-row').forEach(row => {
+      row.addEventListener('click', e => {
+        e.stopPropagation();
+        const tn = nodeById[row.dataset.id];
+        if (tn) {
+          document.querySelectorAll('.sp-table-row').forEach(r => r.classList.remove('active'));
+          row.classList.add('active');
+          focusTable(tn);
+        }
+      });
+    });
+  }
+}
+
+function hideSidePanel() {
+  document.getElementById('side-panel').classList.remove('open');
+  document.getElementById('hint-base').classList.remove('hidden');
+  spCurrentSchema = null;
+}
+
+document.getElementById('sp-close').addEventListener('click', e => {
+  e.stopPropagation();
+  hideSidePanel();
+  resetFocus();
+});
+
+function resetFocus() {
+  focusedNode = null;
+  schemaG.each(function(n) {
+    d3.select(this).select('circle')
+      .transition().duration(300)
+      .attr('fill-opacity', 0.88).attr('stroke-opacity', 1)
+      .style('filter', n.id === 'Datawarehouse-Libgot' ? 'url(#glow-moc)' : 'url(#glow-schema)');
+    d3.select(this).selectAll('text').transition().duration(300).attr('fill-opacity', 1);
+  });
+  ssLinks.transition().duration(300).attr('stroke', '#374151').attr('stroke-opacity', 0.48).attr('stroke-width', 1.5);
+  mocLinks.transition().duration(300).attr('stroke-opacity', 0.32).attr('stroke-width', 1.2);
+  tableNodes.transition().duration(300).attr('fill-opacity', 0.65).attr('r', 3).style('filter', 'none');
+  stLinks.transition().duration(300).attr('stroke-opacity', 0.16).attr('stroke-width', 0.5);
+  updateTableLabels();
+  hideSidePanel();
+}
+
+svg.on('click', () => resetFocus());
+
+// ── Nudge ─────────────────────────────────────────────────────────────────────
+function nudge(schema, strength) {
+  const tn = tableNodesBySchema[schema.id] || [];
+  tn.forEach(t => {
+    const a = Math.random() * Math.PI * 2;
+    t.vx = (t.vx || 0) + Math.cos(a) * strength;
+    t.vy = (t.vy || 0) + Math.sin(a) * strength;
+  });
+  if (tn.length) sim.alpha(Math.max(sim.alpha(), 0.1)).restart();
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+d3.select('#srch').on('input', function() {
+  const q = this.value.toLowerCase().trim();
+  if (!q) { resetFocus(); return; }
+
+  // Try schema match first
+  const sm = SCHEMAS.find(s => s.id.toLowerCase().includes(q) && s.id !== 'Datawarehouse-Libgot');
+  if (sm) {
+    focusNode(sm);
+    const node = ALL_NODES.find(n => n.id === sm.id);
+    if (node && node.x) {
+      svg.transition().duration(650).call(zoom.transform,
+        d3.zoomIdentity.translate(W/2, H/2).scale(2.5).translate(-node.x, -node.y));
+    }
+    return;
+  }
+
+  // Try table match
+  const tm = ALL_NODES.find(n => n.tipo === 'tabla' && n.name.toLowerCase().includes(q));
+  if (tm) {
+    focusTable(tm);
+  }
+});
+
+// ── Reset button ──────────────────────────────────────────────────────────────
+d3.select('#rst').on('click', () => {
+  resetFocus();
+  d3.select('#srch').property('value', '');
+  svg.transition().duration(700).call(zoom.transform, d3.zoomIdentity);
+});
+
+// ── Tick ──────────────────────────────────────────────────────────────────────
+sim.on('tick', () => {
+  mocLinks.attr('x1', d => (d.source.x || W/2)).attr('y1', d => (d.source.y || H/2))
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  ssLinks.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+         .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  stLinks.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+         .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  tableNodes.attr('cx', d => d.x).attr('cy', d => d.y);
+  tableLabels.attr('x', d => d.x).attr('y', d => d.y);
+  schemaG.attr('transform', d => `translate(${d.x},${d.y})`);
+});
+
+sim.on('end', () => sim.alphaTarget(0.002).restart());
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  const W2 = window.innerWidth, H2 = window.innerHeight;
+  svg.attr('width', W2).attr('height', H2);
+  moc.fx = W2/2; moc.fy = H2/2;
+  sim.force('x', d3.forceX(W2/2).strength(0.014))
+     .force('y', d3.forceY(H2/2).strength(0.014))
+     .alpha(0.1).restart();
+});
+</script>
+</body>
+</html>

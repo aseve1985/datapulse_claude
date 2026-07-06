@@ -1209,6 +1209,15 @@ async function startServer() {
     });
   });
 
+  // Serve files from examples/ (BI Obsidian graph, etc.)
+  app.get('/examples/:filename', (req, res) => {
+    const filename = path.basename(req.params.filename);
+    const filePath = path.resolve(process.cwd(), 'examples', filename);
+    res.sendFile(filePath, (err) => {
+      if (err) res.status(404).json({ error: 'Example not found' });
+    });
+  });
+
   // ── UIF Endpoints ──────────────────────────────────────────────────────────────
   const redshiftPool = (
     process.env.REDSHIFT_HOST &&
