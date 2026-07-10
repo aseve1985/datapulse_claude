@@ -285,6 +285,78 @@ function createDataDigest(salesData: any[]) {
   };
 }
 
+// Digest específico para admin-gastos: incluye el cruce proveedor × mes que el digest genérico no produce
+function createGastosDigest(data: any[]) {
+  if (!data || data.length === 0) return "No hay datos disponibles.";
+
+  const parseAmt = (v: any) => parseFloat(String(v || '0')) || 0;
+
+  // Para cada combinación pais+moneda, calcula el gasto mensual de cada proveedor
+  const buckets: Record<string, Record<string, Record<string, number>>> = {};
+  // buckets[pais_moneda][proveedor][mes] = total
+
+  data.forEach(r => {
+    const pais   = String(r.pais   || '').toUpperCase();
+    const moneda = String(r.moneda || '');
+    const prov   = String(r.proveedor || '').trim();
+    const mes    = String(r.fecha_creacion || '').slice(0, 7); // 'YYYY-MM'
+    if (!pais || !moneda || moneda === 'true' || !prov || !mes) return;
+
+    const key = `${pais}_${moneda}`;
+    if (!buckets[key]) buckets[key] = {};
+    if (!buckets[key][prov]) buckets[key][prov] = {};
+    buckets[key][prov][mes] = (buckets[key][prov][mes] || 0) + parseAmt(r.monto);
+  });
+
+  // Top 15 proveedores por total para cada bucket, con variación entre meses
+  const gasto_proveedor_por_mes: Record<string, any[]> = {};
+
+  Object.entries(buckets).forEach(([key, provs]) => {
+    const entries = Object.entries(provs)
+      .map(([proveedor, meses]) => {
+        const mesesOrdenados = Object.keys(meses).sort();
+        const total = Object.values(meses).reduce((a, b) => a + b, 0);
+        // Variación entre primer y último mes
+        const primero = meses[mesesOrdenados[0]] || 0;
+        const ultimo  = meses[mesesOrdenados[mesesOrdenados.length - 1]] || 0;
+        const variacion_pct = primero > 0 ? Math.round((ultimo - primero) / primero * 100) : null;
+        return { proveedor, total: Math.round(total), meses, variacion_pct };
+      })
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 15);
+
+    gasto_proveedor_por_mes[key] = entries;
+  });
+
+  // Resumen por pais+moneda (totales y top categorías)
+  const resumen: Record<string, any> = {};
+  Object.entries(buckets).forEach(([key, provs]) => {
+    const total = Object.values(provs).flatMap(m => Object.values(m)).reduce((a, b) => a + b, 0);
+    const mesesSet = new Set(Object.values(provs).flatMap(m => Object.keys(m)));
+    const meses_en_datos = [...mesesSet].sort();
+
+    // Totales mensuales del bucket
+    const total_por_mes: Record<string, number> = {};
+    meses_en_datos.forEach(mes => {
+      total_por_mes[mes] = Object.values(provs).reduce((s, m) => s + (m[mes] || 0), 0);
+    });
+
+    resumen[key] = {
+      total_general: Math.round(total),
+      meses_disponibles: meses_en_datos,
+      total_por_mes,
+      cantidad_proveedores: Object.keys(provs).length,
+    };
+  });
+
+  return {
+    descripcion: 'Digest de Pago a Proveedores con desglose mensual por proveedor',
+    total_registros: data.length,
+    resumen_por_pais_moneda: resumen,
+    gasto_proveedor_por_mes,
+  };
+}
+
 const MODULE_CONTEXTS: Record<string, string> = {
   sales: `Estás analizando datos del módulo de VENTAS. El foco es: ingresos, productos más vendidos, clientes, tendencias comerciales y ticket promedio.`,
   collections: `Estás analizando datos del módulo de COBRANZAS. El foco es: pagos recibidos, cartera vencida, mora, eficiencia de recaudación y aging de deuda.`,
@@ -296,6 +368,7 @@ const MODULE_CONTEXTS: Record<string, string> = {
   board: `Estás analizando datos del módulo de DIRECTORIO. El foco es: KPIs estratégicos de alto nivel, resumen ejecutivo y visión global del negocio.`,
   product: `Estás analizando datos del módulo de PRODUCTO. El foco es: ciclo de vida del producto, inventario, adopción y desarrollo.`,
   administration: `Estás analizando datos del módulo de ADMINISTRACIÓN. El foco es: procesos internos, recursos operativos y gestión administrativa.`,
+  'admin-gastos': `Estás analizando datos del módulo de PAGO A PROVEEDORES. El foco es: facturas pagadas, gastos por proveedor, clasificación contable por cuenta y agrupación, tipos de comprobante (factura, nota_de_debito) y comparativa entre ARG y COL. Columnas clave: proveedor, empresa_facturadora, monto, tipo, moneda, estado_aprobacion, cuenta_contable_agrupacion.`,
 };
 
 function buildDataPrompt(
@@ -403,7 +476,9 @@ export async function generateInsights(
       }
     `;
   } else {
-    const dataDigest = createDataDigest(salesData);
+    const dataDigest = moduleId === 'admin-gastos'
+      ? createGastosDigest(salesData)
+      : createDataDigest(salesData);
     const filtersDescription = activeFilters
       .filter(f => f.values.length > 0)
       .map(f => `${f.field}: ${f.values.join(', ')}`)
@@ -458,7 +533,9 @@ export async function chatWithData(
     `;
   } else {
     const isApiModule = moduleId && MODULE_CONTEXTS[moduleId];
-    const dataDigest = createDataDigest(salesData);
+    const dataDigest = moduleId === 'admin-gastos'
+      ? createGastosDigest(salesData)
+      : createDataDigest(salesData);
     const filtersDescription = activeFilters
       .filter(f => f.values.length > 0)
       .map(f => `${f.field}: ${f.values.join(' | ')}`)

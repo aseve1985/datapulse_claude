@@ -258,7 +258,15 @@ const modules = [
     description: 'Control de procesos internos, recursos y gestión operativa.',
     icon: Settings,
     color: 'bg-zinc-800',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'admin-gastos',
+        title: 'Pago a Proveedores',
+        description: 'Análisis de facturas y pagos a proveedores con IA. Clasificación por cuenta contable, proveedor y país.',
+        color: 'bg-zinc-800'
+      }
+    ]
   }
 ];
 

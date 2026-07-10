@@ -143,6 +143,7 @@ const MODULE_MAPPING: Record<string, string> = {
   'Directorio': 'board',
   'Producto': 'product',
   'Administración': 'administration',
+  'Administracion': 'administration',
   'Servicios': 'services'
 };
 
@@ -1514,6 +1515,31 @@ async function startServer() {
     riBcraTasasCache = { data: safe, fetchedAt: Date.now() };
     console.log(`[RI-BCRA-TASAS] Cache loaded: ${safe.length} rows`);
   }
+
+  app.get('/api/gastos-proveedores', async (req, res) => {
+    if (!redshiftPool) return res.status(503).json({ error: 'Redshift no configurado' });
+    const fecha_desde = req.query.fecha_desde as string;
+    const fecha_hasta = req.query.fecha_hasta as string;
+    if (!fecha_desde || !fecha_hasta) return res.status(400).json({ error: 'fecha_desde y fecha_hasta son requeridos' });
+    try {
+      console.log(`[Gastos] Querying ${fecha_desde} → ${fecha_hasta}`);
+      const result = await redshiftPool.query(
+        `SELECT pais, id_factura, fecha_creacion, fecha_vencimiento, cuit,
+                empresa_facturadora, proveedor, monto, estado, detalle_contabilidad,
+                estado_aprobacion, tipo, moneda, cuenta_contable, cuenta_contable_agrupacion
+         FROM platinum_ia.vw_gastos_multipais
+         WHERE fecha_creacion BETWEEN $1 AND $2
+         ORDER BY fecha_creacion DESC`,
+        [fecha_desde, fecha_hasta]
+      );
+      const safe = JSON.parse(JSON.stringify(result.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      console.log(`[Gastos] ${safe.length} registros`);
+      res.json({ records: safe, total: safe.length });
+    } catch (error: any) {
+      console.error('[Gastos] Error:', error);
+      res.status(500).json({ error: 'Error al cargar gastos', details: error.message });
+    }
+  });
 
   app.get('/api/ri-bcra-tasas', async (_req, res) => {
     try {
