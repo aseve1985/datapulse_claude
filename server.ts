@@ -1541,6 +1541,29 @@ async function startServer() {
     }
   });
 
+  app.get('/api/comunicaciones', async (req, res) => {
+    if (!redshiftPool) return res.status(503).json({ error: 'Redshift no configurado' });
+    const fecha_desde = req.query.fecha_desde as string;
+    const fecha_hasta = req.query.fecha_hasta as string;
+    if (!fecha_desde || !fecha_hasta) return res.status(400).json({ error: 'fecha_desde y fecha_hasta son requeridos' });
+    try {
+      console.log(`[Comunicaciones] Querying ${fecha_desde} → ${fecha_hasta}`);
+      const result = await redshiftPool.query(
+        `SELECT fecha_envio, plataforma, proveedor, canal, pais, tipo_mensaje, sender, total_envios
+         FROM platinum_ia.vw_comunicaciones_multipais
+         WHERE fecha_envio BETWEEN $1 AND $2
+         ORDER BY fecha_envio DESC`,
+        [fecha_desde, fecha_hasta]
+      );
+      const safe = JSON.parse(JSON.stringify(result.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      console.log(`[Comunicaciones] ${safe.length} registros`);
+      res.json({ records: safe, total: safe.length });
+    } catch (error: any) {
+      console.error('[Comunicaciones] Error:', error);
+      res.status(500).json({ error: 'Error al cargar comunicaciones', details: error.message });
+    }
+  });
+
   app.get('/api/ri-bcra-tasas', async (_req, res) => {
     try {
       if (!redshiftPool) return res.status(503).json({ error: 'Redshift no configurado' });

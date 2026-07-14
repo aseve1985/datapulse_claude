@@ -369,6 +369,12 @@ const MODULE_CONTEXTS: Record<string, string> = {
   product: `Estás analizando datos del módulo de PRODUCTO. El foco es: ciclo de vida del producto, inventario, adopción y desarrollo.`,
   administration: `Estás analizando datos del módulo de ADMINISTRACIÓN. El foco es: procesos internos, recursos operativos y gestión administrativa.`,
   'admin-gastos': `Estás analizando datos del módulo de PAGO A PROVEEDORES. El foco es: facturas pagadas, gastos por proveedor, clasificación contable por cuenta y agrupación, tipos de comprobante (factura, nota_de_debito) y comparativa entre ARG y COL. Columnas clave: proveedor, empresa_facturadora, monto, tipo, moneda, estado_aprobacion, cuenta_contable_agrupacion.`,
+  'marketing-comunicaciones': `Estás analizando datos del módulo de COMUNICACIONES de Marketing. El foco es: volumen de envíos por canal y plataforma, cobertura por país (Argentina y Colombia), tipos de mensaje, proveedores de comunicaciones y rendimiento por sender. Columnas clave: fecha_envio, plataforma, proveedor, canal, pais, tipo_mensaje, sender, total_envios.
+
+REGLAS CRÍTICAS PARA ESTE MÓDULO:
+- total_envios es una CANTIDAD de mensajes enviados (unidades enteras), NO un valor monetario. Nunca apliques cotizaciones de dólar, ARS, COP ni ninguna conversión de moneda sobre esta columna.
+- No existe costo, monto ni precio en este dataset. No inferras valores en USD ni en ninguna otra moneda.
+- El análisis debe centrarse en volumen de envíos, tendencias temporales, distribución por canal/proveedor/tipo y comparación entre países. Nada más.`,
 };
 
 function buildDataPrompt(

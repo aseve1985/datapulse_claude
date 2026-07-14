@@ -150,7 +150,27 @@ const modules = [
     description: 'Performance de campañas, ROI y adquisición de clientes.',
     icon: Megaphone,
     color: 'bg-blue-800',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'marketing-kpis',
+        title: 'KPIs Estratégicos',
+        description: 'Dashboard de performance de campañas, leads y conversión con análisis de IA.',
+        color: 'bg-blue-800'
+      },
+      {
+        id: 'marketing-comunicaciones',
+        title: 'Comunicaciones',
+        description: 'Análisis de envíos por canal, plataforma y tipo de mensaje.',
+        color: 'bg-blue-800'
+      },
+      {
+        id: 'marketing-estrategia',
+        title: 'Estrategia de Contacto',
+        description: 'Mapa conceptual de la estrategia de comunicaciones de marketing.',
+        color: 'bg-blue-800'
+      }
+    ]
   },
   {
     id: 'finance',

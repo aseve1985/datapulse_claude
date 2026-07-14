@@ -2,35 +2,26 @@ import { useState, useEffect, useMemo, useRef, useCallback, ReactNode } from 're
 import { motion } from 'framer-motion';
 import {
   Loader2, AlertCircle, RefreshCcw, Sparkles, Send, Bot, User,
-  Receipt, Building2, ChevronLeft, ChevronRight, Filter, X, TrendingUp
+  MessageSquare, Layers, ChevronLeft, ChevronRight, Filter, X, TrendingUp,
 } from 'lucide-react';
+import MultiSelect from '../ui/MultiSelect';
 import { Chart, registerables } from 'chart.js';
 import { generateInsights, chatWithData } from '../../services/gemini';
-import MultiSelect from '../ui/MultiSelect';
 
 Chart.register(...registerables);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface GastoRecord {
-  pais: string;
-  id_factura: number;
-  fecha_creacion: string;
-  fecha_vencimiento: string;
-  cuit: string;
-  empresa_facturadora: string;
+interface ComunicacionRecord {
+  fecha_envio: string;
+  plataforma: string;
   proveedor: string;
-  monto: string;
-  estado: string;
-  detalle_contabilidad: string;
-  estado_aprobacion: string;
-  tipo: string;
-  moneda: string;
-  cuenta_contable: string;
-  cuenta_contable_agrupacion: string;
+  canal: string;
+  pais: string;
+  tipo_mensaje: string;
+  sender: string;
+  total_envios: number;
 }
-
-interface ProvStats { name: string; total: number; growing: boolean; pct: number }
 
 interface Props { userEmail?: string; }
 
@@ -38,88 +29,117 @@ interface Props { userEmail?: string; }
 
 function defaultDates() {
   const today = new Date();
-  const desde = new Date(today.getFullYear(), today.getMonth() - 1, 1);      // 1° del mes anterior
-  const hasta = new Date(today.getFullYear(), today.getMonth(), 0);           // último día del mes anterior
-  return { desde: desde.toISOString().slice(0, 10), hasta: hasta.toISOString().slice(0, 10) };
+  const desde = new Date(today.getFullYear(), today.getMonth() - 5, 1); // 6 meses atrás, 1° del mes
+  return { desde: desde.toISOString().slice(0, 10), hasta: today.toISOString().slice(0, 10) };
 }
 
 const fmt = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const fmtNum = (n: number) => fmt.format(Math.round(n));
 const fmtDate = (d: string) => d ? d.slice(0, 10) : '—';
-const parseAmt = (v: string | number) => parseFloat(String(v || '0')) || 0;
 
 const PAGE_SIZE = 20;
 
-const ESTADO_COLORS: Record<string, string> = {
-  approved: 'bg-emerald-900/40 text-emerald-400 border-emerald-700/40',
-  pending:  'bg-amber-900/40 text-amber-400 border-amber-700/40',
-  rejected: 'bg-red-900/40 text-red-400 border-red-700/40',
+const PALETTE = [
+  '#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6',
+  '#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6',
+  '#a78bfa','#fb923c','#34d399','#f87171','#60a5fa',
+];
+
+// Plugin inline que dibuja el valor sobre cada punto
+const dataLabelsPlugin = {
+  id: 'mktDataLabels',
+  afterDatasetsDraw(chart: Chart) {
+    const ctx = chart.ctx;
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i);
+      if (meta.hidden) return;
+      meta.data.forEach((el, idx) => {
+        const v = ds.data[idx] as number;
+        if (!v) return;
+        ctx.save();
+        ctx.fillStyle = (ds.borderColor as string) || '#fff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v), el.x, el.y - 4);
+        ctx.restore();
+      });
+    });
+  },
 };
 
-const TIPO_LABELS: Record<string, string> = {
-  factura: 'Factura', nota_de_debito: 'N. Débito', nota_de_credito: 'N. Crédito',
-};
+// ── LineChart ─────────────────────────────────────────────────────────────────
 
-// ── Chart — horizontal bar, total por proveedor ───────────────────────────────
+interface LineDataset { label: string; data: number[]; color: string }
 
-function ProveedorChart({ data, color, moneda }: {
-  data: ProvStats[]; color: string; moneda: string;
-}) {
+function LineChart({ labels, datasets, title }: { labels: string[]; datasets: LineDataset[]; title: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const chartRef  = useRef<Chart | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current || data.length === 0) return;
+    if (!canvasRef.current || labels.length === 0) return;
     chartRef.current?.destroy();
     chartRef.current = new Chart(canvasRef.current, {
-      type: 'bar',
+      type: 'line',
       data: {
-        labels: data.map(d => d.name.length > 32 ? d.name.slice(0, 32) + '…' : d.name),
-        datasets: [{
-          data: data.map(d => d.total),
-          backgroundColor: data.map(d => d.growing ? 'rgba(239,68,68,0.65)' : `${color}99`),
-          borderColor:     data.map(d => d.growing ? 'rgba(239,68,68,0.9)'  : color),
-          borderWidth: 1,
-          borderRadius: 4,
-        }],
+        labels,
+        datasets: datasets.map(ds => ({
+          label: ds.label,
+          data: ds.data,
+          borderColor: ds.color,
+          backgroundColor: ds.color + '22',
+          pointBackgroundColor: ds.color,
+          borderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.3,
+          fill: false,
+        })),
       },
       options: {
-        indexAxis: 'y',
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { display: false },
+          legend: {
+            position: 'top',
+            labels: { color: '#9ca3af', font: { size: 10 }, boxWidth: 12, padding: 12 },
+          },
           tooltip: {
             callbacks: {
-              label: ctx => ` ${fmtNum(ctx.parsed.x ?? 0)} ${moneda}`,
-              afterLabel: ctx => {
-                const d = data[ctx.dataIndex];
-                return d.growing
-                  ? `▲ subiendo ${(d.pct * 100).toFixed(0)}% vs 1ª mitad`
-                  : `▼ estable o bajando`;
-              },
+              label: ctx => ` ${ctx.dataset.label}: ${new Intl.NumberFormat('es-AR').format(ctx.parsed.y ?? 0)}`,
             },
           },
         },
         scales: {
           x: {
-            ticks: { color: '#6b7280', font: { size: 10 }, callback: v => fmtNum(Number(v)) },
+            ticks: { color: '#6b7280', font: { size: 9 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 20 },
             grid: { color: 'rgba(255,255,255,0.04)' },
           },
-          y: { ticks: { color: '#d1d5db', font: { size: 10 } }, grid: { display: false } },
+          y: {
+            ticks: { color: '#6b7280', font: { size: 10 }, callback: v => new Intl.NumberFormat('es-AR').format(Number(v)) },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+          },
         },
       },
+      plugins: [dataLabelsPlugin],
     });
     return () => { chartRef.current?.destroy(); };
-  }, [data, color, moneda]);
+  }, [labels, datasets]);
 
-  if (data.length === 0) return (
-    <div className="flex items-center justify-center h-32 text-zinc-600 text-sm">Sin datos para el período</div>
+  if (labels.length === 0) return (
+    <div className="flex items-center justify-center h-40 text-zinc-600 text-sm">Sin datos para el período</div>
   );
 
   return (
-    <div style={{ height: Math.max(150, data.length * 30) }}>
-      <canvas ref={canvasRef} />
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingUp className="w-4 h-4 text-zinc-500" />
+        <span className="text-sm font-bold text-white">{title}</span>
+      </div>
+      <div style={{ height: Math.max(220, datasets.length * 28 + 140) }}>
+        <canvas ref={canvasRef} />
+      </div>
     </div>
   );
 }
@@ -165,22 +185,22 @@ function DualScroll({ children, maxHeight = '60vh' }: { children: ReactNode; max
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
+export default function MktComunicacionesSubmodule({ userEmail }: Props) {
   const dates        = useMemo(defaultDates, []);
-  const containerRef  = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  const [records, setRecords] = useState<GastoRecord[]>([]);
+  const [records, setRecords] = useState<ComunicacionRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
   const [desde, setDesde] = useState(dates.desde);
   const [hasta, setHasta] = useState(dates.hasta);
 
-  const [filterPais,      setFilterPais]      = useState<string[]>([]);
-  const [filterProveedor, setFilterProveedor] = useState('');
-  const [filterCategoria, setFilterCategoria] = useState<string[]>([]);
-  const [filterEstado,    setFilterEstado]    = useState<string[]>([]);
+  const [filterPais,       setFilterPais]       = useState<string[]>([]);
+  const [filterCanal,      setFilterCanal]      = useState<string[]>([]);
+  const [filterTipo,       setFilterTipo]       = useState<string[]>([]);
+  const [filterSender,     setFilterSender]     = useState<string[]>([]);
+  const [filterPlataforma, setFilterPlataforma] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   const [insights,        setInsights]        = useState<any>(null);
@@ -197,7 +217,7 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
     setInsights(null);
     setChatMessages([]);
     try {
-      const res = await fetch(`/api/gastos-proveedores?fecha_desde=${desde}&fecha_hasta=${hasta}`);
+      const res = await fetch(`/api/comunicaciones?fecha_desde=${desde}&fecha_hasta=${hasta}`);
       if (!res.ok) throw new Error((await res.json()).error || 'Error al cargar datos');
       const data = await res.json();
       setRecords(data.records);
@@ -207,7 +227,7 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
         setInsightsLoading(true);
         try {
           const result = await generateInsights(
-            data.records, { from: desde, to: hasta }, [], userEmail, 'admin-gastos'
+            data.records, { from: desde, to: hasta }, [], userEmail, 'marketing-comunicaciones'
           );
           setInsights(result);
         } finally {
@@ -223,7 +243,6 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
 
   useEffect(() => { loadData(); }, []);
 
-  // Scroll solo dentro del contenedor del chat, sin mover la página
   useEffect(() => {
     const el = chatScrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -232,82 +251,94 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
   // ── Derived ──
 
   const filtered = useMemo(() => records.filter(r =>
-    (!filterPais.length      || filterPais.includes(r.pais)) &&
-    (!filterProveedor        || r.proveedor?.toLowerCase().includes(filterProveedor.toLowerCase())) &&
-    (!filterCategoria.length || filterCategoria.includes(r.cuenta_contable_agrupacion)) &&
-    (!filterEstado.length    || filterEstado.includes(r.estado_aprobacion))
-  ), [records, filterPais, filterProveedor, filterCategoria, filterEstado]);
+    (!filterPais.length       || filterPais.includes(r.pais)) &&
+    (!filterCanal.length      || filterCanal.includes(r.canal)) &&
+    (!filterTipo.length       || filterTipo.includes(r.tipo_mensaje)) &&
+    (!filterSender.length     || filterSender.includes(r.sender)) &&
+    (!filterPlataforma.length || filterPlataforma.includes(r.plataforma))
+  ), [records, filterPais, filterCanal, filterTipo, filterSender, filterPlataforma]);
 
   const paginated  = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), [filtered, page]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 
-  // Opciones de cada filtro derivadas del dataset ya filtrado por los DEMÁS filtros activos (excluye el propio)
-  const estadoOptions = useMemo(() => {
+  // Cascading filter options — each excludes its own filter when computing options
+  const canalOptions = useMemo(() => {
     const base = records.filter(r =>
-      (!filterPais.length      || filterPais.includes(r.pais)) &&
-      (!filterProveedor        || r.proveedor?.toLowerCase().includes(filterProveedor.toLowerCase())) &&
-      (!filterCategoria.length || filterCategoria.includes(r.cuenta_contable_agrupacion))
+      (!filterPais.length       || filterPais.includes(r.pais)) &&
+      (!filterTipo.length       || filterTipo.includes(r.tipo_mensaje)) &&
+      (!filterSender.length     || filterSender.includes(r.sender)) &&
+      (!filterPlataforma.length || filterPlataforma.includes(r.plataforma))
     );
-    return [...new Set(base.map(r => r.estado_aprobacion).filter(Boolean))].sort();
-  }, [records, filterPais, filterProveedor, filterCategoria]);
+    return [...new Set(base.map(r => r.canal).filter(Boolean))].sort();
+  }, [records, filterPais, filterTipo, filterSender, filterPlataforma]);
 
-  const categoriaOptions = useMemo(() => {
+  const tipoOptions = useMemo(() => {
+    const base = records.filter(r =>
+      (!filterPais.length       || filterPais.includes(r.pais)) &&
+      (!filterCanal.length      || filterCanal.includes(r.canal)) &&
+      (!filterSender.length     || filterSender.includes(r.sender)) &&
+      (!filterPlataforma.length || filterPlataforma.includes(r.plataforma))
+    );
+    return [...new Set(base.map(r => r.tipo_mensaje).filter(Boolean))].sort();
+  }, [records, filterPais, filterCanal, filterSender, filterPlataforma]);
+
+  const senderOptions = useMemo(() => {
+    const base = records.filter(r =>
+      (!filterPais.length       || filterPais.includes(r.pais)) &&
+      (!filterCanal.length      || filterCanal.includes(r.canal)) &&
+      (!filterTipo.length       || filterTipo.includes(r.tipo_mensaje)) &&
+      (!filterPlataforma.length || filterPlataforma.includes(r.plataforma))
+    );
+    return [...new Set(base.map(r => r.sender).filter(Boolean))].sort();
+  }, [records, filterPais, filterCanal, filterTipo, filterPlataforma]);
+
+  const plataformaOptions = useMemo(() => {
     const base = records.filter(r =>
       (!filterPais.length   || filterPais.includes(r.pais)) &&
-      (!filterProveedor     || r.proveedor?.toLowerCase().includes(filterProveedor.toLowerCase())) &&
-      (!filterEstado.length || filterEstado.includes(r.estado_aprobacion))
+      (!filterCanal.length  || filterCanal.includes(r.canal)) &&
+      (!filterTipo.length   || filterTipo.includes(r.tipo_mensaje)) &&
+      (!filterSender.length || filterSender.includes(r.sender))
     );
-    return [...new Set(base.map(r => r.cuenta_contable_agrupacion).filter(Boolean))].sort();
-  }, [records, filterPais, filterProveedor, filterEstado]);
+    return [...new Set(base.map(r => r.plataforma).filter(Boolean))].sort();
+  }, [records, filterPais, filterCanal, filterTipo, filterSender]);
 
   // KPIs
   const kpis = useMemo(() => {
-    const sum = (pais: string, moneda: string) =>
-      filtered.filter(r => r.pais === pais && r.moneda === moneda).reduce((s, r) => s + parseAmt(r.monto), 0);
+    const totalEnvios = (pais: string) =>
+      filtered.filter(r => r.pais === pais).reduce((s, r) => s + (Number(r.total_envios) || 0), 0);
     return {
-      argARS: sum('ARG', 'ARS'), argUSD: sum('ARG', 'USD'),
-      colCOP: sum('COL', 'COP'), colUSD: sum('COL', 'USD'),
-      facturas:    filtered.length,
-      proveedores: new Set(filtered.map(r => r.proveedor)).size,
+      arg:     totalEnvios('Argentina'),
+      col:     totalEnvios('Colombia'),
+      canales: new Set(filtered.map(r => r.canal).filter(Boolean)).size,
+      tipos:   new Set(filtered.map(r => r.tipo_mensaje).filter(Boolean)).size,
     };
   }, [filtered]);
 
-  // Gráficos — top 10 por total, color indica tendencia (1ª mitad vs 2ª mitad)
-  const proveedorStats = useMemo(() => {
-    const midDate = (() => {
-      const s = new Date(desde).getTime(), e = new Date(hasta).getTime();
-      return new Date((s + e) / 2).toISOString().slice(0, 10);
-    })();
+  // ── Chart data ──
 
-    const build = (pais: string, moneda: string): ProvStats[] => {
-      const stats: Record<string, { total: number; h1: number; h2: number }> = {};
-      filtered
-        .filter(r => r.pais === pais && r.moneda === moneda && r.proveedor)
-        .forEach(r => {
-          const p = r.proveedor;
-          if (!stats[p]) stats[p] = { total: 0, h1: 0, h2: 0 };
-          const amt = parseAmt(r.monto);
-          stats[p].total += amt;
-          if (r.fecha_creacion <= midDate) stats[p].h1 += amt; else stats[p].h2 += amt;
-        });
-      return Object.entries(stats)
-        .sort(([, a], [, b]) => b.total - a.total)
-        .slice(0, 10)
-        .map(([name, s]) => ({
-          name,
-          total:   s.total,
-          growing: s.h2 > s.h1,
-          pct:     s.h1 > 0 ? (s.h2 - s.h1) / s.h1 : 0,
-        }));
-    };
+  const buildLineChart = (keyFn: (r: ComunicacionRecord) => string) => {
+    const dates = [...new Set(filtered.map(r => r.fecha_envio?.slice(0, 10)).filter(Boolean))].sort() as string[];
+    const keys  = [...new Set(filtered.map(keyFn).filter(Boolean))].sort();
+    const datasets: LineDataset[] = keys.map((key, i) => ({
+      label: key,
+      color: PALETTE[i % PALETTE.length],
+      data: dates.map(d =>
+        filtered
+          .filter(r => r.fecha_envio?.startsWith(d) && keyFn(r) === key)
+          .reduce((s, r) => s + (Number(r.total_envios) || 0), 0)
+      ),
+    }));
+    return { labels: dates, datasets };
+  };
 
-    return {
-      argARS: build('ARG', 'ARS'),
-      argUSD: build('ARG', 'USD'),
-      colCOP: build('COL', 'COP'),
-      colUSD: build('COL', 'USD'),
-    };
-  }, [filtered, desde, hasta]);
+  const chartPlatCanal = useMemo(
+    () => buildLineChart(r => [r.plataforma, r.canal].filter(Boolean).join(' / ')),
+    [filtered] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const chartTipo = useMemo(
+    () => buildLineChart(r => r.tipo_mensaje),
+    [filtered] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // ── AI ──
 
@@ -315,7 +346,7 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
     if (filtered.length === 0) return;
     setInsightsLoading(true);
     try {
-      const result = await generateInsights(filtered, { from: desde, to: hasta }, [], userEmail, 'admin-gastos');
+      const result = await generateInsights(filtered, { from: desde, to: hasta }, [], userEmail, 'marketing-comunicaciones');
       setInsights(result);
     } finally {
       setInsightsLoading(false);
@@ -330,7 +361,7 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
     setChatInput('');
     setChatLoading(true);
     try {
-      const reply = await chatWithData(newMsgs, filtered.length > 0 ? filtered : records, [], userEmail, 'admin-gastos');
+      const reply = await chatWithData(newMsgs, filtered.length > 0 ? filtered : records, [], userEmail, 'marketing-comunicaciones');
       setChatMessages([...newMsgs, { role: 'model' as const, content: reply }]);
     } finally {
       setChatLoading(false);
@@ -338,15 +369,15 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
   };
 
   const clearFilters = () => {
-    setFilterPais([]); setFilterProveedor(''); setFilterCategoria([]); setFilterEstado([]); setPage(1);
+    setFilterPais([]); setFilterCanal([]); setFilterTipo([]); setFilterSender([]); setFilterPlataforma([]); setPage(1);
   };
-  const hasFilters = filterPais.length > 0 || filterProveedor || filterCategoria.length > 0 || filterEstado.length > 0;
+  const hasFilters = filterPais.length > 0 || filterCanal.length > 0 || filterTipo.length > 0 || filterSender.length > 0 || filterPlataforma.length > 0;
 
   if (loading && records.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-        <p className="text-zinc-400 text-sm">Cargando gastos de proveedores...</p>
+        <p className="text-zinc-400 text-sm">Cargando datos de comunicaciones...</p>
       </div>
     );
   }
@@ -354,13 +385,13 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
   // ── Render ──
 
   return (
-    <div ref={containerRef} className="flex-1 flex flex-col p-6 gap-5 overflow-auto">
+    <div className="flex-1 flex flex-col p-6 gap-5 overflow-auto">
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-white">Administración › Pago a Proveedores</h2>
+          <h2 className="text-lg font-bold text-white">Marketing › Comunicaciones</h2>
           <p className="text-zinc-500 text-sm mt-0.5">{records.length} registros — {desde} → {hasta}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -399,18 +430,8 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400">ARG</span>
               <span className="text-[10px] text-zinc-600 font-bold">Argentina</span>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-end justify-between">
-                <span className="text-[10px] text-zinc-500 font-bold">ARS</span>
-                <span className="text-lg font-bold text-white leading-none">{fmtNum(kpis.argARS)}</span>
-              </div>
-              {kpis.argUSD > 0 && (
-                <div className="flex items-end justify-between border-t border-slate-800 pt-1.5">
-                  <span className="text-[10px] text-zinc-500 font-bold">USD</span>
-                  <span className="text-base font-bold text-zinc-300 leading-none">{fmtNum(kpis.argUSD)}</span>
-                </div>
-              )}
-            </div>
+            <p className="text-2xl font-bold text-white">{fmtNum(kpis.arg)}</p>
+            <p className="text-[10px] text-zinc-500">total envíos</p>
           </div>
 
           <div className="bg-slate-900 border border-amber-500/20 rounded-xl p-4 flex flex-col gap-3">
@@ -418,37 +439,25 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400">COL</span>
               <span className="text-[10px] text-zinc-600 font-bold">Colombia</span>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-end justify-between">
-                <span className="text-[10px] text-zinc-500 font-bold">COP</span>
-                <span className="text-lg font-bold text-white leading-none">{fmtNum(kpis.colCOP)}</span>
-              </div>
-              {kpis.colUSD > 0 && (
-                <div className="flex items-end justify-between border-t border-slate-800 pt-1.5">
-                  <span className="text-[10px] text-zinc-500 font-bold">USD</span>
-                  <span className="text-base font-bold text-zinc-300 leading-none">{fmtNum(kpis.colUSD)}</span>
-                </div>
-              )}
-            </div>
+            <p className="text-2xl font-bold text-white">{fmtNum(kpis.col)}</p>
+            <p className="text-[10px] text-zinc-500">total envíos</p>
           </div>
 
           <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Comprobantes</span>
-              <Receipt className="w-3.5 h-3.5 text-zinc-600" />
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Canales</span>
+              <Layers className="w-3.5 h-3.5 text-zinc-600" />
             </div>
-            <p className="text-2xl font-bold text-white">{kpis.facturas.toLocaleString('es-AR')}</p>
-            {filtered.length !== records.length && (
-              <p className="text-[10px] text-zinc-600">de {records.length} totales</p>
-            )}
+            <p className="text-2xl font-bold text-white">{kpis.canales}</p>
+            <p className="text-[10px] text-zinc-600">únicos</p>
           </div>
 
           <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Proveedores</span>
-              <Building2 className="w-3.5 h-3.5 text-zinc-600" />
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Tipos mensaje</span>
+              <MessageSquare className="w-3.5 h-3.5 text-zinc-600" />
             </div>
-            <p className="text-2xl font-bold text-white">{kpis.proveedores}</p>
+            <p className="text-2xl font-bold text-white">{kpis.tipos}</p>
             <p className="text-[10px] text-zinc-600">únicos</p>
           </div>
         </motion.div>
@@ -457,19 +466,22 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
           className="flex flex-wrap items-end gap-4">
           <Filter className="w-3.5 h-3.5 text-zinc-600 shrink-0 mb-2" />
-          <MultiSelect label="País" options={['ARG', 'COL']}
+
+          <MultiSelect label="País" options={['Argentina', 'Colombia']}
             value={filterPais} onChange={v => { setFilterPais(v); setPage(1); }} />
-          <MultiSelect label="Estado" options={estadoOptions}
-            value={filterEstado} onChange={v => { setFilterEstado(v); setPage(1); }} />
-          <MultiSelect label="Categoría" options={categoriaOptions}
-            value={filterCategoria} onChange={v => { setFilterCategoria(v); setPage(1); }} />
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Proveedor</span>
-            <input type="text" value={filterProveedor}
-              onChange={e => { setFilterProveedor(e.target.value); setPage(1); }}
-              placeholder="Buscar..."
-              className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white placeholder-zinc-500 outline-none hover:border-slate-600 focus:border-indigo-500 transition-colors min-w-[140px]" />
-          </div>
+
+          <MultiSelect label="Plataforma" options={plataformaOptions}
+            value={filterPlataforma} onChange={v => { setFilterPlataforma(v); setPage(1); }} />
+
+          <MultiSelect label="Canal" options={canalOptions}
+            value={filterCanal} onChange={v => { setFilterCanal(v); setPage(1); }} />
+
+          <MultiSelect label="Tipo mensaje" options={tipoOptions}
+            value={filterTipo} onChange={v => { setFilterTipo(v); setPage(1); }} />
+
+          <MultiSelect label="Sender" options={senderOptions}
+            value={filterSender} onChange={v => { setFilterSender(v); setPage(1); }} />
+
           {hasFilters && (
             <div className="flex flex-col gap-1">
               <span className="text-[10px] invisible select-none">·</span>
@@ -542,8 +554,8 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
               {chatMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center gap-2 h-full py-8 text-center">
                   <Bot className="w-7 h-7 text-zinc-700" />
-                  <p className="text-zinc-500 text-sm">Preguntá sobre los gastos.</p>
-                  <p className="text-zinc-600 text-xs">Ej: "¿Cuál es el proveedor con mayor gasto en ARG?"</p>
+                  <p className="text-zinc-500 text-sm">Preguntá sobre las comunicaciones.</p>
+                  <p className="text-zinc-600 text-xs">Ej: "¿Qué canal tuvo más envíos en Argentina?"</p>
                 </div>
               ) : chatMessages.map((msg, i) => (
                 <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -562,13 +574,12 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
                   </div>
                 </div>
               )}
-
             </div>
             <div className="px-4 py-3 border-t border-slate-800 flex gap-2 shrink-0">
               <input type="text" value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                placeholder="Preguntá sobre los gastos..."
+                placeholder="Preguntá sobre las comunicaciones..."
                 disabled={records.length === 0 || chatLoading}
                 className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-blue-500 transition-colors disabled:opacity-50" />
               <button onClick={handleSendMessage}
@@ -580,43 +591,54 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
           </div>
         </motion.div>
 
-        {/* Tabla — todos los campos */}
+        {/* Gráficos evolutivos */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="flex flex-col gap-5">
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <LineChart
+              title="Evolución de envíos por plataforma / canal"
+              labels={chartPlatCanal.labels}
+              datasets={chartPlatCanal.datasets}
+            />
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <LineChart
+              title="Evolución de envíos por tipo de mensaje"
+              labels={chartTipo.labels}
+              datasets={chartTipo.datasets}
+            />
+          </div>
+        </motion.div>
+
+        {/* Tabla — todos los campos */}
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
           className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
           <DualScroll>
-            <table className="w-full text-sm min-w-[1100px]">
+            <table className="w-full text-sm min-w-[900px]">
               <thead className="sticky top-0 z-10 bg-slate-900">
                 <tr className="border-b border-slate-800">
-                  {['ID', 'Fecha', 'Vencimiento', 'País', 'Proveedor', 'Empresa', 'CUIT',
-                    'Tipo', 'Monto', 'Moneda', 'Estado', 'Aprobación', 'Cuenta Contable', 'Categoría', 'Detalle'].map(h => (
+                  {['Fecha', 'País', 'Plataforma', 'Proveedor', 'Canal', 'Tipo Mensaje', 'Sender', 'Total Envíos'].map(h => (
                     <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {paginated.map((r, i) => (
-                  <tr key={`${r.id_factura}-${i}`} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
-                    <td className="px-3 py-2.5 text-zinc-600 text-xs">{r.id_factura}</td>
-                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{fmtDate(r.fecha_creacion)}</td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(r.fecha_vencimiento)}</td>
+                  <tr key={i} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{fmtDate(r.fecha_envio)}</td>
                     <td className="px-3 py-2.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.pais === 'ARG' ? 'bg-blue-900/40 text-blue-400' : 'bg-amber-900/40 text-amber-400'}`}>{r.pais}</span>
-                    </td>
-                    <td className="px-3 py-2.5 text-white text-xs whitespace-nowrap">{r.proveedor || '—'}</td>
-                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{r.empresa_facturadora || '—'}</td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{r.cuit || '—'}</td>
-                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{TIPO_LABELS[r.tipo] || r.tipo || '—'}</td>
-                    <td className="px-3 py-2.5 text-white text-xs font-medium whitespace-nowrap text-right">{fmtNum(parseAmt(r.monto))}</td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs">{r.moneda && r.moneda !== 'true' ? r.moneda : '—'}</td>
-                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{r.estado || '—'}</td>
-                    <td className="px-3 py-2.5">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${ESTADO_COLORS[r.estado_aprobacion] || 'bg-slate-800 text-zinc-500 border-slate-700'}`}>
-                        {r.estado_aprobacion || '—'}
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.pais === 'Argentina' ? 'bg-blue-900/40 text-blue-400' : 'bg-amber-900/40 text-amber-400'}`}>
+                        {r.pais === 'Argentina' ? 'ARG' : r.pais === 'Colombia' ? 'COL' : r.pais}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{r.cuenta_contable || '—'}</td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{r.cuenta_contable_agrupacion || '—'}</td>
-                    <td className="px-3 py-2.5 text-zinc-600 text-xs whitespace-nowrap">{r.detalle_contabilidad || '—'}</td>
+                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{r.plataforma || '—'}</td>
+                    <td className="px-3 py-2.5 text-white text-xs whitespace-nowrap">{r.proveedor || '—'}</td>
+                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{r.canal || '—'}</td>
+                    <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{r.tipo_mensaje || '—'}</td>
+                    <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{r.sender || '—'}</td>
+                    <td className="px-3 py-2.5 text-white text-xs font-medium whitespace-nowrap text-right">{fmtNum(Number(r.total_envios) || 0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -638,25 +660,6 @@ export default function AdmGastosProveedoresSubmodule({ userEmail }: Props) {
               </button>
             </div>
           </div>
-        </motion.div>
-
-        {/* Gráficos — top 10, barra horizontal, color = tendencia */}
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
-          className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {[
-            { key: 'argARS', data: proveedorStats.argARS, title: 'Top 10 proveedores — ARG (ARS)', color: '#3b82f6', moneda: 'ARS' },
-            { key: 'argUSD', data: proveedorStats.argUSD, title: 'Top 10 proveedores — ARG (USD)', color: '#60a5fa', moneda: 'USD' },
-            { key: 'colCOP', data: proveedorStats.colCOP, title: 'Top 10 proveedores — COL (COP)', color: '#f59e0b', moneda: 'COP' },
-            { key: 'colUSD', data: proveedorStats.colUSD, title: 'Top 10 proveedores — COL (USD)', color: '#fbbf24', moneda: 'USD' },
-          ].map(ch => (
-            <div key={ch.key} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <TrendingUp className="w-4 h-4 text-zinc-500" />
-                <span className="text-sm font-bold text-white">{ch.title}</span>
-              </div>
-              <ProveedorChart data={ch.data} color={ch.color} moneda={ch.moneda} />
-            </div>
-          ))}
         </motion.div>
 
       </>)}

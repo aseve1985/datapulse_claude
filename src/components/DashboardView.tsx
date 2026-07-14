@@ -43,6 +43,7 @@ import RiAsistenteSubmodule from './submodules/RiAsistenteSubmodule';
 import BiDocumentacionSubmodule from './submodules/BiDocumentacionSubmodule';
 import BiObsidianSubmodule from './submodules/BiObsidianSubmodule';
 import AdmGastosProveedoresSubmodule from './submodules/AdmGastosProveedoresSubmodule';
+import MktComunicacionesSubmodule from './submodules/MktComunicacionesSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -1585,8 +1586,8 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'bi-documentacion', 'bi-obsidian', 'admin-gastos'].includes(sub.id);
-                  const isDisabled = ['ri-analitico', 'bi-tools'].includes(sub.id);
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones'].includes(sub.id);
+                  const isDisabled = ['ri-analitico', 'bi-tools', 'marketing-estrategia'].includes(sub.id);
                   return (
                     <motion.button
                       key={sub.id}
@@ -1627,7 +1628,7 @@ export default function DashboardView({
             </motion.div>
           </div>
 
-        ) : moduleType === 'api' && submodules.length > 0 && activeSubmodule ? (
+        ) : moduleType === 'api' && submodules.length > 0 && activeSubmodule && activeSubmodule.id !== 'marketing-kpis' ? (
           /* Sub-módulo activo — cada uno renderiza su propio componente */
           activeSubmodule.id === 'uif' ? (
             <UifSubmodule userEmail={userEmail} />
@@ -1649,6 +1650,8 @@ export default function DashboardView({
             <BiObsidianSubmodule />
           ) : activeSubmodule.id === 'admin-gastos' ? (
             <AdmGastosProveedoresSubmodule userEmail={userEmail} />
+          ) : activeSubmodule.id === 'marketing-comunicaciones' ? (
+            <MktComunicacionesSubmodule userEmail={userEmail} />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
