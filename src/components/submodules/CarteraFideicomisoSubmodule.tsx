@@ -1,16 +1,168 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { motion } from 'framer-motion';
 import { Download, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
 import {
-  DYNDATA, SNAP, COMPARISON, DYNAMIC, CURVES,
+  SNAP as STATIC_SNAP, COMPARISON as STATIC_COMPARISON, DYNAMIC as STATIC_DYNAMIC, CURVES as STATIC_CURVES,
   goodNuevo, goodRenov, POOL_AA_THRESHOLD,
-  getColor, makeCurveDatasets,
+  getColor, makeCurveDatasets as staticMakeCurveDatasets,
   MARKET, OUR_TOTAL, VINT_BENCH, CYCLE_PHASES, POOL_DATA, POOL_ROWS,
-  aggregateByVintageFilter,
+  aggregateByVintageFilter as staticAggregateByVintageFilter,
 } from './carteraFideicomisoData';
 
 Chart.register(...registerables);
+
+// ── Live-data transformations ─────────────────────────────────────────────────
+function buildSnap(rows: CarteraRecord[]): any {
+  const snap: any = {};
+  for (const row of rows) {
+    const s  = +Number(row.k_saldo_total).toFixed(1);
+    const cu = +Number(row.a_current).toFixed(1);
+    const b  = +Number(row.b_bucket_1_30).toFixed(1);
+    const cc = +Number(row.c_bucket_31_60).toFixed(1);
+    const d  = +Number(row.d_bucket_61_90).toFixed(1);
+    const e  = +Number(row.e_bucket_91_120).toFixed(1);
+    const f  = +Number(row.f_bucket_mas_120).toFixed(1);
+    if (!snap[row.periodo]) snap[row.periodo] = {};
+    if (!snap[row.periodo][row.tipo_cliente]) snap[row.periodo][row.tipo_cliente] = {};
+    snap[row.periodo][row.tipo_cliente][row.fecha_desembolso_periodo] = {
+      s, cu, b, cc, d, e, f,
+      m30: +(b+cc+d+e+f).toFixed(1),
+      m60: +(cc+d+e+f).toFixed(1),
+      m90: +(d+e+f).toFixed(1),
+      m120: +(e+f).toFixed(1),
+    };
+  }
+  return snap;
+}
+
+function buildComparison(snap: any): Array<{v:string,nPeak:number,rPeak:number,nOrig:number,rOrig:number}> {
+  const allVintages = new Set<string>();
+  for (const corte of Object.keys(snap)) {
+    for (const seg of ['NUEVO','RENOVADOR']) {
+      for (const v of Object.keys(snap[corte][seg] || {})) allVintages.add(v);
+    }
+  }
+  return [...allVintages].sort().map(v => {
+    let nPeak = 0, rPeak = 0, nOrig = 0, rOrig = 0;
+    for (const corte of Object.keys(snap)) {
+      const nRow = snap[corte]['NUEVO']?.[v];
+      if (nRow) { if (nRow.f > nPeak) nPeak = nRow.f; if (corte === v) nOrig = nRow.s; }
+      const rRow = snap[corte]['RENOVADOR']?.[v];
+      if (rRow) { if (rRow.f > rPeak) rPeak = rRow.f; if (corte === v) rOrig = rRow.s; }
+    }
+    return { v, nPeak: +nPeak.toFixed(1), rPeak: +rPeak.toFixed(1), nOrig: +nOrig.toFixed(1), rOrig: +rOrig.toFixed(1) };
+  });
+}
+
+function buildDynamic(snap: any): Array<{c:string,s:number,cu:number,b:number,cc:number,d:number,e:number,f:number}> {
+  return Object.keys(snap).sort().map(corte => {
+    const vintageMap = snap[corte]['TOTAL'] || {};
+    let ts=0, tCu=0, tB=0, tCc=0, tD=0, tE=0, tF=0;
+    for (const d of Object.values(vintageMap) as any[]) {
+      ts+=d.s; tCu+=d.cu*d.s; tB+=d.b*d.s; tCc+=d.cc*d.s;
+      tD+=d.d*d.s; tE+=d.e*d.s; tF+=d.f*d.s;
+    }
+    if (ts <= 0) return null;
+    return { c:corte, s:+ts.toFixed(1), cu:+(tCu/ts).toFixed(1), b:+(tB/ts).toFixed(1),
+      cc:+(tCc/ts).toFixed(1), d:+(tD/ts).toFixed(1), e:+(tE/ts).toFixed(1), f:+(tF/ts).toFixed(1) };
+  }).filter(Boolean) as any[];
+}
+
+function buildCurves(snap: any): any {
+  const curves: any = { NUEVO: {}, RENOVADOR: {} };
+  for (const seg of ['NUEVO','RENOVADOR']) {
+    for (const corte of Object.keys(snap).sort()) {
+      for (const vintage of Object.keys(snap[corte][seg] || {})) {
+        const corteYear=parseInt(corte.slice(0,4)), corteMo=parseInt(corte.slice(4));
+        const vintYear=parseInt(vintage.slice(0,4)), vintMo=parseInt(vintage.slice(4));
+        const age = (corteYear-vintYear)*12+(corteMo-vintMo);
+        if (age < 0) continue;
+        const d = snap[corte][seg][vintage];
+        if (!curves[seg][vintage]) curves[seg][vintage] = { f:{}, b:{} };
+        curves[seg][vintage].f[age] = +d.f.toFixed(2);
+        curves[seg][vintage].b[age] = +d.b.toFixed(2);
+      }
+    }
+  }
+  return curves;
+}
+
+function makeAggFn(snap: any) {
+  return (seg: string, vintageFrom: string, vintageTo: string) => {
+    const result: Array<{c:string,s:number,cu:number,b:number,cc:number,d:number,e:number,f:number,m30:number,m60:number,m90:number,m120:number}> = [];
+    Object.keys(snap).sort().forEach(corte => {
+      const vintageMap = snap[corte][seg] || {};
+      let totalS=0, totalCu=0, totalB=0, totalCc=0, totalD=0, totalE=0, totalF=0;
+      Object.keys(vintageMap).forEach(v => {
+        if (v < vintageFrom || v > vintageTo) return;
+        const d = vintageMap[v]; const sM = d.s;
+        totalS+=sM; totalCu+=d.cu*sM; totalB+=d.b*sM; totalCc+=d.cc*sM;
+        totalD+=d.d*sM; totalE+=d.e*sM; totalF+=d.f*sM;
+      });
+      if (totalS <= 0) return;
+      result.push({ c:corte, s:+totalS.toFixed(1),
+        cu:+(totalCu/totalS).toFixed(1), b:+(totalB/totalS).toFixed(1), cc:+(totalCc/totalS).toFixed(1),
+        d:+(totalD/totalS).toFixed(1), e:+(totalE/totalS).toFixed(1), f:+(totalF/totalS).toFixed(1),
+        m30:+((totalB+totalCc+totalD+totalE+totalF)/totalS).toFixed(1),
+        m60:+((totalCc+totalD+totalE+totalF)/totalS).toFixed(1),
+        m90:+((totalD+totalE+totalF)/totalS).toFixed(1),
+        m120:+((totalE+totalF)/totalS).toFixed(1),
+      });
+    });
+    return result;
+  };
+}
+
+function makeCurveDsFactory(curves: any) {
+  return (section: string, bucket: string, filter: string) => {
+    const allV = Object.keys(curves[section] || {});
+    const goodList = section === 'NUEVO' ? goodNuevo : goodRenov;
+    const filtered = filter==='good' ? allV.filter(v=>goodList.includes(v))
+                   : filter==='bad'  ? allV.filter(v=>!goodList.includes(v)&&parseInt(v)<=202407)
+                   : allV;
+    let maxMob = 0;
+    filtered.forEach(v => {
+      const d = curves[section][v];
+      if (d && d[bucket]) maxMob = Math.max(maxMob, ...Object.keys(d[bucket]).map(Number));
+    });
+    const labels = Array.from({length:maxMob+1},(_,i)=>'MoB '+i);
+    const datasets = filtered.map(v => {
+      const d = curves[section][v];
+      if (!d || !d[bucket]) return null;
+      const pts = Array.from({length:maxMob+1},(_,i)=>d[bucket][i]!==undefined?d[bucket][i]:null);
+      return { label:v, data:pts, borderColor:getColor(v,section), backgroundColor:'transparent',
+        borderWidth:goodList.includes(v)?2.5:1.5, pointRadius:0, spanGaps:false, tension:0.3 };
+    }).filter(Boolean);
+    return { labels, datasets };
+  };
+}
+
+// ── Context ───────────────────────────────────────────────────────────────────
+interface CarteraCtxType {
+  snap: any;
+  comparison: Array<{v:string,nPeak:number,rPeak:number,nOrig:number,rOrig:number}>;
+  dynamic: Array<{c:string,s:number,cu:number,b:number,cc:number,d:number,e:number,f:number}>;
+  curves: any;
+  allVintages: string[];
+  lastVintage: string;
+  aggregateByVintage: (seg:string,from:string,to:string) => any[];
+  makeCurveDs: (section:string,bucket:string,filter:string) => {labels:string[],datasets:any[]};
+}
+
+const STATIC_ALL_VINTAGES = Object.keys(STATIC_SNAP).sort();
+const STATIC_LAST_VINTAGE = STATIC_ALL_VINTAGES[STATIC_ALL_VINTAGES.length - 1];
+
+const CarteraCtx = React.createContext<CarteraCtxType>({
+  snap: STATIC_SNAP,
+  comparison: STATIC_COMPARISON,
+  dynamic: STATIC_DYNAMIC,
+  curves: STATIC_CURVES,
+  allVintages: STATIC_ALL_VINTAGES,
+  lastVintage: STATIC_LAST_VINTAGE,
+  aggregateByVintage: staticAggregateByVintageFilter,
+  makeCurveDs: staticMakeCurveDatasets,
+});
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface CarteraRecord {
@@ -31,14 +183,6 @@ interface CarteraRecord {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const ALL_VINTAGES = [
-  '202307','202308','202309','202310','202311','202312',
-  '202401','202402','202403','202404','202405','202406','202407',
-  '202408','202409','202410','202411','202412',
-  '202501','202502','202503','202504','202505','202506','202507',
-  '202508','202509','202510','202511','202512',
-  '202601','202602','202603','202604','202605',
-];
 
 const POOL_VINTAGES = [
   '202408','202409','202410','202411','202412',
@@ -121,17 +265,18 @@ function CanvasChart({ id, height = 200 }: { id: string; height?: number }) {
 
 // ── Tab 1: OVERVIEW ───────────────────────────────────────────────────────────
 function OverviewTab() {
+  const ctx = useContext(CarteraCtx);
   const [ovSeg, setOvSeg] = useState<'TOTAL'|'NUEVO'|'RENOVADOR'>('TOTAL');
   const [ovMora, setOvMora] = useState('m30');
-  const [ovVintageFrom, setOvVintageFrom] = useState('202307');
-  const [ovVintageTo, setOvVintageTo] = useState('202605');
+  const [ovVintageFrom, setOvVintageFrom] = useState(() => ctx.allVintages[0] || '202307');
+  const [ovVintageTo, setOvVintageTo] = useState(() => ctx.lastVintage);
   const [ovPreset, setOvPreset] = useState('all');
 
   const chartsRef = useRef<Record<string, Chart>>({});
 
   const aggData = useMemo(
-    () => aggregateByVintageFilter(ovSeg, ovVintageFrom, ovVintageTo),
-    [ovSeg, ovVintageFrom, ovVintageTo]
+    () => ctx.aggregateByVintage(ovSeg, ovVintageFrom, ovVintageTo),
+    [ctx, ovSeg, ovVintageFrom, ovVintageTo]
   );
 
   const last = useMemo(() => {
@@ -148,13 +293,13 @@ function OverviewTab() {
   }, [last, ovMora]);
 
   const nVintages = useMemo(
-    () => ALL_VINTAGES.filter(v => v >= ovVintageFrom && v <= ovVintageTo).length,
-    [ovVintageFrom, ovVintageTo]
+    () => ctx.allVintages.filter(v => v >= ovVintageFrom && v <= ovVintageTo).length,
+    [ctx.allVintages, ovVintageFrom, ovVintageTo]
   );
 
   function applyPreset(p: string) {
     setOvPreset(p);
-    if (p === 'all')    { setOvVintageFrom('202307'); setOvVintageTo('202605'); }
+    if (p === 'all')    { setOvVintageFrom(ctx.allVintages[0] || '202307'); setOvVintageTo(ctx.lastVintage); }
     if (p === 'pool')   { setOvVintageFrom('202408'); setOvVintageTo('202512'); }
     if (p === 'legacy') { setOvVintageFrom('202307'); setOvVintageTo('202407'); }
   }
@@ -244,7 +389,7 @@ function OverviewTab() {
     });
 
     // Comp bar
-    const cdata = COMPARISON.filter(c => parseInt(c.v) <= 202512 && c.v >= ovVintageFrom && c.v <= ovVintageTo);
+    const cdata = ctx.comparison.filter(c => parseInt(c.v) <= 202512 && c.v >= ovVintageFrom && c.v <= ovVintageTo);
     const cbC = document.getElementById('ov-compbar') as HTMLCanvasElement|null;
     if (cbC && cdata.length) chartsRef.current['compbar'] = new Chart(cbC, {
       type:'bar', data:{ labels:cdata.map(c=>c.v), datasets:[
@@ -294,13 +439,13 @@ function OverviewTab() {
           <select value={ovVintageFrom}
             onChange={e=>handleRangeChange(e.target.value, ovVintageTo)}
             className="bg-slate-800 border border-slate-600 text-zinc-300 text-xs rounded-lg px-2 py-1">
-            {ALL_VINTAGES.map(v=><option key={v} value={v}>{fmtCorte(v)}</option>)}
+            {ctx.allVintages.map(v=><option key={v} value={v}>{fmtCorte(v)}</option>)}
           </select>
           <span className="text-zinc-500 text-xs">→</span>
           <select value={ovVintageTo}
             onChange={e=>handleRangeChange(ovVintageFrom, e.target.value)}
             className="bg-slate-800 border border-slate-600 text-zinc-300 text-xs rounded-lg px-2 py-1">
-            {ALL_VINTAGES.map(v=><option key={v} value={v}>{fmtCorte(v)}</option>)}
+            {ctx.allVintages.map(v=><option key={v} value={v}>{fmtCorte(v)}</option>)}
           </select>
           <span className="text-xs text-zinc-500">{nVintages} cosechas</span>
         </div>
@@ -345,7 +490,7 @@ function OverviewTab() {
       {/* Insight note */}
       <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-4 text-xs text-zinc-400 leading-relaxed">
         La mora ({MORA_LABELS[ovMora]}) del <strong className="text-white">{SEG_LABELS[ovSeg]}</strong>{' '}
-        {nVintages < ALL_VINTAGES.length ? `(${nVintages} cosechas: ${fmtCorte(ovVintageFrom)}→${fmtCorte(ovVintageTo)}) ` : ' '}
+        {nVintages < ctx.allVintages.length ? `(${nVintages} cosechas: ${fmtCorte(ovVintageFrom)}→${fmtCorte(ovVintageTo)}) ` : ' '}
         es <strong className="text-white">{moraVal.toFixed(1)}%</strong> al {fmtCorte(last.c)}.{' '}
         Current: <strong className="text-white">{last.cu.toFixed(1)}%</strong>.{' '}
         Hard loss F: <strong className="text-white">{last.f.toFixed(1)}%</strong>.{' '}
@@ -357,6 +502,7 @@ function OverviewTab() {
 
 // ── Tab 2: NEGOCIO NUEVO ──────────────────────────────────────────────────────
 function NuevoTab() {
+  const ctx = useContext(CarteraCtx);
   const [filter, setFilter] = useState<'all'|'good'|'bad'>('all');
   const [bucket, setBucket] = useState('f');
   const chartRef = useRef<Chart|null>(null);
@@ -364,7 +510,7 @@ function NuevoTab() {
 
   useEffect(() => {
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    const { labels, datasets: ds } = makeCurveDatasets('NUEVO', bucket, filter);
+    const { labels, datasets: ds } = ctx.makeCurveDs('NUEVO', bucket, filter);
     setDatasets(ds);
     const el = document.getElementById('nuevo-chart') as HTMLCanvasElement|null;
     if (!el) return;
@@ -381,7 +527,7 @@ function NuevoTab() {
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
   }, [filter, bucket]);
 
-  const nuevoRows = COMPARISON.filter(c => parseInt(c.v) >= 202307 && parseInt(c.v) <= 202604);
+  const nuevoRows = ctx.comparison.filter(c => parseInt(c.v) >= 202307 && parseInt(c.v) <= 202604);
 
   return (
     <div className="flex flex-col gap-4">
@@ -453,6 +599,7 @@ function NuevoTab() {
 
 // ── Tab 3: NEGOCIO RENOVADOR ──────────────────────────────────────────────────
 function RenovadorTab() {
+  const ctx = useContext(CarteraCtx);
   const [filter, setFilter] = useState<'all'|'good'|'bad'>('all');
   const [bucket, setBucket] = useState('f');
   const chartRef = useRef<Chart|null>(null);
@@ -460,7 +607,7 @@ function RenovadorTab() {
 
   useEffect(() => {
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
-    const { labels, datasets: ds } = makeCurveDatasets('RENOVADOR', bucket, filter);
+    const { labels, datasets: ds } = ctx.makeCurveDs('RENOVADOR', bucket, filter);
     setDatasets(ds);
     const el = document.getElementById('renov-chart') as HTMLCanvasElement|null;
     if (!el) return;
@@ -477,7 +624,7 @@ function RenovadorTab() {
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
   }, [filter, bucket]);
 
-  const renovRows = COMPARISON.filter(c => parseInt(c.v) >= 202307 && parseInt(c.v) <= 202604);
+  const renovRows = ctx.comparison.filter(c => parseInt(c.v) >= 202307 && parseInt(c.v) <= 202604);
 
   return (
     <div className="flex flex-col gap-4">
@@ -548,8 +695,9 @@ function RenovadorTab() {
 
 // ── Tab 4: COMPARATIVO ────────────────────────────────────────────────────────
 function ComparativoTab() {
-  const vintages = COMPARISON.filter(c=>parseInt(c.v)>=202408&&parseInt(c.v)<=202512).map(c=>c.v);
-  const [compVintage, setCompVintage] = useState(vintages[0]||'202408');
+  const ctx = useContext(CarteraCtx);
+  const vintages = ctx.comparison.filter((c:any)=>parseInt(c.v)>=202408&&parseInt(c.v)<=202512).map((c:any)=>c.v);
+  const [compVintage, setCompVintage] = useState(()=>vintages[0]||'202408');
   const [compBucket, setCompBucket] = useState('f');
   const lineRef = useRef<Chart|null>(null);
   const spreadRef = useRef<Chart|null>(null);
@@ -558,8 +706,8 @@ function ComparativoTab() {
     lineRef.current?.destroy(); lineRef.current = null;
     spreadRef.current?.destroy(); spreadRef.current = null;
 
-    const nCurve: Record<number,number> = (CURVES as any).NUEVO?.[compVintage]?.[compBucket] || {};
-    const rCurve: Record<number,number> = (CURVES as any).RENOVADOR?.[compVintage]?.[compBucket] || {};
+    const nCurve: Record<number,number> = ctx.curves.NUEVO?.[compVintage]?.[compBucket] || {};
+    const rCurve: Record<number,number> = ctx.curves.RENOVADOR?.[compVintage]?.[compBucket] || {};
     const allKeys = [...Object.keys(nCurve), ...Object.keys(rCurve)].map(Number);
     const maxMob = allKeys.length ? Math.max(...allKeys) : 5;
     const labels = Array.from({length:maxMob+1},(_,i)=>'MoB '+i);
@@ -600,7 +748,7 @@ function ComparativoTab() {
     return () => { lineRef.current?.destroy(); spreadRef.current?.destroy(); };
   }, [compVintage, compBucket]);
 
-  const compRows = COMPARISON.filter(c=>parseInt(c.v)>=202307&&parseInt(c.v)<=202604);
+  const compRows = ctx.comparison.filter((c:any)=>parseInt(c.v)>=202307&&parseInt(c.v)<=202604);
 
   return (
     <div className="flex flex-col gap-4">
@@ -765,6 +913,7 @@ function PoolTab() {
 
 // ── Tab 6: ANÁLISIS FIX ───────────────────────────────────────────────────────
 function FixTab() {
+  const ctx = useContext(CarteraCtx);
   const [fixSeg, setFixSeg] = useState<'NUEVO'|'RENOVADOR'>('NUEVO');
   const [fixVintage, setFixVintage] = useState('202408');
   const dynRef    = useRef<Chart|null>(null);
@@ -772,8 +921,8 @@ function FixTab() {
   const writeRef  = useRef<Chart|null>(null);
 
   const fixVintages = useMemo(
-    () => COMPARISON.filter(c=>parseInt(c.v)>=202408&&parseInt(c.v)<=202512).map(c=>c.v),
-    []
+    () => ctx.comparison.filter((c:any)=>parseInt(c.v)>=202408&&parseInt(c.v)<=202512).map((c:any)=>c.v),
+    [ctx.comparison]
   );
 
   // Stable random data for precancelaciones (generated once)
@@ -788,17 +937,17 @@ function FixTab() {
     writeRef.current?.destroy();writeRef.current= null;
 
     const gridColor = 'rgba(255,255,255,0.04)';
-    const dynLabels = DYNAMIC.map(d=>fmtCorte(d.c));
+    const dynLabels = ctx.dynamic.map((d:any)=>fmtCorte(d.c));
 
     const dEl = document.getElementById('fix-dynamic') as HTMLCanvasElement|null;
     if (dEl) dynRef.current = new Chart(dEl, {
       type:'bar', data:{ labels:dynLabels, datasets:[
-        { label:'Current',    data:DYNAMIC.map(d=>d.cu), backgroundColor:'rgba(100,200,150,0.6)', stack:'s' },
-        { label:'B 1-30d',   data:DYNAMIC.map(d=>d.b),  backgroundColor:'rgba(100,180,240,0.7)', stack:'s' },
-        { label:'C 31-60d',  data:DYNAMIC.map(d=>d.cc), backgroundColor:'rgba(240,200,80,0.7)',  stack:'s' },
-        { label:'D 61-90d',  data:DYNAMIC.map(d=>d.d),  backgroundColor:'rgba(240,130,60,0.7)',  stack:'s' },
-        { label:'E 91-120d', data:DYNAMIC.map(d=>d.e),  backgroundColor:'rgba(210,70,70,0.7)',   stack:'s' },
-        { label:'F +120d',   data:DYNAMIC.map(d=>d.f),  backgroundColor:'rgba(150,50,200,0.7)',  stack:'s' },
+        { label:'Current',    data:ctx.dynamic.map((d:any)=>d.cu), backgroundColor:'rgba(100,200,150,0.6)', stack:'s' },
+        { label:'B 1-30d',   data:ctx.dynamic.map((d:any)=>d.b),  backgroundColor:'rgba(100,180,240,0.7)', stack:'s' },
+        { label:'C 31-60d',  data:ctx.dynamic.map((d:any)=>d.cc), backgroundColor:'rgba(240,200,80,0.7)',  stack:'s' },
+        { label:'D 61-90d',  data:ctx.dynamic.map((d:any)=>d.d),  backgroundColor:'rgba(240,130,60,0.7)',  stack:'s' },
+        { label:'E 91-120d', data:ctx.dynamic.map((d:any)=>d.e),  backgroundColor:'rgba(210,70,70,0.7)',   stack:'s' },
+        { label:'F +120d',   data:ctx.dynamic.map((d:any)=>d.f),  backgroundColor:'rgba(150,50,200,0.7)',  stack:'s' },
       ]},
       options:{ responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{ labels:{font:{size:9},boxWidth:10} } },
@@ -818,12 +967,12 @@ function FixTab() {
       },
     });
 
-    const wVintages = COMPARISON.filter(c=>parseInt(c.v)>=202408&&parseInt(c.v)<=202512);
+    const wVintages = ctx.comparison.filter((c:any)=>parseInt(c.v)>=202408&&parseInt(c.v)<=202512);
     const wEl = document.getElementById('fix-writeoff') as HTMLCanvasElement|null;
     if (wEl) writeRef.current = new Chart(wEl, {
-      type:'bar', data:{ labels:wVintages.map(c=>c.v), datasets:[
-        { label:'Nuevo — F pico (proxy incobrable)',     data:wVintages.map(c=>c.nPeak), backgroundColor:'rgba(240,184,100,0.5)', borderColor:'#f0b864', borderWidth:1 },
-        { label:'Renovador — F pico (proxy incobrable)', data:wVintages.map(c=>c.rPeak), backgroundColor:'rgba(100,200,150,0.5)', borderColor:'#64c896', borderWidth:1 },
+      type:'bar', data:{ labels:wVintages.map((c:any)=>c.v), datasets:[
+        { label:'Nuevo — F pico (proxy incobrable)',     data:wVintages.map((c:any)=>c.nPeak), backgroundColor:'rgba(240,184,100,0.5)', borderColor:'#f0b864', borderWidth:1 },
+        { label:'Renovador — F pico (proxy incobrable)', data:wVintages.map((c:any)=>c.rPeak), backgroundColor:'rgba(100,200,150,0.5)', borderColor:'#64c896', borderWidth:1 },
       ]},
       options:{ responsive:true, maintainAspectRatio:false,
         plugins:{ legend:{ labels:{font:{size:10},boxWidth:10} } },
@@ -832,13 +981,13 @@ function FixTab() {
     });
 
     return () => { dynRef.current?.destroy(); precRef.current?.destroy(); writeRef.current?.destroy(); };
-  }, [fixVintages, precData]);
+  }, [ctx.comparison, ctx.dynamic, fixVintages, precData]);
 
   // Static per-vintage table
   const staticRows = useMemo(() => {
-    const curveData = (CURVES as any)[fixSeg]?.[fixVintage];
+    const curveData = ctx.curves[fixSeg]?.[fixVintage];
     if (!curveData) return [];
-    const kOrig = COMPARISON.find(c=>c.v===fixVintage);
+    const kOrig = ctx.comparison.find((c:any)=>c.v===fixVintage);
     const kOrigM = kOrig ? (fixSeg==='NUEVO'?kOrig.nOrig:kOrig.rOrig) : 0;
     const fMap: Record<number,number> = curveData.f || {};
     const bMap: Record<number,number> = curveData.b || {};
@@ -935,7 +1084,7 @@ function FixTab() {
               </tr>
             </thead>
             <tbody>
-              {DYNAMIC.map((d,i) => {
+              {ctx.dynamic.map((d:any,i:number) => {
                 const moraTotal = (d.b+d.cc+d.d+d.e+d.f).toFixed(1);
                 return (
                   <tr key={d.c} className={i%2===0?'bg-slate-900':'bg-slate-800/30'}>
@@ -1289,6 +1438,29 @@ export default function CarteraFideicomisoSubmodule() {
     }
   };
 
+  // ── Live data transforms ──────────────────────────────────────────────────
+  const liveSnap       = useMemo(() => records.length ? buildSnap(records) : null, [records]);
+  const liveComparison = useMemo(() => liveSnap ? buildComparison(liveSnap) : STATIC_COMPARISON, [liveSnap]);
+  const liveDynamic    = useMemo(() => liveSnap ? buildDynamic(liveSnap)    : STATIC_DYNAMIC,    [liveSnap]);
+  const liveCurves     = useMemo(() => liveSnap ? buildCurves(liveSnap)     : STATIC_CURVES,     [liveSnap]);
+  const liveAllVintages = useMemo(() => liveSnap ? Object.keys(liveSnap).sort() : STATIC_ALL_VINTAGES, [liveSnap]);
+  const liveLastV      = useMemo(() => liveAllVintages[liveAllVintages.length - 1] ?? STATIC_LAST_VINTAGE, [liveAllVintages]);
+  const liveAggFn      = useMemo(() => liveSnap ? makeAggFn(liveSnap) : staticAggregateByVintageFilter, [liveSnap]);
+  const liveMakeCurveDs = useMemo(
+    () => liveCurves !== STATIC_CURVES ? makeCurveDsFactory(liveCurves) : staticMakeCurveDatasets,
+    [liveCurves]
+  );
+  const ctxValue = useMemo<CarteraCtxType>(() => ({
+    snap: liveSnap ?? STATIC_SNAP,
+    comparison: liveComparison,
+    dynamic: liveDynamic,
+    curves: liveCurves,
+    allVintages: liveAllVintages,
+    lastVintage: liveLastV,
+    aggregateByVintage: liveAggFn,
+    makeCurveDs: liveMakeCurveDs,
+  }), [liveSnap, liveComparison, liveDynamic, liveCurves, liveAllVintages, liveLastV, liveAggFn, liveMakeCurveDs]);
+
   if (loading) return (
     <div className="flex-1 flex items-center justify-center">
       <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
@@ -1308,46 +1480,48 @@ export default function CarteraFideicomisoSubmodule() {
   );
 
   return (
-    <div className="flex-1 flex flex-col p-6 gap-5 overflow-auto">
+    <CarteraCtx.Provider value={ctxValue}>
+      <div className="flex-1 flex flex-col p-6 gap-5 overflow-auto">
 
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-white">Cartera ARG – Fideicomiso</h2>
-          <p className="text-zinc-500 text-sm mt-0.5">Análisis estático · Corte Mayo 2026</p>
+        {/* Header */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-white">Cartera ARG – Fideicomiso</h2>
+            <p className="text-zinc-500 text-sm mt-0.5">Corte {fmtCorte(liveLastV)}</p>
+          </div>
+          <button
+            onClick={handleExport}
+            disabled={exporting || records.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-700/50 text-emerald-300 font-bold text-sm rounded-xl transition-all"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {exporting ? 'Generando...' : 'Exportar Excel'}
+          </button>
+        </motion.div>
+
+        {/* Tab nav */}
+        <div className="flex gap-1 flex-wrap border-b border-slate-700 pb-3">
+          {TABS.map(t => (
+            <TabBtn key={t.id} active={activeTab===t.id} onClick={()=>setActiveTab(t.id)}>
+              {t.label}
+            </TabBtn>
+          ))}
         </div>
-        <button
-          onClick={handleExport}
-          disabled={exporting || records.length === 0}
-          className="flex items-center gap-2 px-4 py-2 bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-700/50 text-emerald-300 font-bold text-sm rounded-xl transition-all"
-        >
-          {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          {exporting ? 'Generando...' : 'Exportar Excel'}
-        </button>
-      </motion.div>
 
-      {/* Tab nav */}
-      <div className="flex gap-1 flex-wrap border-b border-slate-700 pb-3">
-        {TABS.map(t => (
-          <TabBtn key={t.id} active={activeTab===t.id} onClick={()=>setActiveTab(t.id)}>
-            {t.label}
-          </TabBtn>
-        ))}
+        {/* Tab content */}
+        <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
+          {activeTab === 'overview'     && <OverviewTab />}
+          {activeTab === 'nuevo'        && <NuevoTab />}
+          {activeTab === 'renovador'    && <RenovadorTab />}
+          {activeTab === 'comparativo'  && <ComparativoTab />}
+          {activeTab === 'pool'         && <PoolTab />}
+          {activeTab === 'fix'          && <FixTab />}
+          {activeTab === 'benchmark'    && <BenchmarkTab />}
+          {activeTab === 'rentabilidad' && <RentabilidadTab />}
+        </motion.div>
+
       </div>
-
-      {/* Tab content */}
-      <motion.div key={activeTab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}>
-        {activeTab === 'overview'     && <OverviewTab />}
-        {activeTab === 'nuevo'        && <NuevoTab />}
-        {activeTab === 'renovador'    && <RenovadorTab />}
-        {activeTab === 'comparativo'  && <ComparativoTab />}
-        {activeTab === 'pool'         && <PoolTab />}
-        {activeTab === 'fix'          && <FixTab />}
-        {activeTab === 'benchmark'    && <BenchmarkTab />}
-        {activeTab === 'rentabilidad' && <RentabilidadTab />}
-      </motion.div>
-
-    </div>
+    </CarteraCtx.Provider>
   );
 }
