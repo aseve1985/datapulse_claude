@@ -16,21 +16,23 @@ Chart.register(...registerables);
 function buildSnap(rows: CarteraRecord[]): any {
   const snap: any = {};
   for (const row of rows) {
-    const s  = +Number(row.k_saldo_total).toFixed(1);
-    const cu = +Number(row.a_current).toFixed(1);
-    const b  = +Number(row.b_bucket_1_30).toFixed(1);
-    const cc = +Number(row.c_bucket_31_60).toFixed(1);
-    const d  = +Number(row.d_bucket_61_90).toFixed(1);
-    const e  = +Number(row.e_bucket_91_120).toFixed(1);
-    const f  = +Number(row.f_bucket_mas_120).toFixed(1);
+    const sRaw = Number(row.k_saldo_total);
+    const s    = +(sRaw / 1e6).toFixed(3);  // pesos → millones, igual que static data
+    const pct  = (v: number) => sRaw > 0 ? +(v / sRaw * 100).toFixed(2) : 0;
+    const cu = pct(Number(row.a_current));
+    const b  = pct(Number(row.b_bucket_1_30));
+    const cc = pct(Number(row.c_bucket_31_60));
+    const d  = pct(Number(row.d_bucket_61_90));
+    const e  = pct(Number(row.e_bucket_91_120));
+    const f  = pct(Number(row.f_bucket_mas_120));
     if (!snap[row.periodo]) snap[row.periodo] = {};
     if (!snap[row.periodo][row.tipo_cliente]) snap[row.periodo][row.tipo_cliente] = {};
     snap[row.periodo][row.tipo_cliente][row.fecha_desembolso_periodo] = {
       s, cu, b, cc, d, e, f,
-      m30: +(b+cc+d+e+f).toFixed(1),
-      m60: +(cc+d+e+f).toFixed(1),
-      m90: +(d+e+f).toFixed(1),
-      m120: +(e+f).toFixed(1),
+      m30: +(b+cc+d+e+f).toFixed(2),
+      m60: +(cc+d+e+f).toFixed(2),
+      m90: +(d+e+f).toFixed(2),
+      m120: +(e+f).toFixed(2),
     };
   }
   return snap;
@@ -57,11 +59,13 @@ function buildComparison(snap: any): Array<{v:string,nPeak:number,rPeak:number,n
 
 function buildDynamic(snap: any): Array<{c:string,s:number,cu:number,b:number,cc:number,d:number,e:number,f:number}> {
   return Object.keys(snap).sort().map(corte => {
-    const vintageMap = snap[corte]['TOTAL'] || {};
+    const segs = snap[corte];
     let ts=0, tCu=0, tB=0, tCc=0, tD=0, tE=0, tF=0;
-    for (const d of Object.values(vintageMap) as any[]) {
-      ts+=d.s; tCu+=d.cu*d.s; tB+=d.b*d.s; tCc+=d.cc*d.s;
-      tD+=d.d*d.s; tE+=d.e*d.s; tF+=d.f*d.s;
+    for (const seg of Object.keys(segs)) {
+      for (const d of Object.values(segs[seg]) as any[]) {
+        ts+=d.s; tCu+=d.cu*d.s; tB+=d.b*d.s; tCc+=d.cc*d.s;
+        tD+=d.d*d.s; tE+=d.e*d.s; tF+=d.f*d.s;
+      }
     }
     if (ts <= 0) return null;
     return { c:corte, s:+ts.toFixed(1), cu:+(tCu/ts).toFixed(1), b:+(tB/ts).toFixed(1),
@@ -91,15 +95,19 @@ function buildCurves(snap: any): any {
 function makeAggFn(snap: any) {
   return (seg: string, vintageFrom: string, vintageTo: string) => {
     const result: Array<{c:string,s:number,cu:number,b:number,cc:number,d:number,e:number,f:number,m30:number,m60:number,m90:number,m120:number}> = [];
+    const isTOTAL = seg === 'TOTAL';
     Object.keys(snap).sort().forEach(corte => {
-      const vintageMap = snap[corte][seg] || {};
+      const segsToUse = isTOTAL ? Object.keys(snap[corte]) : [seg];
       let totalS=0, totalCu=0, totalB=0, totalCc=0, totalD=0, totalE=0, totalF=0;
-      Object.keys(vintageMap).forEach(v => {
-        if (v < vintageFrom || v > vintageTo) return;
-        const d = vintageMap[v]; const sM = d.s;
-        totalS+=sM; totalCu+=d.cu*sM; totalB+=d.b*sM; totalCc+=d.cc*sM;
-        totalD+=d.d*sM; totalE+=d.e*sM; totalF+=d.f*sM;
-      });
+      for (const s of segsToUse) {
+        const vintageMap = snap[corte][s] || {};
+        Object.keys(vintageMap).forEach(v => {
+          if (v < vintageFrom || v > vintageTo) return;
+          const d = vintageMap[v]; const sM = d.s;
+          totalS+=sM; totalCu+=d.cu*sM; totalB+=d.b*sM; totalCc+=d.cc*sM;
+          totalD+=d.d*sM; totalE+=d.e*sM; totalF+=d.f*sM;
+        });
+      }
       if (totalS <= 0) return;
       result.push({ c:corte, s:+totalS.toFixed(1),
         cu:+(totalCu/totalS).toFixed(1), b:+(totalB/totalS).toFixed(1), cc:+(totalCc/totalS).toFixed(1),
