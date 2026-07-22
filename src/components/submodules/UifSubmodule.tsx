@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo, useDeferredValue } from 'react';
 import {
   Database, Loader2, ShieldAlert, CheckCircle2, Clock, RefreshCcw,
-  ChevronDown, ChevronRight, Save, Filter, X, RotateCcw
+  ChevronDown, ChevronRight, Save, Filter, X, RotateCcw, Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import MultiSelect from '../ui/MultiSelect';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ interface UifRecord {
   warning_pep_o_so: number | null;
   warning_smvm_men_anual: number | null;
   warning_pagador_indirecto: number | null;
+  warning_repet: number | null;
+  monto_pagado_cvu: number | null;
   total_cancelados_en_el_mes: number | null;
   salario_min: number | null;
   smvm_mes: number | null;
@@ -237,6 +240,8 @@ const DISPLAY_COLS: { key: keyof UifRecord; label: string; render?: (v: unknown,
   { key: 'warning_pep_o_so', label: 'W. PEP/SO', render: v => <WarnDot active={!!v} /> },
   { key: 'warning_smvm_men_anual', label: 'W. SMVM', render: v => <WarnDot active={!!v} /> },
   { key: 'warning_pagador_indirecto', label: 'W. Pag. Ind.', render: v => <WarnDot active={!!v} /> },
+  { key: 'warning_repet', label: 'W. REPET', render: v => <WarnDot active={!!v} /> },
+  { key: 'monto_pagado_cvu', label: 'Monto Pag. Indirecto', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
   { key: 'total_cancelados_en_el_mes', label: 'Cancelados/Mes' },
   { key: 'salario_min', label: 'Salario Mín.', render: v => fmtMoney(v) },
   { key: 'smvm_mes', label: 'SMVM Mes', render: v => fmtMoney(v) },
@@ -464,12 +469,14 @@ const WARNING_OPTIONS = [
   'warning_pep_o_so',
   'warning_smvm_men_anual',
   'warning_pagador_indirecto',
+  'warning_repet',
 ];
 const WARNING_LABELS: Record<string, string> = {
   warning_cancelacion_anticipada: 'Cancelación anticipada',
   warning_pep_o_so: 'PEP / SO',
   warning_smvm_men_anual: 'SMVM mensual/anual',
   warning_pagador_indirecto: 'Pagador indirecto',
+  warning_repet: 'Homónimos LAFT',
 };
 
 export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
@@ -596,7 +603,12 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
     const auditados = records.filter(isAuditado).length;
     const sinAuditoria = total - auditados;
     const riesgoAlto = records.filter(r => r.riesgo_auditado === 'ALTO').length;
-    return { total, sinAuditoria, auditados, riesgoAlto };
+    const sinAuditarPorAlerta = WARNING_OPTIONS.map(w => ({
+      key: w,
+      label: WARNING_LABELS[w],
+      count: records.filter(r => !isAuditado(r) && r[w as keyof UifRecord]).length,
+    }));
+    return { total, sinAuditoria, auditados, riesgoAlto, sinAuditarPorAlerta };
   }, [records]);
 
   const filtered = useMemo(() => records.filter(r => {
@@ -622,6 +634,51 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
     filters.loan_id !== '' || filters.cuil !== '' ||
     filters.fecha_from !== '' || filters.fecha_to !== '' ||
     filters.warning.length > 0 || filters.riesgo.length > 0 || filters.riesgo_auditado.length > 0;
+
+  const handleExportExcel = useCallback(() => {
+    if (filtered.length === 0) return;
+    const rows = filtered.map(r => ({
+      loan_id: r.loan_id,
+      cuil: r.cuil,
+      dni: r.dni,
+      fecha_warning: fmtDate(r.fecha_warning),
+      fecha_desembolso: fmtDate(r.fecha_desembolso),
+      monto_desembolsado: r.monto_desembolsado,
+      tipo_cliente: r.tipo_cliente,
+      medio_pago: r.medio_pago,
+      region_loan: r.region_loan,
+      riesgo_region: r.riesgo_region,
+      riesgo: r.riesgo,
+      nse: r.nse ? 'Sí' : 'No',
+      actividad_laboral: r.actividad_laboral,
+      es_pep: r.es_pep ? 'Sí' : 'No',
+      es_so: r.es_so ? 'Sí' : 'No',
+      warn_cancelacion_anticipada: r.warning_cancelacion_anticipada,
+      warn_pep_o_so: r.warning_pep_o_so,
+      warn_smvm_men_anual: r.warning_smvm_men_anual,
+      warn_pagador_indirecto: r.warning_pagador_indirecto,
+      warn_repet: r.warning_repet,
+      monto_pagador_indirecto: r.monto_pagado_cvu,
+      riesgo_auditado: r.riesgo_auditado,
+      auditado_por: r.riesgo_auditado_auditor,
+      auditado_fecha: fmtDateTime(r.riesgo_auditado_fecha),
+      auditoria_1: r.auditoria_1,
+      auditor_1: r.auditor_1,
+      auditoria_2: r.auditoria_2,
+      auditor_2: r.auditor_2,
+      auditoria_3: r.auditoria_3,
+      auditor_3: r.auditor_3,
+      auditoria_4: r.auditoria_4,
+      auditor_4: r.auditor_4,
+      auditoria_5: r.auditoria_5,
+      auditor_5: r.auditor_5,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'UIF');
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    XLSX.writeFile(wb, `uif_${today}.xlsx`);
+  }, [filtered]);
 
   const cuilRanking = useMemo(() => {
     const map = new Map<string, { cuil: string; warnings: number; riesgoAlto: number }>();
@@ -672,20 +729,46 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { label: 'Total', value: stats.total, color: 'text-zinc-200', icon: null },
-          { label: 'Sin Auditar', value: stats.sinAuditoria, color: 'text-amber-400', icon: <Clock className="w-4 h-4" /> },
-          { label: 'Auditados', value: stats.auditados, color: 'text-blue-400', icon: <CheckCircle2 className="w-4 h-4" /> },
-          { label: 'Riesgo Alto', value: stats.riesgoAlto, color: 'text-rose-400', icon: <ShieldAlert className="w-4 h-4" /> },
-        ].map(s => (
-          <div key={s.label} className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">{s.label}</p>
-            <div className={`flex items-center gap-1.5 ${s.color}`}>
-              {s.icon}
-              <span className="text-xl font-black">{(s.value ?? 0).toLocaleString('es-AR')}</span>
-            </div>
+        {/* Total */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Total</p>
+          <span className="text-xl font-black text-zinc-200">{stats.total.toLocaleString('es-AR')}</span>
+        </div>
+
+        {/* Sin Auditar — con desglose por alerta */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Sin Auditar</p>
+          <div className="flex items-center gap-1.5 text-amber-400 mb-2">
+            <Clock className="w-4 h-4" />
+            <span className="text-xl font-black">{stats.sinAuditoria.toLocaleString('es-AR')}</span>
           </div>
-        ))}
+          <div className="space-y-1">
+            {stats.sinAuditarPorAlerta.map(a => (
+              <div key={a.key} className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-zinc-500 truncate">{a.label}</span>
+                <span className="text-[10px] font-bold text-amber-400/80 shrink-0">{a.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Auditados */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Auditados</p>
+          <div className="flex items-center gap-1.5 text-blue-400">
+            <CheckCircle2 className="w-4 h-4" />
+            <span className="text-xl font-black">{stats.auditados.toLocaleString('es-AR')}</span>
+          </div>
+        </div>
+
+        {/* Riesgo Alto */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Riesgo Alto</p>
+          <div className="flex items-center gap-1.5 text-rose-400">
+            <ShieldAlert className="w-4 h-4" />
+            <span className="text-xl font-black">{stats.riesgoAlto.toLocaleString('es-AR')}</span>
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -701,6 +784,14 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
                 <X className="w-3 h-3" /> Limpiar
               </button>
             )}
+            <button
+              onClick={handleExportExcel}
+              disabled={filtered.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-700/50 text-emerald-300 font-bold text-xs rounded-lg transition-all"
+              title={`Exportar ${filtered.length} registros a Excel`}
+            >
+              <Download className="w-3.5 h-3.5" /> Excel
+            </button>
             <button onClick={handleLoad} disabled={loading} className="p-1 rounded-lg hover:bg-slate-800 text-zinc-600 hover:text-zinc-300 transition-colors disabled:opacity-30" title="Recargar">
               <RefreshCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
