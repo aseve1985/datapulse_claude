@@ -1141,7 +1141,7 @@ async function startServer() {
       const { GoogleGenAI, Type } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.6-flash",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1181,7 +1181,7 @@ async function startServer() {
       const { GoogleGenAI } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey });
       const chat = ai.chats.create({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.6-flash",
         config: { systemInstruction },
         history: messages.slice(0, -1).map((m: any) => ({
           role: m.role === 'user' ? 'user' : 'model',
