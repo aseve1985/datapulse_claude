@@ -1350,7 +1350,7 @@ async function startServer() {
   // ── Operadores de Ventas (Callcenter) ────────────────────────────────────────
   const OPERADORES_SHEET_ID = '1AGJqROZQJ1U5NettIlOowNh0TOAITnDRXAJZhNfRJK4';
   let operadoresCache: { data: any; fetchedAt: number } | null = null;
-  const OPERADORES_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
+  const OPERADORES_CACHE_TTL_MS = 5 * 60 * 1000;
 
   function parseMontoARS(s: string): number {
     if (!s) return 0;
@@ -1366,12 +1366,12 @@ async function startServer() {
     const m85Q  = text.match(/85%\s*\((\d+)\s*ventas\)/i);
     const m85M  = text.match(/85%\s*\([^)]+\):\s*\$([0-9.]+)/i);
     return {
-      sc_q:   mScQ  ? parseInt(mScQ[1])         : null,
-      sc_m:   mScM  ? parseMontoARS(mScM[1])    : null,
-      m100_q: m100Q ? parseInt(m100Q[1])         : null,
-      m100_m: m100M ? parseMontoARS(m100M[1])   : null,
-      m85_q:  m85Q  ? parseInt(m85Q[1])          : null,
-      m85_m:  m85M  ? parseMontoARS(m85M[1])    : null,
+      sc_q:   mScQ  ? parseInt(mScQ[1])        : null,
+      sc_m:   mScM  ? parseMontoARS(mScM[1])   : null,
+      m100_q: m100Q ? parseInt(m100Q[1])        : null,
+      m100_m: m100M ? parseMontoARS(m100M[1])  : null,
+      m85_q:  m85Q  ? parseInt(m85Q[1])         : null,
+      m85_m:  m85M  ? parseMontoARS(m85M[1])   : null,
     };
   }
 
@@ -1384,12 +1384,12 @@ async function startServer() {
     const m85P  = text.match(/85%\s*\((\d+(?:[.,]\d+)?)%\)/i);
     const m85M  = text.match(/85%\s*\([^)]+\):\s*\$([0-9.]+)/i);
     return {
-      sc_p:   mScP  ? parseFloat(mScP[1].replace(',', '.'))   : null,
-      sc_m:   mScM  ? parseMontoARS(mScM[1])                  : null,
-      m100_p: m100P ? parseFloat(m100P[1].replace(',', '.'))  : null,
-      m100_m: m100M ? parseMontoARS(m100M[1])                 : null,
-      m85_p:  m85P  ? parseFloat(m85P[1].replace(',', '.'))   : null,
-      m85_m:  m85M  ? parseMontoARS(m85M[1])                  : null,
+      sc_p:   mScP  ? parseFloat(mScP[1].replace(',', '.'))  : null,
+      sc_m:   mScM  ? parseMontoARS(mScM[1])                 : null,
+      m100_p: m100P ? parseFloat(m100P[1].replace(',', '.')) : null,
+      m100_m: m100M ? parseMontoARS(m100M[1])                : null,
+      m85_p:  m85P  ? parseFloat(m85P[1].replace(',', '.'))  : null,
+      m85_m:  m85M  ? parseMontoARS(m85M[1])                 : null,
     };
   }
 
@@ -1401,6 +1401,76 @@ async function startServer() {
     }
     return '';
   }
+
+  function normalizeOpName(s: string): string {
+    if (!s) return '';
+    return s.toUpperCase().trim()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/\s+/g, ' ');
+  }
+
+  function toDateStr(d: any): string {
+    if (!d) return '';
+    if (typeof d === 'string') return d.slice(0, 10);
+    if (d instanceof Date) return d.toISOString().slice(0, 10);
+    return String(d).slice(0, 10);
+  }
+
+  const OPERADORES_VENTAS_QUERY = `
+    SELECT pais, fecha_desembolso, operador, COUNT(DISTINCT loan_id) AS ventas_reales
+    FROM (
+      SELECT 'Argentina' AS pais, fecha_desembolso, UPPER(operador) AS operador, loan_id
+      FROM gold.ventas_arg WHERE flag_venta = 1 AND fecha_desembolso >= '2026-01-01'
+      UNION ALL
+      SELECT 'Colombia', fecha_desembolso, UPPER(operador), loan_id
+      FROM gold.ventas_col WHERE flag_venta = 1 AND fecha_desembolso >= '2026-01-01'
+    ) v
+    GROUP BY 1, 2, 3
+  `;
+
+  const OPERADORES_MORA_QUERY = `
+    WITH oaa AS (
+      SELECT UPPER(MAX(operador_asignado)) AS operador, loan_id
+      FROM auxiliary_tables.asignacion_mora_manual_arg
+      WHERE operador_asignado <> 'OPERADOR_ASIGNADO'
+      GROUP BY loan_id
+    ),
+    oac AS (
+      SELECT UPPER(MAX(operador_asignado)) AS operador, loan_id
+      FROM auxiliary_tables.asignacion_mora_manual
+      GROUP BY loan_id
+    )
+    SELECT pais, fecha_vencimiento_fix, operador,
+      SUM(cantidad_devengados) AS total_devengados,
+      SUM(cantidad_mora)       AS total_mora
+    FROM (
+      SELECT 'Argentina' AS pais,
+        ch.fecha_final_suma_2 AS fecha_vencimiento_fix,
+        oaa.operador,
+        1 AS cantidad_devengados,
+        CASE WHEN ma.fecha_pago <= ch.fecha_final_suma_2
+              AND ma.capital_mas_interes_paid >= ma.capital_mas_interes
+             THEN 0 ELSE 1 END AS cantidad_mora
+      FROM gold.mora_arg ma
+      LEFT JOIN auxiliary_tables.calendar_habil ch ON ma.fecha_vencimiento = ch.fecha
+      LEFT JOIN oaa ON oaa.loan_id = ma.loan_id
+      WHERE ma.flag_renovador = 'NUEVO' AND ma.fecha_desembolso >= '2026-01-01'
+      UNION ALL
+      SELECT 'Colombia',
+        ch.fecha_final_suma_2,
+        oac.operador,
+        1,
+        CASE WHEN ma.fecha_pago <= ch.fecha_final_suma_2
+              AND ma.capital_mas_interes_paid >= ma.capital_mas_interes
+             THEN 0 ELSE 1 END
+      FROM gold.mora_col ma
+      LEFT JOIN auxiliary_tables.calendar_habil ch ON ma.fecha_vencimiento = ch.fecha
+      LEFT JOIN oac ON oac.loan_id = ma.loan_id
+      WHERE ma.flag_renovador = 'NUEVO' AND ma.fecha_desembolso >= '2026-01-01'
+    ) m
+    WHERE operador IS NOT NULL AND operador <> ''
+    GROUP BY 1, 2, 3
+  `;
 
   app.get("/api/operadores-ventas", async (_req, res) => {
     try {
@@ -1424,18 +1494,18 @@ async function startServer() {
       const esquemas   = parseCSV(csvEsquemas);
 
       const parsedSemanas = semanas.map(row => {
-        const nombre  = getColValue(row, 'nombre_semana', 'semana', 'nombre');
-        const desde   = getColValue(row, 'fecha_desde', 'desde', 'fecha desde');
-        const hasta   = getColValue(row, 'fecha_hasta', 'hasta', 'fecha hasta');
-        const pais    = getColValue(row, 'pais', 'país', 'country');
+        const nombre     = getColValue(row, 'nombre_semana', 'semana', 'nombre');
+        const desde      = getColValue(row, 'fecha_desde', 'desde', 'fecha desde');
+        const hasta      = getColValue(row, 'fecha_hasta', 'hasta', 'fecha hasta');
         const diasSemana = desde && hasta
           ? Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400000) + 1
           : 5;
-        return { nombre, fecha_desde: desde, fecha_hasta: hasta, dias_semana: diasSemana, pais };
+        return { nombre, fecha_desde: desde, fecha_hasta: hasta, dias_semana: diasSemana };
       });
 
       const parsedEsquemas = esquemas.map(row => ({
         semana:          getColValue(row, 'semana', 'nombre_semana'),
+        // "Campaña" en el sheet = país (Argentina / Colombia)
         campana:         getColValue(row, 'campaña', 'campana', 'campaign'),
         ventas_antiguos: parseVentasEsquema(getColValue(row, 'antiguos', 'ventas antiguos', 'ventas_antiguos')),
         ventas_nuevos:   parseVentasEsquema(getColValue(row, 'nuevos', 'ventas nuevos', 'ventas_nuevos')),
@@ -1444,14 +1514,14 @@ async function startServer() {
         penalidad:       getColValue(row, 'penalidad'),
       }));
 
-      const parsedComisiones = comisiones.map(row => {
+      // parsedComisiones: campana = "Argentina" / "Colombia" (es el país en el sheet)
+      const parsedComisiones: any[] = comisiones.map(row => {
         const semanaNombre = getColValue(row, 'semana', 'nombre_semana');
-        const campana      = getColValue(row, 'campaña', 'campana', 'campaign');
+        const campana      = getColValue(row, 'campaña', 'campana', 'campaign'); // = país
         const antiguedad   = getColValue(row, 'antigüedad', 'antiguedad', 'antiguo/nuevo', 'antigue');
         const diasLab      = parseInt(getColValue(row, 'dias_lab', 'dias lab', 'días lab', 'diaslab') || '0');
         const metaVentas   = parseInt(getColValue(row, 'meta_ventas', 'meta ventas', 'ventas_meta', 'meta') || '0');
         const metaMora     = parseFloat(getColValue(row, 'meta_mora', 'meta mora', 'mora_meta', 'mora') || '0');
-        const pais         = getColValue(row, 'pais', 'país', 'country');
 
         const semana     = parsedSemanas.find(s => s.nombre.toLowerCase() === semanaNombre.toLowerCase());
         const diasSemana = semana?.dias_semana || 5;
@@ -1470,41 +1540,113 @@ async function startServer() {
         else if (faltas >= 3) penaltyPct = 0.50;
 
         return {
-          nombre:              getColValue(row, 'nombre', 'name', 'operador', 'operadores'),
-          cedula:              getColValue(row, 'cedula', 'cédula', 'documento', 'dni'),
-          pais,
-          campana,
+          nombre:               getColValue(row, 'nombre', 'name', 'operador', 'operadores'),
+          cedula:               getColValue(row, 'cedula', 'cédula', 'documento', 'dni'),
+          campana,              // = país ("Argentina" / "Colombia")
           antiguedad,
-          estado:              getColValue(row, 'estado', 'status'),
-          semana:              semanaNombre,
-          dias_lab:            diasLab,
-          dias_semana:         diasSemana,
-          meta_ventas:         metaVentas,
+          estado:               getColValue(row, 'estado', 'status'),
+          semana:               semanaNombre,
+          dias_lab:             diasLab,
+          dias_semana:          diasSemana,
+          meta_ventas:          metaVentas,
           meta_ventas_ajustada: metaAjustada,
-          meta_mora:           metaMora,
+          meta_mora:            metaMora,
           faltas,
-          penalty_pct:         penaltyPct,
-          esquema_ventas:      esquema ? (esAntiguos ? esquema.ventas_antiguos : esquema.ventas_nuevos) : null,
-          esquema_mora:        esquema ? (esAntiguos ? esquema.mora_antiguos   : esquema.mora_nuevos)   : null,
-          fecha_desde:         semana?.fecha_desde || null,
-          fecha_hasta:         semana?.fecha_hasta || null,
-          // Actuals pendientes de Redshift
-          ventas_reales:       null as number | null,
-          mora_real:           null as number | null,
-          comision_ventas:     null as number | null,
-          comision_mora:       null as number | null,
-          comision_total:      null as number | null,
+          penalty_pct:          penaltyPct,
+          esquema_ventas:       esquema ? (esAntiguos ? esquema.ventas_antiguos : esquema.ventas_nuevos) : null,
+          esquema_mora:         esquema ? (esAntiguos ? esquema.mora_antiguos   : esquema.mora_nuevos)   : null,
+          fecha_desde:          semana?.fecha_desde || null,
+          fecha_hasta:          semana?.fecha_hasta || null,
+          ventas_reales:        null as number | null,
+          mora_real:            null as number | null,
+          matched:              false,
         };
       });
 
+      // ── Redshift actuals ─────────────────────────────────────────────────────
+      let unmatchedRedshift: { pais: string; operador: string }[] = [];
+
+      if (redshiftPool) {
+        console.log("[OperadoresVentas] Querying Redshift actuals...");
+        const [ventasResult, moraResult] = await Promise.all([
+          redshiftPool.query(OPERADORES_VENTAS_QUERY),
+          redshiftPool.query(OPERADORES_MORA_QUERY),
+        ]);
+
+        const ventasByDay = ventasResult.rows.map((r: any) => ({
+          pais:     String(r.pais   || ''),
+          fecha:    toDateStr(r.fecha_desembolso),
+          operador: String(r.operador || ''),
+          ventas:   Number(r.ventas_reales) || 0,
+        }));
+
+        const moraByDay = moraResult.rows.map((r: any) => ({
+          pais:       String(r.pais || ''),
+          fecha:      toDateStr(r.fecha_vencimiento_fix),
+          operador:   String(r.operador || ''),
+          devengados: Number(r.total_devengados) || 0,
+          mora:       Number(r.total_mora) || 0,
+        }));
+
+        // Detectar operadores en Redshift que no tienen match en la hoja
+        const sheetKeys = new Set(
+          parsedComisiones.map(op => `${op.campana}||${normalizeOpName(op.nombre)}`)
+        );
+        const redshiftKeys = new Set([
+          ...ventasByDay.map((v: any) => `${v.pais}||${normalizeOpName(v.operador)}`),
+          ...moraByDay.map((m: any)   => `${m.pais}||${normalizeOpName(m.operador)}`),
+        ]);
+        unmatchedRedshift = [...redshiftKeys]
+          .filter(k => !sheetKeys.has(k))
+          .map(k => { const [pais, operador] = k.split('||'); return { pais, operador }; });
+
+        // Cruzar actuals por operador + semana
+        for (const op of parsedComisiones) {
+          const opNorm  = normalizeOpName(op.nombre);
+          const semana  = parsedSemanas.find(s => s.nombre === op.semana);
+          if (!semana) continue;
+
+          const { fecha_desde, fecha_hasta } = semana;
+
+          const vRows = ventasByDay.filter((v: any) =>
+            v.pais === op.campana &&
+            normalizeOpName(v.operador) === opNorm &&
+            v.fecha >= fecha_desde && v.fecha <= fecha_hasta
+          );
+          if (vRows.length > 0) {
+            op.ventas_reales = vRows.reduce((s: number, v: any) => s + v.ventas, 0);
+            op.matched = true;
+          }
+
+          const mRows = moraByDay.filter((m: any) =>
+            m.pais === op.campana &&
+            normalizeOpName(m.operador) === opNorm &&
+            m.fecha >= fecha_desde && m.fecha <= fecha_hasta
+          );
+          if (mRows.length > 0) {
+            const devengados = mRows.reduce((s: number, m: any) => s + m.devengados, 0);
+            const mora       = mRows.reduce((s: number, m: any) => s + m.mora, 0);
+            op.mora_real = devengados > 0 ? +((mora / devengados) * 100).toFixed(2) : 0;
+            op.matched = true;
+          }
+        }
+
+        console.log(`[OperadoresVentas] Actuals joined. Sin match en Redshift: ${unmatchedRedshift.length}`);
+      }
+
+      const safe = JSON.parse(JSON.stringify(
+        parsedComisiones, (_k, v) => typeof v === 'bigint' ? Number(v) : v
+      ));
+
       const response = {
-        operadores: parsedComisiones,
-        semanas: parsedSemanas,
-        has_actuals: false,
+        operadores:          safe,
+        semanas:             parsedSemanas,
+        has_actuals:         !!redshiftPool,
+        unmatched_redshift:  unmatchedRedshift,
       };
 
       operadoresCache = { data: response, fetchedAt: now };
-      console.log(`[OperadoresVentas] Cached: ${parsedComisiones.length} operadores, ${parsedSemanas.length} semanas`);
+      console.log(`[OperadoresVentas] Cached: ${safe.length} operadores, ${parsedSemanas.length} semanas`);
       res.json(response);
     } catch (error: any) {
       console.error("[OperadoresVentas] Error:", error);
@@ -1512,7 +1654,6 @@ async function startServer() {
     }
   });
 
-  // Invalidar cache de operadores manualmente
   app.post("/api/operadores-ventas/refresh", (_req, res) => {
     operadoresCache = null;
     res.json({ ok: true, message: "Cache invalidado" });

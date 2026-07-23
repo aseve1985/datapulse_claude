@@ -25,8 +25,7 @@ interface EsquemaMora {
 interface OperadorRow {
   nombre: string;
   cedula: string;
-  pais: string;
-  campana: string;
+  campana: string; // = país ("Argentina" / "Colombia") — columna "Campaña" del sheet
   antiguedad: string;
   estado: string;
   semana: string;
@@ -46,6 +45,7 @@ interface OperadorRow {
   comision_ventas: number | null;
   comision_mora: number | null;
   comision_total: number | null;
+  matched: boolean;
 }
 
 interface SemanaInfo {
@@ -165,11 +165,12 @@ function CumplBadge({ pct }: { pct: number | null }) {
 export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  const [operadores, setOperadores] = useState<OperadorRow[]>([]);
-  const [semanas,    setSemanas]    = useState<SemanaInfo[]>([]);
-  const [hasActuals, setHasActuals] = useState(false);
-  const [loading,    setLoading]    = useState(false);
-  const [error,      setError]      = useState<string | null>(null);
+  const [operadores,         setOperadores]         = useState<OperadorRow[]>([]);
+  const [semanas,            setSemanas]            = useState<SemanaInfo[]>([]);
+  const [hasActuals,         setHasActuals]         = useState(false);
+  const [unmatchedRedshift,  setUnmatchedRedshift]  = useState<{ pais: string; operador: string }[]>([]);
+  const [loading,            setLoading]            = useState(false);
+  const [error,              setError]              = useState<string | null>(null);
 
   const [filterPais,   setFilterPais]   = useState<string>('');
   const [filterSemana, setFilterSemana] = useState<string>('');
@@ -198,6 +199,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
       setOperadores(data.operadores || []);
       setSemanas(data.semanas || []);
       setHasActuals(!!data.has_actuals);
+      setUnmatchedRedshift(data.unmatched_redshift || []);
 
       // Auto-seleccionar semana más reciente
       if (data.semanas?.length > 0 && !filterSemana) {
@@ -219,14 +221,10 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
   // ── Derived ──
 
+  // campana IS el país en la hoja ("Argentina" / "Colombia")
   const paisOptions = useMemo(() =>
-    [...new Set(operadores.map(o => o.pais).filter(Boolean))].sort(),
+    [...new Set(operadores.map(o => o.campana).filter(Boolean))].sort(),
   [operadores]);
-
-  const campanaOptions = useMemo(() => {
-    const base = operadores.filter(o => !filterPais || o.pais === filterPais);
-    return [...new Set(base.map(o => o.campana).filter(Boolean))].sort();
-  }, [operadores, filterPais]);
 
   const semanaOptions = useMemo(() =>
     semanas.map(s => s.nombre),
@@ -234,7 +232,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
   const filtered = useMemo(() =>
     operadores.filter(o =>
-      (!filterPais    || o.pais    === filterPais) &&
+      (!filterPais    || o.campana === filterPais) &&
       (!filterSemana  || o.semana  === filterSemana) &&
       (!filterCampana || o.campana === filterCampana)
     ),
@@ -318,8 +316,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
     const rows = enriched.map(o => ({
       Nombre: o.nombre,
       Cédula: o.cedula,
-      País: o.pais,
-      Campaña: o.campana,
+      País: o.campana,
       Antigüedad: o.antiguedad,
       Estado: o.estado,
       Semana: o.semana,
@@ -395,6 +392,25 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
         </div>
       )}
 
+      {hasActuals && unmatchedRedshift.length > 0 && (
+        <div className="bg-orange-950/20 border border-orange-600/30 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0" />
+            <span className="text-orange-400 text-sm font-bold">
+              {unmatchedRedshift.length} operador{unmatchedRedshift.length !== 1 ? 'es' : ''} en Redshift sin match en la hoja
+            </span>
+          </div>
+          <p className="text-orange-400/70 text-xs mb-2">Corregí el nombre en la hoja Comisiones del Google Sheet para que coincida:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {unmatchedRedshift.map((u, i) => (
+              <span key={i} className="px-2 py-0.5 bg-orange-900/30 border border-orange-700/30 rounded-lg text-[11px] text-orange-300 font-mono">
+                {u.pais.slice(0, 3).toUpperCase()} · {u.operador}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {operadores.length > 0 && (<>
 
         {/* Filtros */}
@@ -422,23 +438,14 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
             </select>
           </div>
 
-          {/* Campaña */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Campaña</span>
-            <select value={filterCampana} onChange={e => { setFilterCampana(e.target.value); setPage(1); }}
-              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
-              <option value="">Todas</option>
-              {campanaOptions.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-
-          {(filterPais || filterCampana) && (
-            <button onClick={() => { setFilterPais(''); setFilterCampana(''); setPage(1); }}
+          {filterPais && (
+            <button onClick={() => { setFilterPais(''); setPage(1); }}
               className="flex items-center gap-1.5 mt-5 px-3 py-1.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/40 rounded-lg text-xs text-red-400 font-medium transition-colors">
               <X className="w-3 h-3" /> Limpiar
             </button>
           )}
           <span className="ml-auto text-xs text-zinc-600 mt-5">{enriched.length} operador{enriched.length !== 1 ? 'es' : ''}</span>
+
         </motion.div>
 
         {/* KPIs */}
@@ -533,8 +540,8 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                         <td className="px-3 py-2.5 text-white text-xs font-medium whitespace-nowrap">{op.nombre || '—'}</td>
                         <td className="px-3 py-2.5">
                           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                            op.pais === 'Argentina' || op.pais === 'ARG' ? 'bg-blue-900/40 text-blue-400' : 'bg-amber-900/40 text-amber-400'
-                          }`}>{op.pais?.slice(0,3).toUpperCase() || '—'}</span>
+                            op.campana === 'Argentina' ? 'bg-blue-900/40 text-blue-400' : 'bg-amber-900/40 text-amber-400'
+                          }`}>{op.campana?.slice(0, 3).toUpperCase() || '—'}</span>
                         </td>
                         <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{op.campana || '—'}</td>
                         <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{op.antiguedad || '—'}</td>
