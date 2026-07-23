@@ -1538,9 +1538,10 @@ async function startServer() {
             : ['nuevo',   'nuevos'  ].includes(e.antiguedad.toLowerCase()))
         );
 
-        const metaAjustada = diasSemana > 0 ? Math.round(metaVentas * diasLab / diasSemana) : metaVentas;
-        // Ausencias viene directo del sheet; si no hay columna, fallback a dias_semana - dias_lab
-        const faltas = ausencias > 0 ? ausencias : Math.max(0, diasSemana - diasLab);
+        // Denominador = dias hábiles de la semana = diasLab + ausencias (no fechas calendario)
+        const diasHabilesSemana = diasLab + ausencias;
+        const metaAjustada = diasHabilesSemana > 0 ? Math.round(metaVentas * diasLab / diasHabilesSemana) : metaVentas;
+        const faltas = ausencias; // directo del sheet, sin computar desde fechas
         let penaltyPct = 0;
         if (faltas === 1) penaltyPct = 0.15;
         else if (faltas === 2) penaltyPct = 0.30;
