@@ -1517,6 +1517,7 @@ async function startServer() {
       // parsedComisiones: campana = "Argentina" / "Colombia" (es el país en el sheet)
       const parsedComisiones: any[] = comisiones.map(row => {
         const semanaNombre = getColValue(row, 'semana', 'nombre_semana');
+        const mes          = getColValue(row, 'mes', 'month', 'periodo');
         const campana      = getColValue(row, 'campaña', 'campana', 'campaign'); // = país
         const antiguedad   = getColValue(row, 'antigüedad', 'antiguedad', 'antiguo/nuevo', 'antigue');
         const diasLab      = parseInt(getColValue(row, 'dias_lab', 'dias lab', 'días lab', 'diaslab') || '0');
@@ -1542,6 +1543,7 @@ async function startServer() {
         return {
           nombre:               getColValue(row, 'nombre', 'name', 'operador', 'operadores'),
           cedula:               getColValue(row, 'cedula', 'cédula', 'documento', 'dni'),
+          mes,
           campana,              // = país ("Argentina" / "Colombia")
           antiguedad,
           estado:               getColValue(row, 'estado', 'status'),

@@ -25,6 +25,7 @@ interface EsquemaMora {
 interface OperadorRow {
   nombre: string;
   cedula: string;
+  mes: string;
   campana: string; // = país ("Argentina" / "Colombia") — columna "Campaña" del sheet
   antiguedad: string;
   estado: string;
@@ -172,6 +173,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   const [loading,            setLoading]            = useState(false);
   const [error,              setError]              = useState<string | null>(null);
 
+  const [filterMes,    setFilterMes]    = useState<string>('');
   const [filterPais,   setFilterPais]   = useState<string>('');
   const [filterSemana, setFilterSemana] = useState<string>('');
   const [filterCampana, setFilterCampana] = useState<string>('');
@@ -221,22 +223,29 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
   // ── Derived ──
 
+  const mesOptions = useMemo(() =>
+    [...new Set(operadores.map(o => o.mes).filter(Boolean))].sort(),
+  [operadores]);
+
   // campana IS el país en la hoja ("Argentina" / "Colombia")
   const paisOptions = useMemo(() =>
     [...new Set(operadores.map(o => o.campana).filter(Boolean))].sort(),
   [operadores]);
 
-  const semanaOptions = useMemo(() =>
-    semanas.map(s => s.nombre),
-  [semanas]);
+  // Cuando hay un mes seleccionado, sólo mostramos las semanas de ese mes
+  const semanaOptions = useMemo(() => {
+    const base = filterMes ? operadores.filter(o => o.mes === filterMes) : operadores;
+    return [...new Set(base.map(o => o.semana).filter(Boolean))].sort();
+  }, [operadores, filterMes]);
 
   const filtered = useMemo(() =>
     operadores.filter(o =>
+      (!filterMes     || o.mes     === filterMes) &&
       (!filterPais    || o.campana === filterPais) &&
       (!filterSemana  || o.semana  === filterSemana) &&
       (!filterCampana || o.campana === filterCampana)
     ),
-  [operadores, filterPais, filterSemana, filterCampana]);
+  [operadores, filterMes, filterPais, filterSemana, filterCampana]);
 
   // Enriquecer con comisiones calculadas
   const enriched = useMemo(() =>
@@ -418,6 +427,16 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
           className="flex flex-wrap items-center gap-3">
           <Filter className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
 
+          {/* Mes */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Mes</span>
+            <select value={filterMes} onChange={e => { setFilterMes(e.target.value); setFilterSemana(''); setPage(1); }}
+              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
+              <option value="">Todos</option>
+              {mesOptions.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
           {/* País */}
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">País</span>
@@ -438,8 +457,8 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
             </select>
           </div>
 
-          {filterPais && (
-            <button onClick={() => { setFilterPais(''); setPage(1); }}
+          {(filterMes || filterPais) && (
+            <button onClick={() => { setFilterMes(''); setFilterPais(''); setFilterSemana(''); setPage(1); }}
               className="flex items-center gap-1.5 mt-5 px-3 py-1.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/40 rounded-lg text-xs text-red-400 font-medium transition-colors">
               <X className="w-3 h-3" /> Limpiar
             </button>
