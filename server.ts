@@ -1503,15 +1503,15 @@ async function startServer() {
         return { nombre, fecha_desde: desde, fecha_hasta: hasta, dias_semana: diasSemana };
       });
 
+      // Esquemas: cada fila es (Semana, Campaña, Antiguós="Antiguos"|"Nuevos", Ventas texto, Mora texto)
       const parsedEsquemas = esquemas.map(row => ({
-        semana:          getColValue(row, 'semana', 'nombre_semana'),
-        // "Campaña" en el sheet = país (Argentina / Colombia)
-        campana:         getColValue(row, 'campaña', 'campana', 'campaign'),
-        ventas_antiguos: parseVentasEsquema(getColValue(row, 'antiguos', 'ventas antiguos', 'ventas_antiguos')),
-        ventas_nuevos:   parseVentasEsquema(getColValue(row, 'nuevos', 'ventas nuevos', 'ventas_nuevos')),
-        mora_antiguos:   parseMoraEsquema(getColValue(row, 'mora antiguos', 'mora_antiguos', 'mora ant', 'mora_ant')),
-        mora_nuevos:     parseMoraEsquema(getColValue(row, 'mora nuevos', 'mora_nuevos', 'mora nue', 'mora_nue')),
-        penalidad:       getColValue(row, 'penalidad'),
+        semana:     getColValue(row, 'nombre_semana', 'semana'),
+        campana:    getColValue(row, 'campaña', 'campana', 'campaign'),
+        mes:        getColValue(row, 'mes', 'month'),
+        antiguedad: getColValue(row, 'antiguós', 'antiguos', 'antigüedad', 'antiguedad', 'seniority'),
+        ventas:     parseVentasEsquema(getColValue(row, 'ventas', 'ventas_scheme')),
+        mora:       parseMoraEsquema(getColValue(row, 'mora', 'mora_scheme')),
+        penalidad:  getColValue(row, 'penalidad'),
       }));
 
       // parsedComisiones: campana = "Argentina" / "Colombia" (es el país en el sheet)
@@ -1522,8 +1522,8 @@ async function startServer() {
         const antiguedad   = getColValue(row, 'antigüedad', 'antiguedad', 'antiguo/nuevo', 'antigue');
         const estado2      = getColValue(row, 'estado2', 'estado 2', 'activo', 'activo/inactivo');
         const ausencias    = parseInt(getColValue(row, 'ausencias', 'faltas', 'inasistencias') || '0');
-        const diasLab      = parseInt(getColValue(row, 'dias_lab', 'dias lab', 'días lab', 'diaslab', 'dias laborables', 'días laborables') || '0');
-        const metaVentas   = parseInt(getColValue(row, 'meta_ventas', 'meta ventas', 'ventas_meta', 'meta', 'cuota', 'objetivo') || '0');
+        const diasLab      = parseInt(getColValue(row, 'dias lab', 'dias_lab', 'días lab', 'días_lab', 'diaslab') || '0');
+        const metaVentas   = parseInt(getColValue(row, 'meta ventas', 'meta_ventas', 'ventas_meta', 'meta', 'cuota') || '0');
         const metaMora     = parseFloat(getColValue(row, 'meta_mora', 'meta mora', 'mora_meta', 'mora') || '0');
 
         const semana     = parsedSemanas.find(s => s.nombre.toLowerCase() === semanaNombre.toLowerCase());
@@ -1532,7 +1532,10 @@ async function startServer() {
         const esAntiguos = ['antiguo', 'antiguos'].includes(antiguedad.toLowerCase());
         const esquema = parsedEsquemas.find(e =>
           e.semana.toLowerCase() === semanaNombre.toLowerCase() &&
-          e.campana.toLowerCase() === campana.toLowerCase()
+          e.campana.toLowerCase() === campana.toLowerCase() &&
+          (esAntiguos
+            ? ['antiguo', 'antiguos'].includes(e.antiguedad.toLowerCase())
+            : ['nuevo',   'nuevos'  ].includes(e.antiguedad.toLowerCase()))
         );
 
         const metaAjustada = diasSemana > 0 ? Math.round(metaVentas * diasLab / diasSemana) : metaVentas;
@@ -1559,8 +1562,8 @@ async function startServer() {
           meta_mora:            metaMora,
           faltas,
           penalty_pct:          penaltyPct,
-          esquema_ventas:       esquema ? (esAntiguos ? esquema.ventas_antiguos : esquema.ventas_nuevos) : null,
-          esquema_mora:         esquema ? (esAntiguos ? esquema.mora_antiguos   : esquema.mora_nuevos)   : null,
+          esquema_ventas:       esquema?.ventas ?? null,
+          esquema_mora:         esquema?.mora   ?? null,
           fecha_desde:          semana?.fecha_desde || null,
           fecha_hasta:          semana?.fecha_hasta || null,
           ventas_reales:        null as number | null,
