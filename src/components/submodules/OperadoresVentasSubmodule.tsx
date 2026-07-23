@@ -27,6 +27,7 @@ interface OperadorRow {
   cedula: string;
   mes: string;
   campana: string; // = país ("Argentina" / "Colombia") — columna "Campaña" del sheet
+  estado2: string; // "Activo" | "Retiro"
   antiguedad: string;
   estado: string;
   semana: string;
@@ -260,8 +261,8 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
   // KPIs
   const kpis = useMemo(() => {
-    const activos = enriched.filter(o => o.estado?.toLowerCase() !== 'baja');
-    const conActuals = enriched.filter(o => o.comision_total != null);
+    const activos = enriched.filter(o => o.estado2?.toLowerCase() === 'activo');
+    const conActuals = activos.filter(o => o.comision_total != null);
     const cumplieron = conActuals.filter(o => {
       const p = cumplPct(o.ventas_reales, o.meta_ventas_ajustada);
       return p != null && p >= 85;
@@ -401,21 +402,23 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
         </div>
       )}
 
-      {hasActuals && unmatchedRedshift.length > 0 && (
-        <div className="bg-orange-950/20 border border-orange-600/30 rounded-xl px-4 py-3">
+      {hasActuals && enriched.filter(o => o.estado2?.toLowerCase() !== 'retiro' && !o.matched).length > 0 && (filterSemana || filterMes) && (
+        <div className="bg-red-950/20 border border-red-600/30 rounded-xl px-4 py-3">
           <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0" />
-            <span className="text-orange-400 text-sm font-bold">
-              {unmatchedRedshift.length} operador{unmatchedRedshift.length !== 1 ? 'es' : ''} en Redshift sin match en la hoja
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+            <span className="text-red-400 text-sm font-bold">
+              Sin datos reales para el período seleccionado
             </span>
           </div>
-          <p className="text-orange-400/70 text-xs mb-2">Corregí el nombre en la hoja Comisiones del Google Sheet para que coincida:</p>
+          <p className="text-red-400/70 text-xs mb-2">Estos operadores activos no tienen match en Redshift — corregí el nombre en la hoja Comisiones:</p>
           <div className="flex flex-wrap gap-1.5">
-            {unmatchedRedshift.map((u, i) => (
-              <span key={i} className="px-2 py-0.5 bg-orange-900/30 border border-orange-700/30 rounded-lg text-[11px] text-orange-300 font-mono">
-                {u.pais.slice(0, 3).toUpperCase()} · {u.operador}
-              </span>
-            ))}
+            {enriched
+              .filter(o => o.estado2?.toLowerCase() !== 'retiro' && !o.matched)
+              .map((o, i) => (
+                <span key={i} className="px-2 py-0.5 bg-red-900/30 border border-red-700/30 rounded-lg text-[11px] text-red-300 font-mono">
+                  {o.campana.slice(0, 3).toUpperCase()} · {o.nombre}
+                </span>
+              ))}
           </div>
         </div>
       )}

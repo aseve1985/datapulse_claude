@@ -1520,8 +1520,10 @@ async function startServer() {
         const mes          = getColValue(row, 'mes', 'month', 'periodo');
         const campana      = getColValue(row, 'campaña', 'campana', 'campaign'); // = país
         const antiguedad   = getColValue(row, 'antigüedad', 'antiguedad', 'antiguo/nuevo', 'antigue');
-        const diasLab      = parseInt(getColValue(row, 'dias_lab', 'dias lab', 'días lab', 'diaslab') || '0');
-        const metaVentas   = parseInt(getColValue(row, 'meta_ventas', 'meta ventas', 'ventas_meta', 'meta') || '0');
+        const estado2      = getColValue(row, 'estado2', 'estado 2', 'activo', 'activo/inactivo');
+        const ausencias    = parseInt(getColValue(row, 'ausencias', 'faltas', 'inasistencias') || '0');
+        const diasLab      = parseInt(getColValue(row, 'dias_lab', 'dias lab', 'días lab', 'diaslab', 'dias laborables', 'días laborables') || '0');
+        const metaVentas   = parseInt(getColValue(row, 'meta_ventas', 'meta ventas', 'ventas_meta', 'meta', 'cuota', 'objetivo') || '0');
         const metaMora     = parseFloat(getColValue(row, 'meta_mora', 'meta mora', 'mora_meta', 'mora') || '0');
 
         const semana     = parsedSemanas.find(s => s.nombre.toLowerCase() === semanaNombre.toLowerCase());
@@ -1534,7 +1536,8 @@ async function startServer() {
         );
 
         const metaAjustada = diasSemana > 0 ? Math.round(metaVentas * diasLab / diasSemana) : metaVentas;
-        const faltas = Math.max(0, diasSemana - diasLab);
+        // Ausencias viene directo del sheet; si no hay columna, fallback a dias_semana - dias_lab
+        const faltas = ausencias > 0 ? ausencias : Math.max(0, diasSemana - diasLab);
         let penaltyPct = 0;
         if (faltas === 1) penaltyPct = 0.15;
         else if (faltas === 2) penaltyPct = 0.30;
@@ -1545,6 +1548,7 @@ async function startServer() {
           cedula:               getColValue(row, 'cedula', 'cédula', 'documento', 'dni'),
           mes,
           campana,              // = país ("Argentina" / "Colombia")
+          estado2,              // "Activo" | "Retiro"
           antiguedad,
           estado:               getColValue(row, 'estado', 'status'),
           semana:               semanaNombre,
@@ -1656,7 +1660,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/operadores-ventas/refresh", (_req, res) => {
+  app.get("/api/operadores-ventas/refresh", (_req, res) => {
     operadoresCache = null;
     res.json({ ok: true, message: "Cache invalidado" });
   });
