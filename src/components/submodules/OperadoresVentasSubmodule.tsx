@@ -43,7 +43,11 @@ interface OperadorRow {
   fecha_desde: string | null;
   fecha_hasta: string | null;
   ventas_reales: number | null;
+  ventas_nuevo: number | null;
+  ventas_renovacion: number | null;
   mora_real: number | null;
+  alias_ventas: string;
+  alias_mora: string;
   comision_ventas: number | null;
   comision_mora: number | null;
   comision_total: number | null;
@@ -64,7 +68,7 @@ interface Props { userEmail?: string; }
 
 const fmtARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
 const fmtNum = (n: number) => new Intl.NumberFormat('es-AR').format(Math.round(n));
-const fmtPct = (n: number) => `${n.toFixed(1)}%`;
+const fmtPct = (n: number) => `${n.toFixed(2)}%`;
 const fmtMoney = (n: number | null) => n == null ? '—' : fmtARS.format(n);
 
 function calcComision(op: OperadorRow): { ventas: number | null; mora: number | null; total: number | null } {
@@ -169,24 +173,57 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
   const [operadores,         setOperadores]         = useState<OperadorRow[]>([]);
   const [semanas,            setSemanas]            = useState<SemanaInfo[]>([]);
+  const [esquemas,            setEsquemas]            = useState<any[]>([]);
+  const [esquemasSupervisor,  setEsquemasSupervisor]  = useState<any[]>([]);
+  const [ventasRaw,           setVentasRaw]           = useState<any[]>([]);
+  const [moraRaw,             setMoraRaw]             = useState<any[]>([]);
   const [hasActuals,         setHasActuals]         = useState(false);
   const [unmatchedRedshift,  setUnmatchedRedshift]  = useState<{ pais: string; operador: string }[]>([]);
   const [loading,            setLoading]            = useState(false);
+  const [loadingMsg,         setLoadingMsg]         = useState('');
   const [error,              setError]              = useState<string | null>(null);
 
-  const [filterMes,    setFilterMes]    = useState<string>('');
-  const [filterPais,   setFilterPais]   = useState<string>('');
-  const [filterSemana, setFilterSemana] = useState<string>('');
-  const [filterCampana, setFilterCampana] = useState<string>('');
+  const [filterMes,       setFilterMes]       = useState<string>('');
+  const [filterPais,      setFilterPais]      = useState<string>('');
+  const [filterSemana,    setFilterSemana]    = useState<string>('');
+  const [filterCampana,   setFilterCampana]   = useState<string>('');
+  const [filterOperador,  setFilterOperador]  = useState<string>('');
+  const [filterAntiguedad,setFilterAntiguedad]= useState<string>('');
+  const [filterEstado2,   setFilterEstado2]   = useState<string>('');
   const [page, setPage] = useState(1);
 
-  const [activeTab, setActiveTab] = useState<'detalle' | 'ranking' | 'esquemas'>('detalle');
+  const [activeTab, setActiveTab] = useState<'detalle' | 'ranking' | 'esquemas' | 'supervision' | 'registros'>('detalle');
 
   const [insights,        setInsights]        = useState<any>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [chatMessages,    setChatMessages]    = useState<{ role: 'user' | 'model'; content: string }[]>([]);
   const [chatInput,       setChatInput]       = useState('');
   const [chatLoading,     setChatLoading]     = useState(false);
+
+  // ── Loading messages ──
+
+  const LOADING_MSGS = [
+    'Conectando con Google Sheets...',
+    'Cargando operadores y semanas...',
+    'Infiriendo esquemas comisionables con IA...',
+    'Interpretando escalas de ventas y mora...',
+    'Consultando ventas reales en Redshift...',
+    'Consultando mora real en Redshift...',
+    'Cruzando operadores con actuals...',
+    'Aplicando comisiones y penalidades...',
+    'Preparando el dashboard...',
+  ];
+
+  useEffect(() => {
+    if (!loading) return;
+    let idx = 0;
+    setLoadingMsg(LOADING_MSGS[0]);
+    const interval = setInterval(() => {
+      idx = (idx + 1) % LOADING_MSGS.length;
+      setLoadingMsg(LOADING_MSGS[idx]);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load ──
 
@@ -201,13 +238,16 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
       const data = await res.json();
       setOperadores(data.operadores || []);
       setSemanas(data.semanas || []);
+      setEsquemas(data.esquemas || []);
+      setEsquemasSupervisor(data.esquemas_supervisor || []);
+      setVentasRaw(data.ventas_raw || []);
+      setMoraRaw(data.mora_raw || []);
       setHasActuals(!!data.has_actuals);
       setUnmatchedRedshift(data.unmatched_redshift || []);
+      console.log('[OperadoresVentas] esquemas parseados:', data.esquemas);
+      const sinEsquema = (data.operadores || []).filter((o: any) => !o.esquema_ventas);
+      if (sinEsquema.length) console.warn('[OperadoresVentas] sin esquema:', sinEsquema.map((o: any) => `${o.nombre} | semana=${o.semana} | campana=${o.campana} | antiguedad=${o.antiguedad}`));
 
-      // Auto-seleccionar semana más reciente
-      if (data.semanas?.length > 0 && !filterSemana) {
-        setFilterSemana(data.semanas[data.semanas.length - 1].nombre);
-      }
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -239,14 +279,25 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
     return [...new Set(base.map(o => o.semana).filter(Boolean))].sort();
   }, [operadores, filterMes]);
 
+  const antigüedadOptions = useMemo(() =>
+    [...new Set(operadores.map(o => o.antiguedad).filter(Boolean))].sort(),
+  [operadores]);
+
+  const estado2Options = useMemo(() =>
+    [...new Set(operadores.map(o => o.estado2).filter(Boolean))].sort(),
+  [operadores]);
+
   const filtered = useMemo(() =>
     operadores.filter(o =>
-      (!filterMes     || o.mes     === filterMes) &&
-      (!filterPais    || o.campana === filterPais) &&
-      (!filterSemana  || o.semana  === filterSemana) &&
-      (!filterCampana || o.campana === filterCampana)
+      (!filterMes        || o.mes       === filterMes) &&
+      (!filterPais       || o.campana   === filterPais) &&
+      (!filterSemana     || o.semana    === filterSemana) &&
+      (!filterCampana    || o.campana   === filterCampana) &&
+      (!filterAntiguedad || o.antiguedad === filterAntiguedad) &&
+      (!filterEstado2    || o.estado2   === filterEstado2) &&
+      (!filterOperador   || o.nombre.toLowerCase().includes(filterOperador.toLowerCase()))
     ),
-  [operadores, filterMes, filterPais, filterSemana, filterCampana]);
+  [operadores, filterMes, filterPais, filterSemana, filterCampana, filterAntiguedad, filterEstado2, filterOperador]);
 
   // Enriquecer con comisiones calculadas
   const enriched = useMemo(() =>
@@ -289,6 +340,49 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   const semanaSel = useMemo(() =>
     semanas.find(s => s.nombre === filterSemana),
   [semanas, filterSemana]);
+
+  // Nombres normalizados de los operadores filtrados (para cruzar con raw)
+  const filteredOpNames = useMemo(() =>
+    new Set(filtered.map(o => o.nombre.toUpperCase().trim())),
+  [filtered]);
+
+  const filteredVentasRaw = useMemo(() => {
+    return ventasRaw.filter(r => {
+      if (filterPais   && r.pais !== filterPais) return false;
+      if (semanaSel    && (r.fecha < semanaSel.fecha_desde || r.fecha > semanaSel.fecha_hasta)) return false;
+      if (filterOperador && !r.operador.toLowerCase().includes(filterOperador.toLowerCase())) return false;
+      // Si hay filtros de operador/antigüedad/estado2 activos, limitar a los operadores visibles
+      if ((filterOperador || filterAntiguedad || filterEstado2) && !filteredOpNames.has(r.operador)) return false;
+      return true;
+    });
+  }, [ventasRaw, filterPais, semanaSel, filterOperador, filterAntiguedad, filterEstado2, filteredOpNames]);
+
+  const filteredMoraRaw = useMemo(() => {
+    return moraRaw.filter(r => {
+      if (filterPais   && r.pais !== filterPais) return false;
+      if (semanaSel    && (r.fecha < semanaSel.fecha_desde || r.fecha > semanaSel.fecha_hasta)) return false;
+      if (filterOperador && !r.operador.toLowerCase().includes(filterOperador.toLowerCase())) return false;
+      if ((filterOperador || filterAntiguedad || filterEstado2) && !filteredOpNames.has(r.operador)) return false;
+      return true;
+    });
+  }, [moraRaw, filterPais, semanaSel, filterOperador, filterAntiguedad, filterEstado2, filteredOpNames]);
+
+  // Esquemas filtrados por los filtros activos
+  const filteredEsquemas = useMemo(() =>
+    esquemas.filter(e =>
+      (!filterMes    || e.mes?.toLowerCase()     === filterMes.toLowerCase()) &&
+      (!filterPais   || e.campana?.toLowerCase() === filterPais.toLowerCase()) &&
+      (!filterSemana || e.semana?.toLowerCase()  === filterSemana.toLowerCase())
+    ),
+  [esquemas, filterMes, filterPais, filterSemana]);
+
+  const filteredEsquemasSup = useMemo(() =>
+    esquemasSupervisor.filter((e: any) =>
+      (!filterMes    || e.mes?.toLowerCase()     === filterMes.toLowerCase()) &&
+      (!filterPais   || e.campana?.toLowerCase() === filterPais.toLowerCase()) &&
+      (!filterSemana || e.semana?.toLowerCase()  === filterSemana.toLowerCase())
+    ),
+  [esquemasSupervisor, filterMes, filterPais, filterSemana]);
 
   // ── AI ──
 
@@ -337,7 +431,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
       'Meta Ventas': o.meta_ventas,
       'Meta Ventas Ajustada': o.meta_ventas_ajustada,
       'Ventas Reales': o.ventas_reales ?? '',
-      '% Cumpl. Ventas': cumplPct(o.ventas_reales, o.meta_ventas_ajustada)?.toFixed(1) ?? '',
+      '% Cumpl. Ventas': cumplPct(o.ventas_reales, o.meta_ventas_ajustada)?.toFixed(2) ?? '',
       'Comisión Ventas': o.comision_ventas ?? '',
       'Meta Mora %': o.meta_mora,
       'Mora Real %': o.mora_real ?? '',
@@ -351,13 +445,48 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
     XLSX.writeFile(wb, `comisiones_${filterSemana || 'todas'}_${today}.xlsx`);
   }, [enriched, filterSemana]);
 
+  const handleExportRegistros = useCallback(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filteredVentasRaw.map(r => ({
+      País: r.pais, Fecha: r.fecha, Tipo: r.tipo_cliente, Operador: r.operador, Ventas: r.ventas,
+    }))), 'Ventas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filteredMoraRaw.map(r => ({
+      País: r.pais, 'Fecha Vcto': r.fecha, Operador: r.operador,
+      Devengados: r.devengados, Mora: r.mora,
+      '% Mora': r.devengados > 0 ? +((r.mora / r.devengados) * 100).toFixed(2) : 0,
+    }))), 'Mora');
+    XLSX.writeFile(wb, `registros_${filterSemana || 'todos'}_${today}.xlsx`);
+  }, [filteredVentasRaw, filteredMoraRaw, filterSemana]);
+
   // ── Render ──
 
   if (loading && operadores.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-        <p className="text-zinc-400 text-sm">Cargando datos del Callcenter...</p>
+      <div className="flex-1 flex flex-col items-center justify-center gap-6">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-full border-4 border-slate-700" />
+          <div className="w-16 h-16 rounded-full border-4 border-t-blue-500 border-r-transparent border-b-transparent border-l-transparent animate-spin absolute inset-0" />
+          <Sparkles className="w-6 h-6 text-blue-400 absolute inset-0 m-auto" />
+        </div>
+        <div className="flex flex-col items-center gap-2">
+          <motion.p
+            key={loadingMsg}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.35 }}
+            className="text-white text-sm font-medium"
+          >
+            {loadingMsg}
+          </motion.p>
+          <p className="text-zinc-600 text-xs">Esto puede tomar unos segundos</p>
+        </div>
+        <div className="flex gap-1.5 mt-1">
+          {LOADING_MSGS.map((m, i) => (
+            <div key={i} className={`h-1 rounded-full transition-all duration-300 ${m === loadingMsg ? 'w-6 bg-blue-500' : 'w-1.5 bg-slate-700'}`} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -460,8 +589,40 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
             </select>
           </div>
 
-          {(filterMes || filterPais) && (
-            <button onClick={() => { setFilterMes(''); setFilterPais(''); setFilterSemana(''); setPage(1); }}
+          {/* Antigüedad */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Antigüedad</span>
+            <select value={filterAntiguedad} onChange={e => { setFilterAntiguedad(e.target.value); setPage(1); }}
+              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
+              <option value="">Todas</option>
+              {antigüedadOptions.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          {/* Activo/Retiro */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Activo/Retiro</span>
+            <select value={filterEstado2} onChange={e => { setFilterEstado2(e.target.value); setPage(1); }}
+              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
+              <option value="">Todos</option>
+              {estado2Options.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+          </div>
+
+          {/* Operador */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Operador</span>
+            <input
+              type="text"
+              value={filterOperador}
+              onChange={e => { setFilterOperador(e.target.value); setPage(1); }}
+              placeholder="Buscar..."
+              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500 w-36 placeholder:text-zinc-600"
+            />
+          </div>
+
+          {(filterMes || filterPais || filterSemana || filterAntiguedad || filterEstado2 || filterOperador) && (
+            <button onClick={() => { setFilterMes(''); setFilterPais(''); setFilterSemana(''); setFilterAntiguedad(''); setFilterEstado2(''); setFilterOperador(''); setPage(1); }}
               className="flex items-center gap-1.5 mt-5 px-3 py-1.5 bg-red-950/20 hover:bg-red-950/40 border border-red-900/40 rounded-lg text-xs text-red-400 font-medium transition-colors">
               <X className="w-3 h-3" /> Limpiar
             </button>
@@ -523,9 +684,11 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}>
           <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1 w-fit">
             {([
-              ['detalle',  'Detalle'],
-              ['ranking',  'Ranking'],
-              ['esquemas', 'Esquemas'],
+              ['detalle',    'Esq. Comisionales'],
+              ['ranking',    'Ranking'],
+              ['esquemas',   'Esquemas'],
+              ['supervision','Supervisión'],
+              ['registros',  'Detalle Registros'],
             ] as const).map(([id, label]) => (
               <button key={id} onClick={() => setActiveTab(id)}
                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
@@ -546,8 +709,8 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                 <thead className="sticky top-0 z-10 bg-slate-900">
                   <tr className="border-b border-slate-800">
                     {[
-                      'Nombre', 'País', 'Campaña', 'Antigüedad', 'Días Lab', 'Faltas',
-                      'Penalidad', 'Meta V. Aj.', 'Ventas Reales', '% Cumpl.',
+                      'Nombre', 'País', 'Campaña', 'Antigüedad', 'Activo/Retiro', 'Días Lab', 'Faltas',
+                      'Penalidad', 'Meta V. Aj.', 'V. Nuevo', 'V. Renov.', 'V. Total', '% Cumpl.',
                       'Comisión V.', 'Meta Mora', 'Mora Real', 'Comisión M.', 'Total',
                     ].map(h => (
                       <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
@@ -567,6 +730,11 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                         </td>
                         <td className="px-3 py-2.5 text-zinc-400 text-xs whitespace-nowrap">{op.campana || '—'}</td>
                         <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{op.antiguedad || '—'}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            op.estado2?.toLowerCase() === 'activo' ? 'bg-emerald-900/40 text-emerald-400' : 'bg-red-900/40 text-red-400'
+                          }`}>{op.estado2 || '—'}</span>
+                        </td>
                         <td className="px-3 py-2.5 text-zinc-400 text-xs text-center">{op.dias_lab}</td>
                         <td className="px-3 py-2.5 text-center">
                           {op.faltas > 0
@@ -576,15 +744,21 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                         <td className="px-3 py-2.5 text-center"><PenaltyBadge pct={op.penalty_pct} /></td>
                         <td className="px-3 py-2.5 text-zinc-300 text-xs text-right whitespace-nowrap">{fmtNum(op.meta_ventas_ajustada)}</td>
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
+                          {op.ventas_nuevo != null ? <span className="text-zinc-300">{fmtNum(op.ventas_nuevo)}</span> : <span className="text-zinc-700">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
+                          {op.ventas_renovacion != null ? <span className="text-zinc-300">{fmtNum(op.ventas_renovacion)}</span> : <span className="text-zinc-700">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
                           {op.ventas_reales != null ? <span className="text-white font-medium">{fmtNum(op.ventas_reales)}</span> : <span className="text-zinc-700">—</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center"><CumplBadge pct={cp} /></td>
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
                           {op.comision_ventas != null ? <span className="text-emerald-400 font-medium">{fmtMoney(op.comision_ventas)}</span> : <span className="text-zinc-700">—</span>}
                         </td>
-                        <td className="px-3 py-2.5 text-zinc-400 text-xs text-right whitespace-nowrap">{op.meta_mora > 0 ? `${op.meta_mora}%` : '—'}</td>
+                        <td className="px-3 py-2.5 text-zinc-400 text-xs text-right whitespace-nowrap">{op.meta_mora > 0 ? `${op.meta_mora.toFixed(2)}%` : '—'}</td>
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
-                          {op.mora_real != null ? <span className="text-white font-medium">{op.mora_real}%</span> : <span className="text-zinc-700">—</span>}
+                          {op.mora_real != null ? <span className="text-white font-medium">{op.mora_real.toFixed(2)}%</span> : <span className="text-zinc-700">—</span>}
                         </td>
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
                           {op.comision_mora != null ? <span className="text-emerald-400 font-medium">{fmtMoney(op.comision_mora)}</span> : <span className="text-zinc-700">—</span>}
@@ -666,17 +840,20 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
         {activeTab === 'esquemas' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="flex flex-col gap-4">
-            {enriched.length === 0 ? (
-              <div className="flex items-center justify-center py-12 text-zinc-500 text-sm">Sin datos para el período seleccionado.</div>
+            {filteredEsquemas.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-zinc-500 text-sm">
+                {esquemas.length === 0 ? 'Sin esquemas cargados desde la hoja.' : 'Sin esquemas para los filtros seleccionados.'}
+              </div>
             ) : (
-              [...new Set(enriched.map(o => `${o.semana}||${o.campana}||${o.antiguedad}`))].map(key => {
-                const [semana, campana, antiguedad] = key.split('||');
-                const op = enriched.find(o => o.semana === semana && o.campana === campana && o.antiguedad === antiguedad);
-                if (!op) return null;
-                const ev = op.esquema_ventas;
-                const em = op.esquema_mora;
+              filteredEsquemas.map((esq: any, idx: number) => {
+                const key = `${esq.semana}||${esq.campana}||${esq.antiguedad}`;
+                const semana = esq.semana;
+                const campana = esq.campana;
+                const antiguedad = esq.antiguedad;
+                const ev = esq.ventas;
+                const em = esq.mora;
                 return (
-                  <div key={key} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                  <div key={`${key}-${idx}`} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
                     <div className="flex items-center gap-3 mb-4">
                       <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-zinc-300 text-xs font-bold">{semana}</span>
                       <span className="px-2 py-0.5 rounded-lg bg-blue-900/30 text-blue-400 text-xs font-bold">{campana}</span>
@@ -751,6 +928,189 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                 );
               })
             )}
+          </motion.div>
+        )}
+
+        {/* ── Tab: Supervisión ── */}
+        {activeTab === 'supervision' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4">
+            {filteredEsquemasSup.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-zinc-500 text-sm">
+                {esquemasSupervisor.length === 0 ? 'Sin datos en la hoja Esquema_supervisor.' : 'Sin esquemas para los filtros seleccionados.'}
+              </div>
+            ) : (
+              filteredEsquemasSup.map((esq: any, idx: number) => {
+                const ev = esq.ventas;
+                const em = esq.mora;
+                return (
+                  <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-zinc-300 text-xs font-bold">{esq.semana}</span>
+                      <span className={`px-2 py-0.5 rounded-lg text-xs font-bold ${esq.campana === 'Argentina' ? 'bg-blue-900/30 text-blue-400' : 'bg-amber-900/30 text-amber-400'}`}>{esq.campana}</span>
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-700 text-zinc-400 text-xs">{esq.mes}</span>
+                      <span className="ml-1 px-2 py-0.5 rounded-lg bg-purple-900/30 text-purple-400 text-[10px] font-bold uppercase tracking-wider">Supervisor</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Ventas */}
+                      <div className="bg-slate-800/50 rounded-xl p-4">
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3">Escala Ventas</p>
+                        {ev ? (
+                          <div className="flex flex-col gap-2">
+                            {ev.sc_pct != null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-amber-400 font-bold">SC (≥{ev.sc_pct}% meta)</span>
+                                <span className="text-xs text-white font-bold">{fmtMoney(ev.sc_m)}</span>
+                              </div>
+                            )}
+                            {ev.m100_pct != null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-emerald-400 font-bold">100% (meta del equipo)</span>
+                                <span className="text-xs text-white font-bold">{fmtMoney(ev.m100_m)}</span>
+                              </div>
+                            )}
+                            {ev.m85_pct != null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-zinc-400">85% (≥{ev.m85_pct}% meta)</span>
+                                <span className="text-xs text-white">{fmtMoney(ev.m85_m)}</span>
+                              </div>
+                            )}
+                            {ev.plus_m != null && (
+                              <div className="mt-2 pt-2 border-t border-slate-700 flex items-start gap-2">
+                                <span className="mt-0.5 px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 text-[10px] font-bold shrink-0">PLUS</span>
+                                <span className="text-xs text-purple-300">{ev.plus_desc || 'Plus mensual'}: <span className="font-bold">{fmtMoney(ev.plus_m)}</span></span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-zinc-600 text-xs">Sin esquema configurado</p>
+                        )}
+                      </div>
+                      {/* Mora */}
+                      <div className="bg-slate-800/50 rounded-xl p-4">
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3">Escala Mora</p>
+                        {em ? (
+                          <div className="flex flex-col gap-2">
+                            {em.sc_p != null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-amber-400 font-bold">SC (≤{em.sc_p}%)</span>
+                                <span className="text-xs text-white font-bold">{fmtMoney(em.sc_m)}</span>
+                              </div>
+                            )}
+                            {em.m100_p != null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-emerald-400 font-bold">100% (≤{em.m100_p}%)</span>
+                                <span className="text-xs text-white font-bold">{fmtMoney(em.m100_m)}</span>
+                              </div>
+                            )}
+                            {em.m85_p != null && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-zinc-400">85% (≤{em.m85_p}%)</span>
+                                <span className="text-xs text-white">{fmtMoney(em.m85_m)}</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-zinc-600 text-xs">Sin esquema configurado</p>
+                        )}
+                      </div>
+                    </div>
+                    {esq.penalidad && (
+                      <div className="mt-3 pt-3 border-t border-slate-800 flex items-center gap-4">
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Penalidades:</p>
+                        <span className="text-xs text-zinc-400">{esq.penalidad}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </motion.div>
+        )}
+
+        {/* ── Tab: Detalle Registros ── */}
+        {activeTab === 'registros' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-6">
+
+            {/* Export */}
+            <div className="flex justify-end">
+              <button onClick={handleExportRegistros}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-300 text-sm font-bold rounded-xl transition-colors">
+                <Download className="w-3.5 h-3.5" /> Exportar Excel
+              </button>
+            </div>
+
+            {/* Ventas */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-sm font-bold text-white">Ventas</span>
+                <span className="text-xs text-zinc-500">{filteredVentasRaw.length} registros</span>
+              </div>
+              {filteredVentasRaw.length === 0 ? (
+                <div className="py-10 text-center text-zinc-600 text-sm">Sin registros para los filtros seleccionados.</div>
+              ) : (
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-slate-900 z-10">
+                      <tr className="border-b border-slate-800">
+                        {['País', 'Fecha', 'Tipo Cliente', 'Operador', 'Ventas'].map(h => (
+                          <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredVentasRaw.map((r, i) => (
+                        <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30">
+                          <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.pais === 'Argentina' ? 'bg-blue-900/40 text-blue-400' : 'bg-amber-900/40 text-amber-400'}`}>{r.pais}</span></td>
+                          <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{r.fecha}</td>
+                          <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.tipo_cliente === 'NUEVO' ? 'bg-emerald-900/30 text-emerald-400' : 'bg-purple-900/30 text-purple-400'}`}>{r.tipo_cliente}</span></td>
+                          <td className="px-3 py-2 text-zinc-300 whitespace-nowrap">{r.operador}</td>
+                          <td className="px-3 py-2 text-white font-medium text-right">{r.ventas}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Mora */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                <span className="text-sm font-bold text-white">Mora</span>
+                <span className="text-xs text-zinc-500">{filteredMoraRaw.length} registros</span>
+              </div>
+              {filteredMoraRaw.length === 0 ? (
+                <div className="py-10 text-center text-zinc-600 text-sm">Sin registros para los filtros seleccionados.</div>
+              ) : (
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-slate-900 z-10">
+                      <tr className="border-b border-slate-800">
+                        {['País', 'Fecha Vcto.', 'Operador', 'Devengados', 'Mora', '% Mora'].map(h => (
+                          <th key={h} className="px-3 py-2.5 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredMoraRaw.map((r, i) => {
+                        const pct = r.devengados > 0 ? +((r.mora / r.devengados) * 100).toFixed(2) : 0;
+                        return (
+                          <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30">
+                            <td className="px-3 py-2"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.pais === 'Argentina' ? 'bg-blue-900/40 text-blue-400' : 'bg-amber-900/40 text-amber-400'}`}>{r.pais}</span></td>
+                            <td className="px-3 py-2 text-zinc-400 whitespace-nowrap">{r.fecha}</td>
+                            <td className="px-3 py-2 text-zinc-300 whitespace-nowrap">{r.operador}</td>
+                            <td className="px-3 py-2 text-zinc-300 text-right">{r.devengados}</td>
+                            <td className="px-3 py-2 text-right"><span className={r.mora > 0 ? 'text-red-400' : 'text-emerald-400'}>{r.mora}</span></td>
+                            <td className="px-3 py-2 text-right font-medium whitespace-nowrap"><span className={pct >= 50 ? 'text-red-400' : pct >= 40 ? 'text-amber-400' : 'text-emerald-400'}>{pct.toFixed(2)}%</span></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
           </motion.div>
         )}
 
