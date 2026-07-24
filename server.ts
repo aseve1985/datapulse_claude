@@ -1380,12 +1380,12 @@ async function startServer() {
     //   B) "100% (60 ventas): $50.000" — formato alternativo
     const matchVentasTier = (label: string): { q: number | null; m: number | null } => {
       const lbl = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Formato A: LABEL: NNN vtas ($MONTO)
-      const mA = text.match(new RegExp(lbl + ':\\s*(\\d+)\\s*v(?:tas?|entas?)\\s*\\(\\$([0-9.]+)\\)', 'i'));
-      if (mA) return { q: parseInt(mA[1]), m: parseMontoARS(mA[2]) };
+      // Formato A: LABEL: NNN vtas ($MONTO)  — cantidad puede ser decimal (ej: 52.5)
+      const mA = text.match(new RegExp(lbl + ':\\s*(\\d+(?:[.,]\\d+)?)\\s*v(?:tas?|entas?)\\s*\\(\\$([0-9.]+)\\)', 'i'));
+      if (mA) return { q: parseFloat(mA[1].replace(',', '.')), m: parseMontoARS(mA[2]) };
       // Formato B: LABEL (NNN ventas): $MONTO
-      const mB = text.match(new RegExp(lbl + '\\s*\\((\\d+)\\s*v(?:tas?|entas?)\\):\\s*\\$([0-9.]+)', 'i'));
-      if (mB) return { q: parseInt(mB[1]), m: parseMontoARS(mB[2]) };
+      const mB = text.match(new RegExp(lbl + '\\s*\\((\\d+(?:[.,]\\d+)?)\\s*v(?:tas?|entas?)\\):\\s*\\$([0-9.]+)', 'i'));
+      if (mB) return { q: parseFloat(mB[1].replace(',', '.')), m: parseMontoARS(mB[2]) };
       return { q: null, m: null };
     };
     const sc   = matchVentasTier('S/C');
@@ -1430,7 +1430,7 @@ Each object must have:
 - "mora":   {sc_p, sc_m, m100_p, m100_m, m85_p, m85_m} or null
 
 Field rules:
-- ventas _q fields = quantity thresholds (integers). ventas _m fields = pesos amounts (integers).
+- ventas _q fields = quantity thresholds (numbers, may be decimal e.g. 52.5). ventas _m fields = pesos amounts (integers).
 - mora _p fields = mora % thresholds (floats, e.g. 37.5). mora _m fields = pesos amounts.
 - "SC" / "S/C" / "Sobrecumplimiento" = sc tier (highest).
 - "no hay cierre" or empty mora → mora: null.
