@@ -1791,14 +1791,6 @@ ${JSON.stringify(rawRows)}`;
           if (!semana) continue;
           const { fecha_desde, fecha_hasta } = semana;
 
-          // DEBUG TEMPORAL
-          if (normalizeOpName(op.nombre).includes('KAREN')) {
-            const rdxCandidates = ventasByDay.filter((v: any) => normalizeOpName(v.operador).includes('KAREN'));
-            console.log(`[DEBUG KAREN] sheet nombre="${op.nombre}" campana="${op.campana}" semana="${op.semana}" fecha_desde=${fecha_desde} fecha_hasta=${fecha_hasta}`);
-            console.log(`[DEBUG KAREN] normalizado="${normalizeOpName(op.nombre)}"`);
-            console.log(`[DEBUG KAREN] candidatos Redshift:`, rdxCandidates.map((v: any) => ({ op: v.operador, norm: normalizeOpName(v.operador), pais: v.pais, fecha: v.fecha })));
-          }
-
           const vRows = ventasByDay.filter((v: any) =>
             v.pais === op.campana &&
             opMatch(v.operador, op.nombre, op.alias_ventas) &&
