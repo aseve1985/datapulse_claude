@@ -1,4 +1,4 @@
-import express from "express";
+﻿import express from "express";
 import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import Papa from "papaparse";
@@ -461,6 +461,7 @@ async function startServer() {
       console.log(`[Auth] Found ${userRows.length} matching rows for ${email}`);
       
       let allowedModules: string[] = [];
+      let allowedSubmodules: { [moduleId: string]: string[] | 'all' } = {};
       let hasAllAccess = false;
       let displayName = '';
 
@@ -476,6 +477,16 @@ async function startServer() {
           if (!allowedModules.includes(moduleId)) {
             allowedModules.push(moduleId);
           }
+          const submoduloValue = getVal(row, 'submodulo').toString().trim();
+          if (!submoduloValue || submoduloValue === 'Todos' || submoduloValue === 'Todas') {
+            allowedSubmodules[moduleId] = 'all';
+          } else if (allowedSubmodules[moduleId] !== 'all') {
+            if (!allowedSubmodules[moduleId]) {
+              allowedSubmodules[moduleId] = [submoduloValue];
+            } else {
+              (allowedSubmodules[moduleId] as string[]).push(submoduloValue);
+            }
+          }
         }
       });
 
@@ -486,6 +497,7 @@ async function startServer() {
         isGuest: false,
         hasAllAccess,
         allowedModules,
+        allowedSubmodules,
         rawPermissions: userRows.map(r => getVal(r, 'area', 'modulo', 'permiso'))
       });
     } catch (error: any) {
@@ -1488,9 +1500,12 @@ ${JSON.stringify(rawRows)}`;
 
   function normalizeOpName(s: string): string {
     if (!s) return '';
-    return s.toUpperCase().trim()
-      .normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .replace(/\s+/g, ' ');
+    return s.normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9 ]+/g, ' ')
+      .replace(/ +/g, ' ')
+      .trim();
   }
 
   // Capa 2 de matching: todos los tokens del nombre más corto están en el más largo
@@ -1514,26 +1529,32 @@ ${JSON.stringify(rawRows)}`;
   }
 
   const OPERADORES_VENTAS_QUERY = `
-    SELECT pais, tipo_cliente, fecha_desembolso, operador, COUNT(DISTINCT loan_id) AS ventas_count
+    SELECT pais, tipo_cliente, fecha_desembolso, operador,
+           COUNT(loan_id) AS ventas_count,
+           SUM(capital)   AS capital_total
     FROM (
-      SELECT 'Argentina' AS pais, renovacion AS tipo_cliente, fecha_desembolso, UPPER(operador) AS operador, loan_id
-      FROM gold.ventas_arg WHERE flag_venta = 1 AND fecha_desembolso >= '2026-01-01'
+      SELECT 'Argentina' AS pais, renovacion AS tipo_cliente, a.fecha_desembolso,
+             UPPER(BTRIM(REGEXP_REPLACE(REPLACE(operador, CHR(9), ' '), ' +', ' '))) AS operador,
+             a.loan_id, a.capital_total AS capital
+      FROM gold.ventas_arg a WHERE a.flag_venta = 1 AND a.fecha_desembolso >= '2026-01-01'
       UNION ALL
-      SELECT 'Colombia', renovacion, fecha_desembolso, UPPER(operador), loan_id
-      FROM gold.ventas_col WHERE flag_venta = 1 AND fecha_desembolso >= '2026-01-01'
+      SELECT 'Colombia', renovacion, a.fecha_desembolso,
+             UPPER(BTRIM(REGEXP_REPLACE(REPLACE(operador, CHR(9), ' '), ' +', ' '))),
+             a.loan_id, a.capital_credito AS capital
+      FROM gold.ventas_col a WHERE a.flag_venta = 1 AND a.fecha_desembolso >= '2026-01-01'
     ) v
     GROUP BY 1, 2, 3, 4
   `;
 
   const OPERADORES_MORA_QUERY = `
     WITH oaa AS (
-      SELECT UPPER(MAX(operador_asignado)) AS operador, loan_id
+      SELECT TRIM(REGEXP_REPLACE(UPPER(MAX(operador_asignado)), '[[:space:]]+', ' ')) AS operador, loan_id
       FROM auxiliary_tables.asignacion_mora_manual_arg
       WHERE operador_asignado <> 'OPERADOR_ASIGNADO'
       GROUP BY loan_id
     ),
     oac AS (
-      SELECT UPPER(MAX(operador_asignado)) AS operador, loan_id
+      SELECT TRIM(REGEXP_REPLACE(UPPER(MAX(operador_asignado)), '[[:space:]]+', ' ')) AS operador, loan_id
       FROM auxiliary_tables.asignacion_mora_manual
       GROUP BY loan_id
     )
@@ -1594,12 +1615,13 @@ ${JSON.stringify(rawRows)}`;
 
       const parsedSemanas = semanas.map(row => {
         const nombre     = getColValue(row, 'nombre_semana', 'semana', 'nombre');
+        const mes        = getColValue(row, 'mes', 'month', 'periodo');
         const desde      = getColValue(row, 'fecha_desde', 'desde', 'fecha desde');
         const hasta      = getColValue(row, 'fecha_hasta', 'hasta', 'fecha hasta');
         const diasSemana = desde && hasta
           ? Math.round((new Date(hasta).getTime() - new Date(desde).getTime()) / 86400000) + 1
           : 5;
-        return { nombre, fecha_desde: desde, fecha_hasta: hasta, dias_semana: diasSemana };
+        return { nombre, mes, fecha_desde: desde, fecha_hasta: hasta, dias_semana: diasSemana };
       });
 
       // Esquemas: parsear con IA — cache de 24hs, se invalida si cambia el contenido del sheet
@@ -1658,7 +1680,10 @@ ${JSON.stringify(rawRows)}`;
         const metaVentas   = parseInt(getColValue(row, 'meta ventas', 'meta_ventas', 'ventas_meta', 'meta', 'cuota') || '0');
         const metaMora     = parseFloat(getColValue(row, 'meta_mora', 'meta mora', 'mora_meta', 'mora') || '0');
 
-        const semana     = parsedSemanas.find(s => s.nombre.toLowerCase() === semanaNombre.toLowerCase());
+        const semana     = parsedSemanas.find(s =>
+          s.nombre.toLowerCase() === semanaNombre.toLowerCase() &&
+          s.mes.toLowerCase()    === mes.toLowerCase()
+        );
         const diasSemana = semana?.dias_semana || 5;
 
         const esAntiguos = ['antiguo', 'antiguos'].includes(antiguedad.toLowerCase());
@@ -1727,7 +1752,8 @@ ${JSON.stringify(rawRows)}`;
           tipo_cliente: String(r.tipo_cliente || '').toUpperCase(),
           fecha:        toDateStr(r.fecha_desembolso),
           operador:     String(r.operador     || ''),
-          ventas:       Number(r.ventas_count) || 0,
+          ventas:       Number(r.ventas_count)  || 0,
+          capital:      Number(r.capital_total) || 0,
         }));
 
         moraByDay = moraResult.rows.map((r: any) => ({
@@ -1758,9 +1784,20 @@ ${JSON.stringify(rawRows)}`;
         };
 
         for (const op of parsedComisiones) {
-          const semana = parsedSemanas.find(s => s.nombre === op.semana);
+          const semana = parsedSemanas.find(s =>
+            s.nombre.toLowerCase() === op.semana.toLowerCase() &&
+            s.mes.toLowerCase()    === op.mes.toLowerCase()
+          );
           if (!semana) continue;
           const { fecha_desde, fecha_hasta } = semana;
+
+          // DEBUG TEMPORAL
+          if (normalizeOpName(op.nombre).includes('KAREN')) {
+            const rdxCandidates = ventasByDay.filter((v: any) => normalizeOpName(v.operador).includes('KAREN'));
+            console.log(`[DEBUG KAREN] sheet nombre="${op.nombre}" campana="${op.campana}" semana="${op.semana}" fecha_desde=${fecha_desde} fecha_hasta=${fecha_hasta}`);
+            console.log(`[DEBUG KAREN] normalizado="${normalizeOpName(op.nombre)}"`);
+            console.log(`[DEBUG KAREN] candidatos Redshift:`, rdxCandidates.map((v: any) => ({ op: v.operador, norm: normalizeOpName(v.operador), pais: v.pais, fecha: v.fecha })));
+          }
 
           const vRows = ventasByDay.filter((v: any) =>
             v.pais === op.campana &&
@@ -1771,6 +1808,7 @@ ${JSON.stringify(rawRows)}`;
             op.ventas_reales     = vRows.reduce((s: number, v: any) => s + v.ventas, 0);
             op.ventas_nuevo      = vRows.filter((v: any) => v.tipo_cliente === 'NUEVO').reduce((s: number, v: any) => s + v.ventas, 0);
             op.ventas_renovacion = vRows.filter((v: any) => v.tipo_cliente !== 'NUEVO').reduce((s: number, v: any) => s + v.ventas, 0);
+            op.capital_total     = vRows.reduce((s: number, v: any) => s + v.capital, 0);
             op.matched = true;
           }
 

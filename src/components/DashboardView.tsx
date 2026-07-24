@@ -1030,14 +1030,6 @@ export default function DashboardView({
         }
         setActiveReportName(initialReport.nombre);
       }
-      const fetchInsights = async () => {
-        setInsightsLoading(true);
-        try {
-          const aiInsights = await generateInsights(data, { from: startDate, to: endDate }, [], userEmail, moduleId);
-          setInsights(aiInsights);
-        } catch (e) {} finally { setInsightsLoading(false); }
-      };
-      fetchInsights();
     } else {
       setSales([]);
       setInsights(null);
@@ -1879,10 +1871,12 @@ export default function DashboardView({
                       >
                         {insightsLoading ? (
                           <Loader2 className="w-3 h-3 animate-spin pointer-events-none" />
-                        ) : (
+                        ) : insights ? (
                           <RefreshCcw className="w-3 h-3 pointer-events-none" />
+                        ) : (
+                          <Sparkles className="w-3 h-3 pointer-events-none" />
                         )}
-                        <span className="pointer-events-none">Actualizar</span>
+                        <span className="pointer-events-none">{insights ? 'Actualizar' : 'Generar'}</span>
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-800">
@@ -1893,7 +1887,7 @@ export default function DashboardView({
                         </div>
                       ) : insights ? (
                         <InsightsPanel insights={insights} />
-                      ) : <p className="text-zinc-600 text-center mt-20">Carga datos para obtener insights automáticos.</p>}
+                      ) : <p className="text-zinc-600 text-center mt-20">Hacé clic en <span className="text-blue-500 font-semibold">Generar</span> para analizar los datos con IA.</p>}
                     </div>
                   </div>
               <ChatPanel chatMessages={chatMessages} chatLoading={chatLoading} onSendMessage={handleSendMessage} height="500px" />

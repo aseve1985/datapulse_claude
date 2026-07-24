@@ -45,6 +45,7 @@ interface OperadorRow {
   ventas_reales: number | null;
   ventas_nuevo: number | null;
   ventas_renovacion: number | null;
+  capital_total: number | null;
   mora_real: number | null;
   alias_ventas: string;
   alias_mora: string;
@@ -105,6 +106,42 @@ function cumplPct(ventas_reales: number | null, meta_ajustada: number): number |
 }
 
 const PAGE_SIZE = 20;
+
+function computePeriodKpis(ops: OperadorRow[]) {
+  const liq      = ops.filter(o => o.comision_total != null);
+  const wV       = ops.filter(o => o.ventas_reales  != null);
+  const wM       = ops.filter(o => o.mora_real       != null);
+  const meta     = wV.reduce((s, o) => s + o.meta_ventas_ajustada, 0);
+  const ejec     = wV.reduce((s, o) => s + (o.ventas_reales || 0), 0);
+  const moraEjec = wM.length ? wM.reduce((s, o) => s + (o.mora_real || 0), 0) / wM.length : null;
+  const metaMora = wM.length ? wM.reduce((s, o) => s + o.meta_mora, 0)         / wM.length : null;
+  return {
+    liquidados:  liq.length,
+    metaVentas:  meta,
+    ventasEjec:  ejec,
+    cumplVentas: meta > 0 ? ejec / meta * 100 : null,
+    metaMora,
+    moraEjec,
+    cumplMora:   moraEjec != null && metaMora && metaMora > 0
+      ? (moraEjec <= metaMora ? 100 : metaMora / moraEjec * 100) : null,
+    comVentas:   liq.reduce((s, o) => s + (o.comision_ventas || 0), 0),
+    comMora:     liq.reduce((s, o) => s + (o.comision_mora   || 0), 0),
+    comTotal:    liq.reduce((s, o) => s + (o.comision_total  || 0), 0),
+  };
+}
+
+function svsArrow(curr: number | null, prev: number | null, hb: boolean) {
+  if (curr == null || prev == null) return null;
+  const diff = curr - prev;
+  if (Math.abs(diff) < 0.001) return null;
+  const pct  = prev !== 0 ? (Math.abs(diff) / Math.abs(prev) * 100).toFixed(1) : null;
+  const good = hb ? diff > 0 : diff < 0;
+  return (
+    <span className={`block mt-0.5 text-[9px] font-medium ${good ? 'text-emerald-400' : 'text-red-400'}`}>
+      {diff > 0 ? '▲' : '▼'}{pct ? ` ${pct}%` : ''}
+    </span>
+  );
+}
 
 // ── DualScroll ────────────────────────────────────────────────────────────────
 
@@ -192,7 +229,9 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   const [filterEstado2,   setFilterEstado2]   = useState<string>('');
   const [page, setPage] = useState(1);
 
-  const [activeTab, setActiveTab] = useState<'detalle' | 'ranking' | 'esquemas' | 'supervision' | 'registros'>('detalle');
+  const [activeTab, setActiveTab] = useState<'detalle' | 'ranking' | 'esquemas' | 'supervision' | 'registros' | 'svs'>('detalle');
+  const [svsPais,      setSvsPais]      = useState<string>('');
+  const [svsWeekLimit, setSvsWeekLimit] = useState(8);
 
   const [insights,        setInsights]        = useState<any>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -272,6 +311,10 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   const paisOptions = useMemo(() =>
     [...new Set(operadores.map(o => o.campana).filter(Boolean))].sort(),
   [operadores]);
+
+  useEffect(() => {
+    if (!svsPais && paisOptions.length > 0) setSvsPais(paisOptions[0]);
+  }, [paisOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cuando hay un mes seleccionado, sólo mostramos las semanas de ese mes
   const semanaOptions = useMemo(() => {
@@ -383,6 +426,27 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
       (!filterSemana || e.semana?.toLowerCase()  === filterSemana.toLowerCase())
     ),
   [esquemasSupervisor, filterMes, filterPais, filterSemana]);
+
+  const allEnriched = useMemo(() =>
+    operadores.map(op => {
+      const c = calcComision(op);
+      return { ...op, comision_ventas: c.ventas, comision_mora: c.mora, comision_total: c.total };
+    }),
+  [operadores]);
+
+  const svsAllPeriods = useMemo(() => {
+    if (!svsPais) return [];
+    const base = allEnriched.filter(o => o.campana === svsPais);
+    const map  = new Map<string, { mes: string; semana: string; fecha_desde: string; fecha_hasta: string; ops: OperadorRow[] }>();
+    base.forEach(op => {
+      const key = `${op.mes}||${op.semana}`;
+      if (!map.has(key)) map.set(key, { mes: op.mes, semana: op.semana, fecha_desde: op.fecha_desde || '', fecha_hasta: op.fecha_hasta || '', ops: [] });
+      map.get(key)!.ops.push(op);
+    });
+    return [...map.values()].sort((a, b) => (a.fecha_desde || a.mes).localeCompare(b.fecha_desde || b.mes));
+  }, [allEnriched, svsPais]);
+
+  const svsPeriods = useMemo(() => svsAllPeriods.slice(-svsWeekLimit), [svsAllPeriods, svsWeekLimit]);
 
   // ── AI ──
 
@@ -500,8 +564,14 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
         <div>
           <h2 className="text-lg font-bold text-white">Callcenter › Operadores de Ventas</h2>
           <p className="text-zinc-500 text-sm mt-0.5">
-            {operadores.length} operadores · {semanas.length} semanas cargadas
-            {semanaSel && ` · ${semanaSel.fecha_desde} → ${semanaSel.fecha_hasta}`}
+            {(() => {
+              const semanasUnicas = new Set(filtered.map(o => `${o.mes}||${o.semana}`)).size;
+              const fechas = filtered.map(o => o.fecha_desde).filter(Boolean).sort() as string[];
+              const fhastas = filtered.map(o => o.fecha_hasta).filter(Boolean).sort() as string[];
+              const desde = fechas[0] ?? null;
+              const hasta = fhastas[fhastas.length - 1] ?? null;
+              return `${filtered.length} operadores · ${semanasUnicas} semana${semanasUnicas !== 1 ? 's' : ''} cargada${semanasUnicas !== 1 ? 's' : ''}${desde && hasta ? ` · ${desde} → ${hasta}` : ''}`;
+            })()}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -559,16 +629,6 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
           className="flex flex-wrap items-center gap-3">
           <Filter className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
 
-          {/* Mes */}
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Mes</span>
-            <select value={filterMes} onChange={e => { setFilterMes(e.target.value); setFilterSemana(''); setPage(1); }}
-              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
-              <option value="">Todos</option>
-              {mesOptions.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-
           {/* País */}
           <div className="flex flex-col gap-1">
             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">País</span>
@@ -576,6 +636,16 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
               className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
               <option value="">Todos</option>
               {paisOptions.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+
+          {/* Mes */}
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Mes</span>
+            <select value={filterMes} onChange={e => { setFilterMes(e.target.value); setFilterSemana(''); setPage(1); }}
+              className="bg-slate-900 border border-slate-700 text-sm text-white rounded-xl px-3 py-1.5 outline-none focus:border-blue-500">
+              <option value="">Todos</option>
+              {mesOptions.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
 
@@ -689,6 +759,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
               ['esquemas',   'Esquemas'],
               ['supervision','Supervisión'],
               ['registros',  'Detalle Registros'],
+              ['svs',        'Semana vs Semana'],
             ] as const).map(([id, label]) => (
               <button key={id} onClick={() => setActiveTab(id)}
                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${
@@ -710,7 +781,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                   <tr className="border-b border-slate-800">
                     {[
                       'Nombre', 'País', 'Campaña', 'Antigüedad', 'Activo/Retiro', 'Días Lab', 'Faltas',
-                      'Penalidad', 'Meta V. Aj.', 'V. Nuevo', 'V. Renov.', 'V. Total', '% Cumpl.',
+                      'Penalidad', 'Meta V. Aj.', 'V. Nuevo', 'V. Renov.', 'V. Total', 'Capital', '% Cumpl.',
                       'Comisión V.', 'Meta Mora', 'Mora Real', 'Comisión M.', 'Total',
                     ].map(h => (
                       <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
@@ -751,6 +822,9 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                         </td>
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
                           {op.ventas_reales != null ? <span className="text-white font-medium">{fmtNum(op.ventas_reales)}</span> : <span className="text-zinc-700">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
+                          {op.capital_total != null ? <span className="text-cyan-400 font-medium">{fmtMoney(op.capital_total)}</span> : <span className="text-zinc-700">—</span>}
                         </td>
                         <td className="px-3 py-2.5 text-center"><CumplBadge pct={cp} /></td>
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
@@ -1113,6 +1187,160 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
           </motion.div>
         )}
+
+        {/* ── Tab: Semana vs Semana ── */}
+        {activeTab === 'svs' && (() => {
+          type PK = ReturnType<typeof computePeriodKpis>;
+          const periodKpis = svsPeriods.map(p => computePeriodKpis(p.ops));
+
+          const rows: Array<
+            | { type: 'sep'; label: string }
+            | { type: 'kpi'; label: string; get: (k: PK) => number | null; fmt: (v: number | null) => string; hb: boolean; colorFn?: (v: number | null, k: PK) => string }
+          > = [
+            { type: 'kpi', label: 'Operadores Liquidados', get: k => k.liquidados,  fmt: v => v != null ? String(v) : '—', hb: true },
+            { type: 'sep', label: 'Ventas' },
+            { type: 'kpi', label: 'Meta de Ventas',     get: k => k.metaVentas,  fmt: v => v != null ? fmtNum(Math.round(v)) : '—', hb: true },
+            { type: 'kpi', label: 'Ventas Ejecutadas',  get: k => k.ventasEjec,  fmt: v => v != null ? fmtNum(Math.round(v)) : '—', hb: true },
+            { type: 'kpi', label: '% Cumpl. Ventas',    get: k => k.cumplVentas, fmt: v => v != null ? `${v.toFixed(1)}%` : '—',    hb: true,
+              colorFn: v => v == null ? 'text-zinc-300' : v >= 100 ? 'text-emerald-400' : v >= 85 ? 'text-amber-400' : 'text-red-400' },
+            { type: 'sep', label: 'Mora' },
+            { type: 'kpi', label: 'Meta Mora',       get: k => k.metaMora,   fmt: v => v != null ? `${v.toFixed(2)}%` : '—', hb: false },
+            { type: 'kpi', label: 'Mora Ejecutada',  get: k => k.moraEjec,   fmt: v => v != null ? `${v.toFixed(2)}%` : '—', hb: false,
+              colorFn: (v, k) => v == null ? 'text-zinc-300' : k.metaMora != null && v <= k.metaMora ? 'text-emerald-400' : 'text-red-400' },
+            { type: 'kpi', label: '% Cumpl. Mora',   get: k => k.cumplMora,  fmt: v => v != null ? `${v.toFixed(1)}%` : '—', hb: true,
+              colorFn: v => v == null ? 'text-zinc-300' : v >= 100 ? 'text-emerald-400' : v >= 85 ? 'text-amber-400' : 'text-red-400' },
+            { type: 'sep', label: 'Comisiones' },
+            { type: 'kpi', label: 'Com. Ventas',     get: k => k.comVentas,  fmt: fmtMoney, hb: true },
+            { type: 'kpi', label: 'Com. Mora',       get: k => k.comMora,    fmt: fmtMoney, hb: true },
+            { type: 'kpi', label: 'Com. Total',      get: k => k.comTotal,   fmt: fmtMoney, hb: true },
+            { type: 'kpi', label: 'Com. Supervisor', get: _ => null,          fmt: () => '—', hb: true },
+          ];
+
+          const hasPeriods = svsPeriods.length > 0;
+          const hasMore    = svsAllPeriods.length > svsPeriods.length;
+
+          return (
+            <motion.div key="svs" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4">
+
+              {/* Country toggle */}
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">País</span>
+                  <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1">
+                    {paisOptions.map(p => (
+                      <button key={p} onClick={() => { setSvsPais(p); setSvsWeekLimit(8); }}
+                        className={`px-5 py-1.5 rounded-lg text-sm font-bold transition-colors ${
+                          svsPais === p
+                            ? p === 'Argentina' ? 'bg-blue-600 text-white' : 'bg-amber-500 text-white'
+                            : 'text-zinc-500 hover:text-white'
+                        }`}>{p}</button>
+                    ))}
+                  </div>
+                </div>
+                {hasPeriods && (
+                  <span className="ml-auto text-xs text-zinc-600 self-end pb-1">
+                    {svsPeriods.length} semana{svsPeriods.length !== 1 ? 's' : ''}
+                    {svsAllPeriods.length > svsPeriods.length ? ` de ${svsAllPeriods.length} disponibles` : ''}
+                  </span>
+                )}
+              </div>
+
+              {/* Empty states */}
+              {!svsPais && (
+                <div className="flex items-center justify-center py-16 text-zinc-600 text-sm">
+                  Seleccioná un país para ver el comparativo semanal
+                </div>
+              )}
+              {svsPais && !hasPeriods && (
+                <div className="flex items-center justify-center py-16 text-zinc-600 text-sm">
+                  Sin semanas cargadas para {svsPais}
+                </div>
+              )}
+
+              {/* Comparison table */}
+              {svsPais && hasPeriods && (
+                <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                  <DualScroll maxHeight="65vh">
+                    <table className="w-full text-sm" style={{ minWidth: `${210 + svsPeriods.length * 155}px` }}>
+                      <thead className="sticky top-0 z-10 bg-slate-900">
+                        <tr className="border-b border-slate-700">
+                          <th className="sticky left-0 z-20 bg-slate-900 px-4 py-3 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-[210px] min-w-[210px] border-r border-slate-800">
+                            KPI
+                          </th>
+                          {svsPeriods.map((p, i) => (
+                            <th key={i} className={`px-3 py-3 text-center min-w-[155px] ${i === svsPeriods.length - 1 ? 'bg-blue-950/20' : ''}`}>
+                              <div className="text-xs font-bold text-white">{p.semana}</div>
+                              <div className="text-[10px] text-zinc-500 mt-0.5">{p.mes}</div>
+                              <div className="text-[9px] text-zinc-600 mt-0.5 font-mono">{p.fecha_desde} → {p.fecha_hasta}</div>
+                              <div className="mt-1.5">
+                                <span className="px-2 py-0.5 rounded-lg bg-slate-800 text-zinc-400 text-[10px] font-bold">
+                                  {p.ops.length} ops
+                                </span>
+                              </div>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, ri) => {
+                          if (row.type === 'sep') {
+                            return (
+                              <tr key={`sep-${ri}`} className="bg-slate-800/40">
+                                <td colSpan={svsPeriods.length + 1} className="px-4 py-1.5 border-t border-b border-slate-700">
+                                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{row.label}</span>
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return (
+                            <tr key={`kpi-${ri}`} className="border-b border-slate-800/40 hover:bg-slate-800/20 transition-colors">
+                              <td className="sticky left-0 z-10 bg-slate-900 px-4 py-3 text-xs text-zinc-400 font-medium whitespace-nowrap w-[210px] min-w-[210px] border-r border-slate-800">
+                                {row.label}
+                              </td>
+                              {periodKpis.map((kpis, ci) => {
+                                const val     = row.get(kpis);
+                                const prevVal = ci > 0 ? row.get(periodKpis[ci - 1]) : null;
+                                const cls     = row.colorFn ? row.colorFn(val, kpis) : 'text-zinc-300';
+                                const isLast  = ci === periodKpis.length - 1;
+                                return (
+                                  <td key={ci} className={`px-3 py-3 text-center min-w-[155px] ${isLast ? 'bg-blue-950/10' : ''}`}>
+                                    <span className={`text-sm font-bold ${cls}`}>{row.fmt(val)}</span>
+                                    {ci > 0 && svsArrow(val, prevVal, row.hb)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </DualScroll>
+                </div>
+              )}
+
+              {/* Load more */}
+              {svsPais && hasMore && (
+                <div className="flex items-center justify-center gap-3">
+                  <button onClick={() => setSvsWeekLimit(l => l + 4)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-400 text-xs font-medium rounded-xl transition-colors">
+                    + 4 semanas más
+                  </button>
+                  <button onClick={() => setSvsWeekLimit(svsAllPeriods.length)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-zinc-600 text-xs rounded-xl transition-colors">
+                    Ver todas ({svsAllPeriods.length})
+                  </button>
+                </div>
+              )}
+
+              {svsPais && hasPeriods && (
+                <p className="text-[10px] text-zinc-700 text-center">
+                  Com. Supervisor — cálculo pendiente de próxima versión
+                </p>
+              )}
+
+            </motion.div>
+          );
+        })()}
 
         {/* AI — Insights + Chat */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}

@@ -358,9 +358,19 @@ export default function LandingPage({ onSelectModule, onOpenTerms, onOpenFeature
     return authStatus.allowedModules?.includes(moduleId);
   };
 
+  const getFilteredSubmodules = (module: any): any[] => {
+    if (!module.submodules) return [];
+    if (!authStatus || authStatus.hasAllAccess) return module.submodules;
+    const allowed = authStatus.allowedSubmodules?.[module.id];
+    if (!allowed || allowed === 'all') return module.submodules;
+    return module.submodules.filter((sub: any) =>
+      (allowed as string[]).some(a => a.toLowerCase() === sub.title.toLowerCase())
+    );
+  };
+
   const handleModuleClick = (module: any) => {
     if (checkAccess(module.id)) {
-      onSelectModule(module.id, 'api', undefined, undefined, undefined, module.submodules);
+      onSelectModule(module.id, 'api', undefined, undefined, undefined, getFilteredSubmodules(module));
     } else {
       setDeniedModule(module.title);
     }
