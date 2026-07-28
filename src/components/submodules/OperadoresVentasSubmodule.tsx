@@ -11,9 +11,9 @@ import { generateInsights, chatWithData } from '../../services/gemini';
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface EsquemaVentas {
-  sc_q: number | null; sc_m: number | null;
-  m100_q: number | null; m100_m: number | null;
-  m85_q: number | null; m85_m: number | null;
+  sc_pct: number | null; sc_m: number | null;
+  m100_pct: number | null; m100_m: number | null;
+  m85_pct: number | null; m85_m: number | null;
 }
 
 interface EsquemaMora {
@@ -71,30 +71,29 @@ const fmtARS = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'AR
 const fmtNum = (n: number) => new Intl.NumberFormat('es-AR').format(Math.round(n));
 const fmtPct = (n: number) => `${n.toFixed(2)}%`;
 const fmtMoney = (n: number | null) => n == null ? '—' : fmtARS.format(n);
+const fmtUSD   = (n: number | null) => n == null ? '—' : `USD ${Math.round(n).toLocaleString('es-AR')}`;
 
 function calcComision(op: OperadorRow): { ventas: number | null; mora: number | null; total: number | null } {
-  const hasVentas = op.ventas_reales != null && op.esquema_ventas != null;
+  const hasVentas = op.ventas_reales != null && op.esquema_ventas != null && op.meta_ventas_ajustada > 0;
   const hasMora   = op.mora_real     != null && op.esquema_mora   != null;
   if (!hasVentas && !hasMora) return { ventas: null, mora: null, total: null };
 
   let ventas = 0;
   if (hasVentas) {
-    const ev = op.esquema_ventas!;
-    const vr = op.ventas_reales!;
-    if (ev.sc_q != null && vr >= ev.sc_q)        ventas = ev.sc_m  ?? 0;
-    else if (ev.m100_q != null && vr >= ev.m100_q) ventas = ev.m100_m ?? 0;
-    else if (ev.m85_q  != null && vr >= ev.m85_q)  ventas = ev.m85_m  ?? 0;
-    ventas = Math.round(ventas * (1 - op.penalty_pct));
+    const ev  = op.esquema_ventas!;
+    const pct = op.ventas_reales! / op.meta_ventas_ajustada * 100;
+    if      (ev.sc_pct   != null && pct >= ev.sc_pct)   ventas = ev.sc_m   ?? 0;
+    else if (ev.m100_pct != null && pct >= ev.m100_pct) ventas = ev.m100_m ?? 0;
+    else if (ev.m85_pct  != null && pct >= ev.m85_pct)  ventas = ev.m85_m  ?? 0;
   }
 
   let mora = 0;
   if (hasMora) {
     const em = op.esquema_mora!;
     const mr = op.mora_real!;
-    if (em.sc_p != null && mr <= em.sc_p)         mora = em.sc_m  ?? 0;
+    if      (em.sc_p   != null && mr <= em.sc_p)   mora = em.sc_m   ?? 0;
     else if (em.m100_p != null && mr <= em.m100_p) mora = em.m100_m ?? 0;
     else if (em.m85_p  != null && mr <= em.m85_p)  mora = em.m85_m  ?? 0;
-    mora = Math.round(mora * (1 - op.penalty_pct));
   }
 
   return { ventas: hasVentas ? ventas : null, mora: hasMora ? mora : null, total: ventas + mora };
@@ -127,6 +126,7 @@ function computePeriodKpis(ops: OperadorRow[]) {
     comVentas:   liq.reduce((s, o) => s + (o.comision_ventas || 0), 0),
     comMora:     liq.reduce((s, o) => s + (o.comision_mora   || 0), 0),
     comTotal:    liq.reduce((s, o) => s + (o.comision_total  || 0), 0),
+    comTotalPen: liq.reduce((s, o) => s + Math.round((o.comision_total || 0) * (1 - o.penalty_pct)), 0),
   };
 }
 
@@ -238,6 +238,13 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   const [chatMessages,    setChatMessages]    = useState<{ role: 'user' | 'model'; content: string }[]>([]);
   const [chatInput,       setChatInput]       = useState('');
   const [chatLoading,     setChatLoading]     = useState(false);
+  const [rates, setRates] = useState<{ ARS: number; COP: number } | null>(null);
+  useEffect(() => {
+    fetch('/api/exchange-rates')
+      .then(r => r.json())
+      .then(d => setRates({ ARS: d.ARS, COP: d.COP }))
+      .catch(() => {});
+  }, []);
 
   // ── Loading messages ──
 
@@ -384,6 +391,46 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
     semanas.find(s => s.nombre === filterSemana),
   [semanas, filterSemana]);
 
+  const totals = useMemo(() => {
+    const withV = enriched.filter(o => o.ventas_reales  != null);
+    const withM = enriched.filter(o => o.mora_real       != null);
+    const withC = enriched.filter(o => o.capital_total   != null);
+    const metaVentas  = enriched.reduce((s, o) => s + o.meta_ventas_ajustada,   0);
+    const ventasEjec  = withV.reduce((s, o) => s + (o.ventas_reales    || 0),   0);
+    const ventasNuevo = withV.reduce((s, o) => s + (o.ventas_nuevo      || 0),  0);
+    const ventasRenov = withV.reduce((s, o) => s + (o.ventas_renovacion || 0),  0);
+    const capitalTot  = withC.reduce((s, o) => s + (o.capital_total     || 0),  0);
+    const moraEjec    = withM.length ? withM.reduce((s, o) => s + (o.mora_real || 0), 0) / withM.length : null;
+    const metaMora    = withM.length ? withM.reduce((s, o) => s + o.meta_mora,  0) / withM.length : null;
+    const comVentas   = enriched.reduce((s, o) => s + (o.comision_ventas || 0), 0);
+    const comMora     = enriched.reduce((s, o) => s + (o.comision_mora   || 0), 0);
+    const comTotal    = enriched.reduce((s, o) => s + (o.comision_total  || 0), 0);
+    const comTotalPen = enriched.reduce((s, o) => s + Math.round((o.comision_total || 0) * (1 - o.penalty_pct)), 0);
+    const comTotalUSD = rates
+      ? enriched.reduce((s, o) => {
+          const pen = Math.round((o.comision_total || 0) * (1 - o.penalty_pct));
+          const r   = rates.COP;
+          return s + (r > 0 ? pen / r : 0);
+        }, 0)
+      : null;
+    return {
+      nOps: enriched.length,
+      metaVentas,
+      ventasEjec,
+      ventasNuevo,
+      ventasRenov,
+      capitalTot:  withC.length ? capitalTot : null,
+      cumplVentas: metaVentas > 0 ? (ventasEjec / metaVentas * 100) : null,
+      metaMora,
+      moraEjec,
+      comVentas,
+      comMora,
+      comTotal,
+      comTotalPen,
+      comTotalUSD,
+    };
+  }, [enriched, rates]);
+
   // Nombres normalizados de los operadores filtrados (para cruzar con raw)
   const filteredOpNames = useMemo(() =>
     new Set(filtered.map(o => o.nombre.toUpperCase().trim())),
@@ -426,6 +473,34 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
       (!filterSemana || e.semana?.toLowerCase()  === filterSemana.toLowerCase())
     ),
   [esquemasSupervisor, filterMes, filterPais, filterSemana]);
+
+  const supComision = useMemo(() => {
+    if (filteredEsquemasSup.length === 0) return null;
+    const esq = filteredEsquemasSup[0];
+    const ev  = esq.ventas;
+    const em  = esq.mora;
+    const teamPct  = totals.cumplVentas;
+    const teamMora = totals.moraEjec;
+
+    let ventasTier: { label: string; monto: number } | null = null;
+    let moraTier:   { label: string; monto: number } | null = null;
+
+    if (ev && teamPct != null) {
+      if      (ev.sc_pct   != null && teamPct >= ev.sc_pct)   ventasTier = { label: `S/C ≥${ev.sc_pct}%`,    monto: ev.sc_m   ?? 0 };
+      else if (ev.m100_pct != null && teamPct >= ev.m100_pct) ventasTier = { label: `100% ≥${ev.m100_pct}%`, monto: ev.m100_m ?? 0 };
+      else if (ev.m85_pct  != null && teamPct >= ev.m85_pct)  ventasTier = { label: `85% ≥${ev.m85_pct}%`,   monto: ev.m85_m  ?? 0 };
+      else                                                      ventasTier = { label: 'Sin tier (< 85%)',       monto: 0 };
+    }
+
+    if (em && teamMora != null) {
+      if      (em.sc_p   != null && teamMora <= em.sc_p)   moraTier = { label: `S/C ≤${em.sc_p}%`,    monto: em.sc_m   ?? 0 };
+      else if (em.m100_p != null && teamMora <= em.m100_p) moraTier = { label: `100% ≤${em.m100_p}%`, monto: em.m100_m ?? 0 };
+      else if (em.m85_p  != null && teamMora <= em.m85_p)  moraTier = { label: `85% ≤${em.m85_p}%`,   monto: em.m85_m  ?? 0 };
+      else                                                   moraTier = { label: 'Sin tier',              monto: 0 };
+    }
+
+    return { esq, ev, em, ventasTier, moraTier, comTotal: (ventasTier?.monto ?? 0) + (moraTier?.monto ?? 0) };
+  }, [filteredEsquemasSup, totals]);
 
   const allEnriched = useMemo(() =>
     operadores.map(op => {
@@ -773,8 +848,8 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
 
         {/* ── Tab: Detalle ── */}
         {activeTab === 'detalle' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
             <DualScroll>
               <table className="w-full text-sm min-w-[1100px]">
                 <thead className="sticky top-0 z-10 bg-slate-900">
@@ -782,7 +857,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                     {[
                       'Nombre', 'País', 'Campaña', 'Antigüedad', 'Activo/Retiro', 'Días Lab', 'Faltas',
                       'Penalidad', 'Meta V. Aj.', 'V. Nuevo', 'V. Renov.', 'V. Total', 'Capital', '% Cumpl.',
-                      'Comisión V.', 'Meta Mora', 'Mora Real', 'Comisión M.', 'Total',
+                      'Comisión V.', 'Meta Mora', 'Mora Real', 'Comisión M.', 'Total Bruta', 'Total c/ Pena.', 'Total c/ Pena USD',
                     ].map(h => (
                       <th key={h} className="px-3 py-3 text-left text-[10px] font-bold text-zinc-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
@@ -840,10 +915,43 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                         <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
                           {op.comision_total != null ? <span className="text-blue-400 font-bold">{fmtMoney(op.comision_total)}</span> : <span className="text-zinc-700">—</span>}
                         </td>
+                        <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
+                          {op.comision_total != null
+                            ? <span className="text-violet-400 font-bold">{fmtMoney(Math.round(op.comision_total * (1 - op.penalty_pct)))}</span>
+                            : <span className="text-zinc-700">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-right whitespace-nowrap">
+                          {op.comision_total != null && rates
+                            ? <span className="text-teal-400 font-bold">{fmtUSD(Math.round(op.comision_total * (1 - op.penalty_pct)) / rates.COP)}</span>
+                            : <span className="text-zinc-700">—</span>}
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
+                {enriched.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-blue-500/30 bg-blue-950/20">
+                      <td className="px-3 py-3 text-xs font-bold text-blue-300 whitespace-nowrap">
+                        TOTAL · {totals.nOps} ops
+                      </td>
+                      <td colSpan={7} />
+                      <td className="px-3 py-3 text-xs text-right font-bold text-zinc-200 whitespace-nowrap">{fmtNum(totals.metaVentas)}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-zinc-200 whitespace-nowrap">{totals.ventasNuevo > 0 ? fmtNum(totals.ventasNuevo) : '—'}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-zinc-200 whitespace-nowrap">{totals.ventasRenov > 0 ? fmtNum(totals.ventasRenov) : '—'}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-white whitespace-nowrap">{fmtNum(totals.ventasEjec)}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-cyan-400 whitespace-nowrap">{fmtMoney(totals.capitalTot)}</td>
+                      <td className="px-3 py-3 text-center"><CumplBadge pct={totals.cumplVentas} /></td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-emerald-400 whitespace-nowrap">{fmtMoney(totals.comVentas)}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-zinc-300 whitespace-nowrap">{totals.metaMora != null ? `${totals.metaMora.toFixed(2)}%` : '—'}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-white whitespace-nowrap">{totals.moraEjec != null ? `${totals.moraEjec.toFixed(2)}%` : '—'}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-emerald-400 whitespace-nowrap">{fmtMoney(totals.comMora)}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-blue-400 whitespace-nowrap">{fmtMoney(totals.comTotal)}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-violet-400 whitespace-nowrap">{fmtMoney(totals.comTotalPen)}</td>
+                      <td className="px-3 py-3 text-xs text-right font-bold text-teal-400 whitespace-nowrap">{fmtUSD(totals.comTotalUSD)}</td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </DualScroll>
             <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800">
@@ -862,6 +970,111 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                 </button>
               </div>
             </div>
+            </div>{/* closes table card */}
+
+            {/* ── Supervisor Commission Card ── */}
+            {!filterSemana || !filterMes || !filterPais ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center text-zinc-600 text-sm">
+                Seleccioná <span className="text-zinc-400">País</span>, <span className="text-zinc-400">Mes</span> y <span className="text-zinc-400">Semana</span> para ver la comisión del supervisor.
+              </div>
+            ) : supComision === null ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 text-center text-zinc-600 text-sm">
+                No se encontró esquema de supervisor para los filtros seleccionados.
+              </div>
+            ) : (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-800 bg-slate-800/30">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-bold text-zinc-200">Comisión Supervisor</span>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    {[filterPais, filterMes, filterSemana].map((v, i) => v && (
+                      <span key={i} className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-700 text-zinc-300">{v}</span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Ventas block */}
+                  <div className="bg-slate-800/40 rounded-xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Ventas Equipo</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">Meta</p>
+                        <p className="text-sm font-bold text-zinc-300">{fmtNum(totals.metaVentas)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">Ejecutado</p>
+                        <p className="text-sm font-bold text-white">{fmtNum(totals.ventasEjec)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">% Cumpl.</p>
+                        <div className="flex justify-center"><CumplBadge pct={totals.cumplVentas} /></div>
+                      </div>
+                    </div>
+                    {supComision.ventasTier ? (
+                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
+                        supComision.ventasTier.monto > 0
+                          ? 'bg-emerald-900/20 border-emerald-700/30'
+                          : 'bg-red-900/20 border-red-700/30'
+                      }`}>
+                        <span className="text-xs text-zinc-400">{supComision.ventasTier.label}</span>
+                        <span className={`text-sm font-bold ${supComision.ventasTier.monto > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {fmtMoney(supComision.ventasTier.monto)}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-zinc-600 text-center">Sin datos de ventas</p>
+                    )}
+                  </div>
+
+                  {/* Mora block */}
+                  <div className="bg-slate-800/40 rounded-xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Mora Equipo</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-center">
+                      <div>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">Meta Mora</p>
+                        <p className="text-sm font-bold text-zinc-300">{totals.metaMora != null ? `${totals.metaMora.toFixed(2)}%` : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">Mora Real</p>
+                        <p className="text-sm font-bold text-white">{totals.moraEjec != null ? `${totals.moraEjec.toFixed(2)}%` : '—'}</p>
+                      </div>
+                    </div>
+                    {supComision.moraTier ? (
+                      <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${
+                        supComision.moraTier.monto > 0
+                          ? 'bg-emerald-900/20 border-emerald-700/30'
+                          : 'bg-red-900/20 border-red-700/30'
+                      }`}>
+                        <span className="text-xs text-zinc-400">{supComision.moraTier.label}</span>
+                        <span className={`text-sm font-bold ${supComision.moraTier.monto > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {fmtMoney(supComision.moraTier.monto)}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-zinc-600 text-center">Sin datos de mora</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Total */}
+                <div className="flex items-center justify-between px-5 py-4 border-t border-slate-800 bg-blue-950/20">
+                  <span className="text-sm font-bold text-zinc-300">Total Comisión Supervisor</span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-xl font-bold text-blue-400">{fmtMoney(supComision.comTotal)}</span>
+                    {rates && (() => {
+                      const r = rates.COP;
+                      return r > 0 ? <span className="text-sm font-semibold text-teal-400">{fmtUSD(supComision.comTotal / r)}</span> : null;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
 
@@ -939,21 +1152,21 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                         <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3">Escala Ventas</p>
                         {ev ? (
                           <div className="flex flex-col gap-2">
-                            {ev.sc_q != null && (
+                            {ev.sc_pct != null && (
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-amber-400 font-bold">Sobrecumplimiento ({ev.sc_q}+ ventas)</span>
+                                <span className="text-xs text-amber-400 font-bold">Sobrecumplimiento (≥{ev.sc_pct}%)</span>
                                 <span className="text-xs text-white font-bold">{fmtMoney(ev.sc_m)}</span>
                               </div>
                             )}
-                            {ev.m100_q != null && (
+                            {ev.m100_pct != null && (
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-emerald-400 font-bold">100% ({ev.m100_q} ventas)</span>
+                                <span className="text-xs text-emerald-400 font-bold">100% (≥{ev.m100_pct}%)</span>
                                 <span className="text-xs text-white font-bold">{fmtMoney(ev.m100_m)}</span>
                               </div>
                             )}
-                            {ev.m85_q != null && (
+                            {ev.m85_pct != null && (
                               <div className="flex items-center justify-between">
-                                <span className="text-xs text-zinc-400">85% ({ev.m85_q} ventas)</span>
+                                <span className="text-xs text-zinc-400">Mín. 85% (≥{ev.m85_pct}%)</span>
                                 <span className="text-xs text-white">{fmtMoney(ev.m85_m)}</span>
                               </div>
                             )}
@@ -1191,7 +1404,34 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
         {/* ── Tab: Semana vs Semana ── */}
         {activeTab === 'svs' && (() => {
           type PK = ReturnType<typeof computePeriodKpis>;
-          const periodKpis = svsPeriods.map(p => computePeriodKpis(p.ops));
+          const periodKpis = svsPeriods.map(p => {
+            const base = computePeriodKpis(p.ops);
+            const esq  = (esquemasSupervisor as any[]).find((e: any) =>
+              e.mes?.toLowerCase()    === p.mes.toLowerCase() &&
+              e.semana?.toLowerCase() === p.semana.toLowerCase() &&
+              e.campana?.toLowerCase() === svsPais.toLowerCase()
+            );
+            let supCom: number | null = null;
+            if (esq) {
+              const ev = esq.ventas; const em = esq.mora;
+              let comV = 0, comM = 0;
+              if (ev && base.cumplVentas != null) {
+                if      (ev.sc_pct   != null && base.cumplVentas >= ev.sc_pct)   comV = ev.sc_m   ?? 0;
+                else if (ev.m100_pct != null && base.cumplVentas >= ev.m100_pct) comV = ev.m100_m ?? 0;
+                else if (ev.m85_pct  != null && base.cumplVentas >= ev.m85_pct)  comV = ev.m85_m  ?? 0;
+              }
+              if (em && base.moraEjec != null) {
+                if      (em.sc_p   != null && base.moraEjec <= em.sc_p)   comM = em.sc_m   ?? 0;
+                else if (em.m100_p != null && base.moraEjec <= em.m100_p) comM = em.m100_m ?? 0;
+                else if (em.m85_p  != null && base.moraEjec <= em.m85_p)  comM = em.m85_m  ?? 0;
+              }
+              supCom = comV + comM;
+            }
+            const svsRate        = rates ? rates.COP : null;
+            const comTotalPenUSD = svsRate ? base.comTotalPen / svsRate : null;
+            const supComUSD      = svsRate && supCom != null ? supCom / svsRate : null;
+            return { ...base, supCom, comTotalPenUSD, supComUSD };
+          });
 
           const rows: Array<
             | { type: 'sep'; label: string }
@@ -1212,8 +1452,11 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
             { type: 'sep', label: 'Comisiones' },
             { type: 'kpi', label: 'Com. Ventas',     get: k => k.comVentas,  fmt: fmtMoney, hb: true },
             { type: 'kpi', label: 'Com. Mora',       get: k => k.comMora,    fmt: fmtMoney, hb: true },
-            { type: 'kpi', label: 'Com. Total',      get: k => k.comTotal,   fmt: fmtMoney, hb: true },
-            { type: 'kpi', label: 'Com. Supervisor', get: _ => null,          fmt: () => '—', hb: true },
+            { type: 'kpi', label: 'Com. Total',        get: k => k.comTotal,    fmt: fmtMoney, hb: true },
+            { type: 'kpi', label: 'Com. c/ Pena.',      get: k => k.comTotalPen,                   fmt: fmtMoney, hb: true },
+            { type: 'kpi', label: 'Com. c/ Pena. USD', get: k => (k as any).comTotalPenUSD ?? null, fmt: v => v != null ? fmtUSD(v) : '—', hb: true },
+            { type: 'kpi', label: 'Com. Supervisor',   get: k => (k as any).supCom ?? null,          fmt: v => v != null ? fmtMoney(v) : '—', hb: true },
+            { type: 'kpi', label: 'Com. Sup. USD',     get: k => (k as any).supComUSD ?? null,       fmt: v => v != null ? fmtUSD(v) : '—', hb: true },
           ];
 
           const hasPeriods = svsPeriods.length > 0;
@@ -1332,11 +1575,6 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
                 </div>
               )}
 
-              {svsPais && hasPeriods && (
-                <p className="text-[10px] text-zinc-700 text-center">
-                  Com. Supervisor — cálculo pendiente de próxima versión
-                </p>
-              )}
 
             </motion.div>
           );

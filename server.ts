@@ -1375,45 +1375,45 @@ async function startServer() {
 
   function parseVentasEsquema(text: string) {
     if (!text) return null;
-    // Soporta dos formatos:
-    //   A) "100%: 60 vtas ($50.000)"   — formato actual del sheet
-    //   B) "100% (60 ventas): $50.000" — formato alternativo
-    const matchVentasTier = (label: string): { q: number | null; m: number | null } => {
-      const lbl = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Formato A: LABEL: NNN vtas ($MONTO)  — cantidad puede ser decimal (ej: 52.5)
-      const mA = text.match(new RegExp(lbl + ':\\s*(\\d+(?:[.,]\\d+)?)\\s*v(?:tas?|entas?)\\s*\\(\\$([0-9.]+)\\)', 'i'));
-      if (mA) return { q: parseFloat(mA[1].replace(',', '.')), m: parseMontoARS(mA[2]) };
-      // Formato B: LABEL (NNN ventas): $MONTO
-      const mB = text.match(new RegExp(lbl + '\\s*\\((\\d+(?:[.,]\\d+)?)\\s*v(?:tas?|entas?)\\):\\s*\\$([0-9.]+)', 'i'));
-      if (mB) return { q: parseFloat(mB[1].replace(',', '.')), m: parseMontoARS(mB[2]) };
-      return { q: null, m: null };
-    };
-    const sc   = matchVentasTier('S/C');
-    const m100 = matchVentasTier('100%');
-    const m85  = matchVentasTier('85%');
-    if (!sc.q && !m100.q && !m85.q) return null;
-    return { sc_q: sc.q, sc_m: sc.m, m100_q: m100.q, m100_m: m100.m, m85_q: m85.q, m85_m: m85.m };
+    // Formato nuevo: tiers por % cumplimiento con "Valor a pagar $X"
+    // Ej: "Sobrecumplimiento (120,00% o más) … Valor a pagar $150.000"
+    const p = (s: string) => parseFloat(s.replace(',', '.'));
+    const tierRe = (namePattern: string) => new RegExp(
+      namePattern + '[^(]*\\(\\s*([0-9]+(?:[.,][0-9]+)?)%[^)]*\\)[\\s\\S]*?Valor a pagar\\s*\\$([0-9.,]+)',
+      'i'
+    );
+    const scM  = text.match(tierRe('Sobrecumplimiento'));
+    const m85M = text.match(tierRe('Cumplimiento\\s+m[ií]nimo'));
+    // Para 100%: excluye "Incumplimiento" (lookbehind) y "Cumplimiento mínimo" (lookahead)
+    const m100M = text.match(
+      /(?<!In)Cumplimiento(?!\s+m[ií]nimo)[^(]*\(\s*([0-9]+(?:[.,][0-9]+)?)%[^)]*\)[\s\S]*?Valor a pagar\s*\$([0-9.,]+)/i
+    );
+    const sc   = scM   ? { pct: p(scM[1]),   m: parseMontoARS(scM[2])   } : { pct: null, m: null };
+    const m100 = m100M ? { pct: p(m100M[1]), m: parseMontoARS(m100M[2]) } : { pct: null, m: null };
+    const m85  = m85M  ? { pct: p(m85M[1]),  m: parseMontoARS(m85M[2])  } : { pct: null, m: null };
+    if (sc.pct == null && m100.pct == null && m85.pct == null) return null;
+    return { sc_pct: sc.pct, sc_m: sc.m, m100_pct: m100.pct, m100_m: m100.m, m85_pct: m85.pct, m85_m: m85.m };
   }
 
   function parseMoraEsquema(text: string) {
     if (!text) return null;
     if (/no hay cierre/i.test(text)) return null;
-    // Soporta dos formatos:
-    //   A) "S/C: <=30% ($200.000)"     — formato actual del sheet
-    //   B) "S/C (<=30%): $200.000"     — formato alternativo
-    const matchMoraTier = (label: string): { p: number | null; m: number | null } => {
-      const lbl = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Formato A: LABEL: <=NNN% ($MONTO)
-      const mA = text.match(new RegExp(lbl + ':\\s*<?=?\\s*(\\d+(?:[.,]\\d+)?)%\\s*\\(\\$([0-9.]+)\\)', 'i'));
-      if (mA) return { p: parseFloat(mA[1].replace(',', '.')), m: parseMontoARS(mA[2]) };
-      // Formato B: LABEL (<=NNN%): $MONTO
-      const mB = text.match(new RegExp(lbl + '\\s*\\(<?=?\\s*(\\d+(?:[.,]\\d+)?)%\\):\\s*\\$([0-9.]+)', 'i'));
-      if (mB) return { p: parseFloat(mB[1].replace(',', '.')), m: parseMontoARS(mB[2]) };
-      return { p: null, m: null };
-    };
-    const sc   = matchMoraTier('S/C');
-    const m100 = matchMoraTier('100%');
-    const m85  = matchMoraTier('85%');
+    // Formato nuevo: tiers por % mora con "Valor a pagar $X"
+    // S/C: "(mora ≤ X%)"  — captura X como umbral único
+    // 100%/85%: "(X% – Y%)" — captura Y (límite superior) como umbral
+    const p = (s: string) => parseFloat(s.replace(',', '.'));
+    const scM = text.match(
+      /Sobrecumplimiento[^(]*\(mora\s*[≤<=]+\s*([0-9]+(?:[.,][0-9]+)?)%\s*\)[\s\S]*?Valor a pagar\s*\$([0-9.,]+)/i
+    );
+    const m100M = text.match(
+      /Cumplimiento\s+100%[^(]*\([0-9,]+%\s*[–-]\s*([0-9]+(?:[.,][0-9]+)?)%\s*\)[\s\S]*?Valor a pagar\s*\$([0-9.,]+)/i
+    );
+    const m85M = text.match(
+      /Cumplimiento\s+85%[^(]*\([0-9,]+%\s*[–-]\s*([0-9]+(?:[.,][0-9]+)?)%\s*\)[\s\S]*?Valor a pagar\s*\$([0-9.,]+)/i
+    );
+    const sc   = scM   ? { p: p(scM[1]),   m: parseMontoARS(scM[2])   } : { p: null, m: null };
+    const m100 = m100M ? { p: p(m100M[1]), m: parseMontoARS(m100M[2]) } : { p: null, m: null };
+    const m85  = m85M  ? { p: p(m85M[1]),  m: parseMontoARS(m85M[2])  } : { p: null, m: null };
     if (!sc.p && !m100.p && !m85.p) return null;
     return { sc_p: sc.p, sc_m: sc.m, m100_p: m100.p, m100_m: m100.m, m85_p: m85.p, m85_m: m85.m };
   }
@@ -1426,13 +1426,21 @@ async function startServer() {
     const prompt = `Parse these commission scheme texts for a sales team. Return a JSON array — one object per input row.
 
 Each object must have:
-- "ventas": {sc_q, sc_m, m100_q, m100_m, m85_q, m85_m} or null
+- "ventas": {sc_pct, sc_m, m100_pct, m100_m, m85_pct, m85_m} or null
 - "mora":   {sc_p, sc_m, m100_p, m100_m, m85_p, m85_m} or null
 
-Field rules:
-- ventas _q fields = quantity thresholds (numbers, may be decimal e.g. 52.5). ventas _m fields = pesos amounts (integers).
-- mora _p fields = mora % thresholds (floats, e.g. 37.5). mora _m fields = pesos amounts.
-- "SC" / "S/C" / "Sobrecumplimiento" = sc tier (highest).
+Field rules for VENTAS (thresholds are % cumplimiento = ventas_reales / meta_ajustada):
+- sc_pct (float): lower bound of SC tier (e.g. 120 means ≥120%). sc_m (int): pesos amount.
+- m100_pct (float): lower bound of 100% tier (typically 100). m100_m (int): pesos amount.
+- m85_pct (float): lower bound of mínimo tier (e.g. 85-90). m85_m (int): pesos amount.
+- "Sobrecumplimiento" / "S/C" / "SC" = sc tier. "Cumplimiento" = m100 tier. "Cumplimiento mínimo" = m85 tier.
+
+Field rules for MORA (thresholds are upper bounds — lower mora % is better):
+- sc_p (float): SC mora upper bound (e.g. 37.4 means mora ≤37.4%). sc_m (int): pesos amount.
+- m100_p (float): 100% mora upper bound (e.g. 42.4). m100_m (int): pesos amount.
+- m85_p (float): 85% mora upper bound (e.g. 48.4). m85_m (int): pesos amount.
+
+General rules:
 - "no hay cierre" or empty mora → mora: null.
 - Missing tier → null for both its threshold and amount fields.
 - Strip $ and dots from amounts: "$50.000" → 50000, "$1.500.000" → 1500000.
