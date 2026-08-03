@@ -185,6 +185,12 @@ const modules = [
         title: 'Cartera ARG – Fideicomiso',
         description: 'Gestión y seguimiento de la cartera del fideicomiso en Argentina.',
         color: 'bg-slate-800'
+      },
+      {
+        id: 'tesoreria',
+        title: 'Tesorería',
+        description: 'Flujo de caja diario y mensual. Saldos, cobranzas y egresos operativos.',
+        color: 'bg-slate-800'
       }
     ]
   },

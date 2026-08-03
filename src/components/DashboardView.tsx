@@ -45,6 +45,7 @@ import BiObsidianSubmodule from './submodules/BiObsidianSubmodule';
 import AdmGastosProveedoresSubmodule from './submodules/AdmGastosProveedoresSubmodule';
 import MktComunicacionesSubmodule from './submodules/MktComunicacionesSubmodule';
 import OperadoresVentasSubmodule from './submodules/OperadoresVentasSubmodule';
+import TesoreriaSubmodule from './submodules/TesoreriaSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -1579,7 +1580,7 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas'].includes(sub.id);
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas', 'tesoreria'].includes(sub.id);
                   const isDisabled = ['ri-analitico', 'bi-tools', 'marketing-estrategia'].includes(sub.id);
                   return (
                     <motion.button
@@ -1647,6 +1648,8 @@ export default function DashboardView({
             <MktComunicacionesSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'operadores-ventas' ? (
             <OperadoresVentasSubmodule userEmail={userEmail} />
+          ) : activeSubmodule.id === 'tesoreria' ? (
+            <TesoreriaSubmodule userEmail={userEmail} />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
