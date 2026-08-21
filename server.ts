@@ -1269,7 +1269,7 @@ async function startServer() {
             descripcion_actividad_laboral, razon_social_empleador, cuit_empleador,
             region_loan, riesgo_region,
             warning_cancelacion_anticipada, warning_pep_o_so, warning_smvm_men_anual, warning_pagador_indirecto, warning_repet,
-            monto_pagado_cvu,
+            monto_pagado_cvu, pagador_indirecto,
             total_cancelados_en_el_mes, salario_min, smvm_mes, smvm_anio, cvu_igual, es_so, es_pep,
             riesgo,
             auditoria_1, auditor_1, auditoria_fecha_1,
@@ -1356,6 +1356,37 @@ async function startServer() {
       res.status(500).json({ error: "Error al guardar en Redshift", details: err.message });
     } finally {
       client.release();
+    }
+  });
+
+  let pagadoresIndirectosCache: { data: any[]; fetchedAt: number } | null = null;
+  const PAGADORES_INDIRECTOS_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
+
+  app.get("/api/uif/pagadores-indirectos", async (req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: "Conexión a Redshift no configurada",
+        required_env: ["REDSHIFT_HOST", "REDSHIFT_DATABASE", "REDSHIFT_USER", "REDSHIFT_PASSWORD"],
+      });
+    }
+    try {
+      const now = Date.now();
+      if (!pagadoresIndirectosCache || now - pagadoresIndirectosCache.fetchedAt > PAGADORES_INDIRECTOS_CACHE_TTL_MS) {
+        console.log("[UIF] Querying pagadores_indirectos in Redshift...");
+        const result = await redshiftPool.query(`
+          SELECT * FROM risk_arg.pagadores_indirectos_uif_creditos_arg
+          ORDER BY fecha_desembolso DESC
+        `);
+        pagadoresIndirectosCache = { data: result.rows, fetchedAt: now };
+        console.log(`[UIF] Cached ${result.rows.length} pagadores_indirectos records from Redshift`);
+      } else {
+        console.log("[UIF] Serving pagadores_indirectos from cache");
+      }
+      const safe = JSON.parse(JSON.stringify(pagadoresIndirectosCache.data, (_k, v) => typeof v === "bigint" ? Number(v) : v));
+      res.json({ records: safe, total: safe.length, source: "redshift" });
+    } catch (error: any) {
+      console.error("[UIF] Error querying pagadores_indirectos:", error);
+      res.status(500).json({ error: "Error al cargar datos de pagadores indirectos", details: error.message });
     }
   });
 

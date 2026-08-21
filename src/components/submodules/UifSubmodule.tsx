@@ -31,6 +31,7 @@ interface UifRecord {
   warning_pagador_indirecto: number | null;
   warning_repet: number | null;
   monto_pagado_cvu: number | null;
+  pagador_indirecto: string | null;
   total_cancelados_en_el_mes: number | null;
   salario_min: number | null;
   smvm_mes: number | null;
@@ -47,6 +48,34 @@ interface UifRecord {
   riesgo_auditado: string | null;
   riesgo_auditado_auditor: string | null;
   riesgo_auditado_fecha: string | null;
+}
+
+interface PagadorIndirectoRecord {
+  cuil_pagador: string;
+  cuil_deudor: string;
+  es_credito_propio: number | null;
+  loan_id: number;
+  fecha_desembolso: string | null;
+  plazo: number | null;
+  capital: string | null;
+  capital_mas_interes: string | null;
+  monto_pagado: string | null;
+  monto_pagado_por_pagador: string | null;
+  pct_bancado_por_pagador: string | null;
+  imputacion_directa: number | null;
+  en_ventana_pagador: number | null;
+  pagado_capital: string | null;
+  pagado_interes: string | null;
+  pagado_punitorios: string | null;
+  pagado_servicios: string | null;
+  primer_pago: string | null;
+  ultimo_pago: string | null;
+  pagos_del_pagador: number | null;
+  transferencias: number | null;
+  monto_transferido_al_deudor: string | null;
+  pagador_desde: string | null;
+  pagador_hasta: string | null;
+  tipo_cliente: string | null;
 }
 
 interface AuditDraft {
@@ -76,7 +105,15 @@ function fmtDateTime(v: unknown): string {
   return s.slice(0, 10);
 }
 
+function fmtPct(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  const n = parseFloat(String(v));
+  if (isNaN(n)) return String(v);
+  return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n) + '%';
+}
+
 function rowKey(r: UifRecord) { return `${r.loan_id}|${r.cuil}`; }
+function pagadorRowKey(r: PagadorIndirectoRecord, i: number) { return `${r.loan_id}|${r.cuil_pagador}|${i}`; }
 
 function cleanAudit(v: string | null): string {
   if (!v || v === 'true' || v === 'false') return '';
@@ -242,6 +279,7 @@ const DISPLAY_COLS: { key: keyof UifRecord; label: string; render?: (v: unknown,
   { key: 'warning_pagador_indirecto', label: 'W. Pag. Ind.', render: v => <WarnDot active={!!v} /> },
   { key: 'warning_repet', label: 'W. REPET', render: v => <WarnDot active={!!v} /> },
   { key: 'monto_pagado_cvu', label: 'Monto Pag. Indirecto', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'pagador_indirecto', label: 'Pagador Indirecto', render: v => <span className="font-mono text-xs">{String(v ?? '—')}</span> },
   { key: 'total_cancelados_en_el_mes', label: 'Cancelados/Mes' },
   { key: 'salario_min', label: 'Salario Mín.', render: v => fmtMoney(v) },
   { key: 'smvm_mes', label: 'SMVM Mes', render: v => fmtMoney(v) },
@@ -251,6 +289,34 @@ const DISPLAY_COLS: { key: keyof UifRecord; label: string; render?: (v: unknown,
   { key: 'es_pep', label: 'PEP', render: v => <BoolBadge value={v} /> },
   { key: 'riesgo', label: 'Riesgo', render: v => <RiesgoBadge value={v as string | null} size="xs" /> },
   { key: 'riesgo_auditado', label: 'Riesgo Auditado', render: v => <RiesgoBadge value={v as string | null} size="xs" /> },
+];
+
+const PAGADOR_INDIRECTO_COLS: { key: keyof PagadorIndirectoRecord; label: string; render?: (v: unknown) => React.ReactNode }[] = [
+  { key: 'cuil_pagador', label: 'CUIL Pagador', render: v => <span className="font-mono text-xs text-blue-400">{String(v ?? '—')}</span> },
+  { key: 'cuil_deudor', label: 'CUIL Deudor', render: v => <span className="font-mono text-xs">{String(v ?? '—')}</span> },
+  { key: 'loan_id', label: 'Loan ID', render: v => <span className="font-bold text-blue-400">{String(v ?? '—')}</span> },
+  { key: 'es_credito_propio', label: 'Créd. Propio', render: v => <BoolBadge value={v} /> },
+  { key: 'tipo_cliente', label: 'Tipo Cliente' },
+  { key: 'fecha_desembolso', label: 'Fecha Desemb.', render: v => fmtDate(v) },
+  { key: 'plazo', label: 'Plazo' },
+  { key: 'capital', label: 'Capital', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'capital_mas_interes', label: 'Capital + Int.', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'monto_pagado', label: 'Monto Pagado', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'monto_pagado_por_pagador', label: 'Pagado por Pagador', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'pct_bancado_por_pagador', label: '% Bancado', render: v => <span className="block text-right">{fmtPct(v)}</span> },
+  { key: 'imputacion_directa', label: 'Imput. Directa', render: v => <BoolBadge value={v} /> },
+  { key: 'en_ventana_pagador', label: 'En Ventana', render: v => <BoolBadge value={v} /> },
+  { key: 'pagado_capital', label: 'Pagado Capital', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'pagado_interes', label: 'Pagado Interés', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'pagado_punitorios', label: 'Pagado Punitorios', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'pagado_servicios', label: 'Pagado Servicios', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'primer_pago', label: 'Primer Pago', render: v => fmtDate(v) },
+  { key: 'ultimo_pago', label: 'Último Pago', render: v => fmtDate(v) },
+  { key: 'pagos_del_pagador', label: 'Pagos del Pagador' },
+  { key: 'transferencias', label: 'Transferencias' },
+  { key: 'monto_transferido_al_deudor', label: 'Transferido a Deudor', render: v => <span className="block text-right">{fmtMoney(v)}</span> },
+  { key: 'pagador_desde', label: 'Pagador Desde', render: v => fmtDate(v) },
+  { key: 'pagador_hasta', label: 'Pagador Hasta', render: v => fmtDate(v) },
 ];
 
 // ── Audit panel (memoized — won't re-render when other rows change) ───────────
@@ -481,6 +547,7 @@ const WARNING_LABELS: Record<string, string> = {
 
 export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
   const [records, setRecords] = useState<UifRecord[]>([]);
+  const [pagadoresIndirectos, setPagadoresIndirectos] = useState<PagadorIndirectoRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -492,13 +559,22 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/uif/records');
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.details || err.error || `HTTP ${res.status}`);
+      const [uifRes, pagadoresRes] = await Promise.all([
+        fetch('/api/uif/records'),
+        fetch('/api/uif/pagadores-indirectos'),
+      ]);
+      if (!uifRes.ok) {
+        const err = await uifRes.json();
+        throw new Error(err.details || err.error || `HTTP ${uifRes.status}`);
       }
-      const data = await res.json();
+      if (!pagadoresRes.ok) {
+        const err = await pagadoresRes.json();
+        throw new Error(err.details || err.error || `HTTP ${pagadoresRes.status}`);
+      }
+      const data = await uifRes.json();
+      const pagadoresData = await pagadoresRes.json();
       setRecords(data.records || []);
+      setPagadoresIndirectos(pagadoresData.records || []);
       setLoaded(true);
     } catch (err: any) {
       setError(err.message);
@@ -659,6 +735,7 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
       warn_pagador_indirecto: r.warning_pagador_indirecto,
       warn_repet: r.warning_repet,
       monto_pagador_indirecto: r.monto_pagado_cvu,
+      pagador_indirecto: r.pagador_indirecto,
       riesgo_auditado: r.riesgo_auditado,
       auditado_por: r.riesgo_auditado_auditor,
       auditado_fecha: fmtDateTime(r.riesgo_auditado_fecha),
@@ -680,16 +757,41 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
     XLSX.writeFile(wb, `uif_${today}.xlsx`);
   }, [filtered]);
 
-  const cuilRanking = useMemo(() => {
-    const map = new Map<string, { cuil: string; warnings: number; riesgoAlto: number }>();
-    for (const r of records) {
-      const entry = map.get(r.cuil) ?? { cuil: r.cuil, warnings: 0, riesgoAlto: 0 };
-      entry.warnings++;
-      if (r.riesgo_auditado === 'ALTO' || r.riesgo === 'ALTO') entry.riesgoAlto++;
-      map.set(r.cuil, entry);
-    }
-    return Array.from(map.values()).sort((a, b) => b.warnings - a.warnings);
-  }, [records]);
+  const handleExportPagadoresExcel = useCallback(() => {
+    if (pagadoresIndirectos.length === 0) return;
+    const rows = pagadoresIndirectos.map(r => ({
+      cuil_pagador: r.cuil_pagador,
+      cuil_deudor: r.cuil_deudor,
+      loan_id: r.loan_id,
+      es_credito_propio: r.es_credito_propio,
+      tipo_cliente: r.tipo_cliente,
+      fecha_desembolso: fmtDate(r.fecha_desembolso),
+      plazo: r.plazo,
+      capital: r.capital,
+      capital_mas_interes: r.capital_mas_interes,
+      monto_pagado: r.monto_pagado,
+      monto_pagado_por_pagador: r.monto_pagado_por_pagador,
+      pct_bancado_por_pagador: r.pct_bancado_por_pagador,
+      imputacion_directa: r.imputacion_directa,
+      en_ventana_pagador: r.en_ventana_pagador,
+      pagado_capital: r.pagado_capital,
+      pagado_interes: r.pagado_interes,
+      pagado_punitorios: r.pagado_punitorios,
+      pagado_servicios: r.pagado_servicios,
+      primer_pago: fmtDate(r.primer_pago),
+      ultimo_pago: fmtDate(r.ultimo_pago),
+      pagos_del_pagador: r.pagos_del_pagador,
+      transferencias: r.transferencias,
+      monto_transferido_al_deudor: r.monto_transferido_al_deudor,
+      pagador_desde: fmtDate(r.pagador_desde),
+      pagador_hasta: fmtDate(r.pagador_hasta),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pagadores Indirectos');
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    XLSX.writeFile(wb, `pagadores_indirectos_uif_${today}.xlsx`);
+  }, [pagadoresIndirectos]);
 
   // ── Initial screen ────────────────────────────────────────────────────────
   if (!loaded) {
@@ -852,6 +954,11 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
 
       {/* Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-amber-400" />
+          <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Warnings AML detectados que superan los umbrales</span>
+          <span className="text-[10px] text-zinc-600">({filtered.length.toLocaleString('es-AR')} registros)</span>
+        </div>
         <DualScroll maxHeight="62vh">
           <table className="w-full text-left border-collapse" style={{ minWidth: '3200px' }}>
             <thead className="sticky top-0 z-10 bg-slate-800">
@@ -887,41 +994,59 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
         </DualScroll>
       </div>
 
-      {/* Ranking por CUIL */}
+      {/* Comportamiento de los pagadores indirectos */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-rose-400" />
-          <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Ranking CUIL por cantidad de warnings</span>
+        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-rose-400" />
+            <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Comportamiento de los pagadores indirectos</span>
+            <span className="text-[10px] text-zinc-600">({pagadoresIndirectos.length.toLocaleString('es-AR')} registros)</span>
+          </div>
+          <button
+            onClick={handleExportPagadoresExcel}
+            disabled={pagadoresIndirectos.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-800/60 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-700/50 text-emerald-300 font-bold text-xs rounded-lg transition-all"
+            title={`Exportar ${pagadoresIndirectos.length} registros a Excel`}
+          >
+            <Download className="w-3.5 h-3.5" /> Excel
+          </button>
         </div>
-        <div className="overflow-y-auto max-h-72">
-        <table className="w-full text-left border-collapse">
-          <thead className="sticky top-0 bg-slate-800">
-            <tr>
-              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider w-10">#</th>
-              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">CUIL</th>
-              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Warnings</th>
-              <th className="px-4 py-2 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Riesgo Alto</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cuilRanking.slice(0, 50).map((entry, i) => (
-              <tr key={entry.cuil} className="border-t border-slate-800/60 hover:bg-slate-800/30 transition-colors">
-                <td className="px-4 py-2 text-[11px] text-zinc-600 font-mono">{i + 1}</td>
-                <td className="px-4 py-2 text-xs font-mono text-zinc-200">{entry.cuil}</td>
-                <td className="px-4 py-2 text-right">
-                  <span className="text-sm font-black text-blue-400">{entry.warnings}</span>
-                </td>
-                <td className="px-4 py-2 text-right">
-                  {entry.riesgoAlto > 0
-                    ? <span className="text-sm font-black text-rose-400">{entry.riesgoAlto}</span>
-                    : <span className="text-zinc-700">—</span>
-                  }
-                </td>
+        <DualScroll maxHeight="50vh">
+          <table className="w-full text-left border-collapse" style={{ minWidth: '2400px' }}>
+            <thead className="sticky top-0 z-10 bg-slate-800">
+              <tr>
+                {PAGADOR_INDIRECTO_COLS.map(col => (
+                  <th key={col.key} className="px-3 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap">
+                    {col.label}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-        </div>
+            </thead>
+            <tbody>
+              {pagadoresIndirectos.length === 0 ? (
+                <tr>
+                  <td colSpan={PAGADOR_INDIRECTO_COLS.length} className="px-6 py-12 text-center text-zinc-500 text-sm">
+                    No hay registros de pagadores indirectos.
+                  </td>
+                </tr>
+              ) : pagadoresIndirectos.map((row, i) => (
+                <tr key={pagadorRowKey(row, i)} className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors">
+                  {PAGADOR_INDIRECTO_COLS.map(col => (
+                    <td key={col.key} className="px-3 py-2.5 text-xs text-zinc-300 whitespace-nowrap">
+                      {col.render
+                        ? col.render(row[col.key])
+                        : (row[col.key] === null || row[col.key] === undefined
+                          ? <span className="text-zinc-600">—</span>
+                          : String(row[col.key])
+                        )
+                      }
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DualScroll>
       </div>
     </div>
   );
