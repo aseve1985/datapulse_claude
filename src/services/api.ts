@@ -155,3 +155,44 @@ export async function fetchMarketingData(
 
   return { records, fullResponse: data };
 }
+
+export async function fetchCeluAhoraData(
+  fecha_desde: string,
+  fecha_hasta: string,
+  onProgress?: (count: number) => void
+): Promise<{ records: any[], fullResponse: any }> {
+  console.log(`[CeluAhora-S3] Fetching celu-ahora data from ${fecha_desde} to ${fecha_hasta}`);
+
+  const url = new URL('/api/celu-ahora-s3', window.location.origin);
+  url.searchParams.append('fecha_desde', fecha_desde);
+  url.searchParams.append('fecha_hasta', fecha_hasta);
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { 'accept': 'application/json' }
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.details || errorData.error || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  const records = (data.records || []).map((r: any) => ({
+    id: r.crm_id || r.id || Math.random().toString(36).substring(2, 11),
+    ...r,
+    cantidad: 1,
+    metodo_pago: r.metodologia_venta_2 ? `${r.metodologia_venta_1} + ${r.metodologia_venta_2}` : r.metodologia_venta_1
+  }));
+
+  records.sort((a: any, b: any) => {
+    const dateA = new Date(a.fecha_venta || 0).getTime();
+    const dateB = new Date(b.fecha_venta || 0).getTime();
+    return dateA - dateB;
+  });
+
+  if (onProgress) onProgress(records.length);
+
+  return { records, fullResponse: data };
+}

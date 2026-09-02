@@ -61,6 +61,32 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
+const isCurrencyFieldName = (field: string): boolean => {
+  const f = field.toLowerCase();
+  return f.includes('monto') ||
+    f.includes('capital') ||
+    f.includes('total') ||
+    f.includes('precio') ||
+    f.includes('importe') ||
+    f.includes('k_mas_i') ||
+    f.includes('interes') ||
+    f.includes('interest') ||
+    f.includes('amount') ||
+    f.includes('price');
+};
+
+const formatChartValue = (metricField: string, value: number): string => {
+  if (isCurrencyFieldName(metricField)) return formatCurrency(value);
+  return value.toLocaleString('es-AR', { maximumFractionDigits: 0 });
+};
+
+const formatDateOnly = (val: any): string => {
+  if (val === null || val === undefined || val === '') return '-';
+  const datePart = String(val).split('T')[0].split(' ')[0];
+  const match = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : datePart;
+};
+
 const parseNumericValue = (val: any): number => {
   if (val === null || val === undefined || val === '') return NaN;
   if (typeof val === 'number') return val;
@@ -377,18 +403,11 @@ const SalesTable = React.memo(({ sales }: { sales: any[] }) => {
                     const value = sale[key];
                     const numericValue = parseNumericValue(value);
                     const isNumeric = !isNaN(numericValue);
-                    const isCurrency = isNumeric && (
-                      key.toLowerCase().includes('monto') ||
-                      key.toLowerCase().includes('capital') ||
-                      key.toLowerCase().includes('total') ||
-                      key.toLowerCase().includes('precio') ||
-                      key.toLowerCase().includes('importe') ||
-                      key.toLowerCase().includes('k_mas_i') ||
-                      key.toLowerCase().includes('interest')
-                    );
+                    const isCurrency = isNumeric && isCurrencyFieldName(key);
+                    const isDate = !isCurrency && key.toLowerCase().includes('fecha');
                     return (
-                      <td key={key} className={cn("px-4 py-3 text-xs", isCurrency ? "font-bold text-blue-400" : "text-zinc-400")}>
-                        {isCurrency ? formatCurrency(numericValue) : String(value ?? '-')}
+                      <td key={key} className={cn("px-4 py-3 text-xs whitespace-nowrap", isCurrency ? "font-bold text-blue-400" : "text-zinc-400")}>
+                        {isCurrency ? formatCurrency(numericValue) : isDate ? formatDateOnly(value) : String(value ?? '-')}
                       </td>
                     );
                   })}
@@ -952,20 +971,38 @@ export default function DashboardView({
         f.toLowerCase().includes('periodo')
       ) || availableFields[0];
 
-      setCardConfigs(prev => prev.map((c, i) => {
-        if (i === 0) return { ...c, field: numericField };
-        if (i === 2) return { ...c, field: numericField };
-        if (i === 3) return { ...c, field: categoryField };
-        return c;
-      }));
+      if (moduleId === 'celu_ahora') {
+        setCardConfigs(prev => prev.map((c, i) => {
+          if (i === 0) return { ...c, type: 'TOP', field: 'pais' };
+          if (i === 1) return { ...c, type: 'TOP', field: 'marca' };
+          if (i === 2) return { ...c, type: 'UNIQUE_COUNT', field: 'fecha_venta' };
+          if (i === 3) return { ...c, type: 'TOP', field: 'metodo_pago' };
+          return c;
+        }));
 
-      setChartConfigs(prev => prev.map((c, i) => {
-        if (i === 0) return { ...c, dimension: dateField, metric: numericField };
-        if (i === 1) return { ...c, dimension: categoryField, metric: numericField };
-        if (i === 2) return { ...c, dimension: categoryField, metric: numericField };
-        if (i === 3) return { ...c, dimension: categoryField, metric: numericField };
-        return c;
-      }));
+        setChartConfigs(prev => prev.map((c, i) => {
+          if (i === 0) return { ...c, dimension: 'fecha_venta', metric: 'cantidad' };
+          if (i === 1) return { ...c, dimension: 'marca', metric: 'cantidad' };
+          if (i === 2) return { ...c, dimension: 'modelo', metric: 'base_price' };
+          if (i === 3) return { ...c, dimension: 'modelo', metric: 'capital_total' };
+          return c;
+        }));
+      } else {
+        setCardConfigs(prev => prev.map((c, i) => {
+          if (i === 0) return { ...c, field: numericField };
+          if (i === 2) return { ...c, field: numericField };
+          if (i === 3) return { ...c, field: categoryField };
+          return c;
+        }));
+
+        setChartConfigs(prev => prev.map((c, i) => {
+          if (i === 0) return { ...c, dimension: dateField, metric: numericField };
+          if (i === 1) return { ...c, dimension: categoryField, metric: numericField };
+          if (i === 2) return { ...c, dimension: categoryField, metric: numericField };
+          if (i === 3) return { ...c, dimension: categoryField, metric: numericField };
+          return c;
+        }));
+      }
 
       // Filter slots: 4 slots, module-specific defaults
       if (filterSlots.length === 0) {
@@ -1080,7 +1117,7 @@ export default function DashboardView({
         if (values.length === 0) return '0';
         const sum = values.reduce((acc, v) => acc + v, 0);
         const result = type === 'SUM' ? sum : sum / values.length;
-        if (field.toLowerCase().includes('monto') || field.toLowerCase().includes('capital') || field.toLowerCase().includes('total') || field.toLowerCase().includes('k_mas_i')) return formatCurrency(result);
+        if (isCurrencyFieldName(field)) return formatCurrency(result);
         return result.toLocaleString(undefined, { maximumFractionDigits: 2 });
       }
       if (type === 'TOP') {
@@ -1102,10 +1139,7 @@ export default function DashboardView({
       if (type !== 'SUM' || !field) return null;
       const countries = [...new Set(filteredSales.map((s: any) => s['pais']).filter(Boolean))] as string[];
       if (countries.length <= 1) return null;
-      const isCurrencyField = field.toLowerCase().includes('monto') ||
-        field.toLowerCase().includes('capital') ||
-        field.toLowerCase().includes('total') ||
-        field.toLowerCase().includes('k_mas_i');
+      const isCurrencyField = isCurrencyFieldName(field);
       const breakdown: Record<string, string> = {};
       countries.forEach(country => {
         const rows = filteredSales.filter((s: any) => s['pais'] === country);
@@ -1929,10 +1963,11 @@ export default function DashboardView({
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
                           <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                          <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                          <Tooltip 
+                          <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} tickFormatter={(v: number) => formatChartValue(config.metric, v)} />
+                          <Tooltip
                             contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f1f5f9' }}
                             itemStyle={{ color: '#3b82f6' }}
+                            formatter={(value: any) => [formatChartValue(config.metric, Number(value)), config.metric.replace(/_/g, ' ')]}
                           />
                           <Area type="monotone" dataKey="value" stroke="#3b82f6" fill={`url(#color-${idx})`} fillOpacity={1} strokeWidth={3} />
                         </AreaChart>
@@ -1940,10 +1975,11 @@ export default function DashboardView({
                         <BarChart data={processedChartData[idx]}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
                           <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                          <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                          <Tooltip 
+                          <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} tickFormatter={(v: number) => formatChartValue(config.metric, v)} />
+                          <Tooltip
                             contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f1f5f9' }}
                             itemStyle={{ color: '#6366f1' }}
+                            formatter={(value: any) => [formatChartValue(config.metric, Number(value)), config.metric.replace(/_/g, ' ')]}
                           />
                           <Bar dataKey="value" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -1951,12 +1987,14 @@ export default function DashboardView({
                         <ScatterChart>
                           <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                           <XAxis dataKey="x" type="number" name="índice" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
-                          <YAxis dataKey="y" type="number" name={config.metric} axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} />
+                          <YAxis dataKey="y" type="number" name={config.metric} axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} tickFormatter={(v: number) => formatChartValue(config.metric, v)} />
                           <ZAxis range={[40, 40]} />
                           <Tooltip
                             cursor={{ strokeDasharray: '3 3' }}
                             contentStyle={{ backgroundColor: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', color: '#f1f5f9' }}
-                            formatter={(value: any, name: any, props: any) => [value, props.payload.name || name]}
+                            formatter={(value: any, name: any, props: any) => name === config.metric
+                              ? [formatChartValue(config.metric, Number(value)), props.payload.name || name]
+                              : [value, name]}
                           />
                           <Scatter data={processedChartData[idx]} fill="#06b6d4" fillOpacity={0.7} />
                         </ScatterChart>
@@ -1965,7 +2003,7 @@ export default function DashboardView({
                           <Pie data={processedChartData[idx]} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
                             {processedChartData[idx].map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip formatter={(value: any, name: any) => [formatChartValue(config.metric, Number(value)), name]} />
                         </PieChart>
                       )}
                     </ResponsiveContainer>

@@ -144,7 +144,12 @@ const MODULE_MAPPING: Record<string, string> = {
   'Producto': 'product',
   'Administración': 'administration',
   'Administracion': 'administration',
-  'Servicios': 'services'
+  'Servicios': 'services',
+  'Celu-Ahora': 'celu_ahora',
+  'Celu Ahora': 'celu_ahora',
+  'celu-ahora': 'celu_ahora',
+  'Celu-ahora': 'celu_ahora',
+  'CELU-AHORA': 'celu_ahora'
 };
 
 // Simple in-memory cache for permissions
@@ -1073,6 +1078,58 @@ async function startServer() {
     } catch (error: any) {
       console.error('[Marketing-Redshift] Error:', error);
       res.status(500).json({ error: 'Error al cargar datos de marketing desde Redshift', details: error.message });
+    }
+  });
+
+  // Cache por rango de fechas para evitar re-queries dentro de la misma hora
+  const celuAhoraCacheMap = new Map<string, { data: any[]; fetchedAt: number }>();
+  const CELU_AHORA_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
+
+  app.get("/api/celu-ahora-s3", async (req, res) => {
+    const { fecha_desde, fecha_hasta } = req.query;
+
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+
+    const cacheKey = `${fecha_desde ?? ''}_${fecha_hasta ?? ''}`;
+    const now = Date.now();
+    const cached = celuAhoraCacheMap.get(cacheKey);
+
+    if (cached && now - cached.fetchedAt <= CELU_AHORA_CACHE_TTL_MS) {
+      console.log(`[CeluAhora-Redshift] Cache hit (${cacheKey}): ${cached.data.length} records`);
+      return res.json({ records: cached.data, total: cached.data.length, source: 'redshift' });
+    }
+
+    try {
+      const params: string[] = [];
+      const conditions: string[] = [];
+      if (fecha_desde) { params.push(String(fecha_desde)); conditions.push(`fecha_venta >= $${params.length}::date`); }
+      if (fecha_hasta) { params.push(String(fecha_hasta)); conditions.push(`fecha_venta <= ($${params.length}::date + interval '1 day' - interval '1 second')`); }
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+      console.log(`[CeluAhora-Redshift] Querying platinum_ia.vw_celu_ahora_multipais ${whereClause || '(sin filtro de fecha)'}`);
+      const result = await redshiftPool.query(
+        `SELECT * FROM platinum_ia.vw_celu_ahora_multipais ${whereClause} ORDER BY fecha_venta DESC`,
+        params
+      );
+
+      const safe = JSON.parse(JSON.stringify(result.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      celuAhoraCacheMap.set(cacheKey, { data: safe, fetchedAt: now });
+      console.log(`[CeluAhora-Redshift] Cached ${safe.length} records for key "${cacheKey}"`);
+
+      // Limpiar entradas viejas del cache map
+      for (const [key, entry] of celuAhoraCacheMap.entries()) {
+        if (now - entry.fetchedAt > CELU_AHORA_CACHE_TTL_MS) celuAhoraCacheMap.delete(key);
+      }
+
+      res.json({ records: safe, total: safe.length, source: 'redshift' });
+    } catch (error: any) {
+      console.error('[CeluAhora-Redshift] Error:', error);
+      res.status(500).json({ error: 'Error al cargar datos de Celu-Ahora desde Redshift', details: error.message });
     }
   });
 

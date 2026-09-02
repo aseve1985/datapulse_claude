@@ -33,7 +33,8 @@ import {
   Zap,
   Wrench,
   Calculator,
-  Brain
+  Brain,
+  Smartphone
 } from 'lucide-react';
 import { EXCHANGE_RATES } from '../constants';
 
@@ -84,6 +85,14 @@ const modules = [
     description: 'Gestión y seguimiento de servicios, vencimientos y cobros multipais.',
     icon: Wrench,
     color: 'bg-teal-700',
+    type: 'api'
+  },
+  {
+    id: 'celu_ahora',
+    title: 'Celu-Ahora',
+    description: 'Ventas de celulares al contado y financiadas del local de Moreno.',
+    icon: Smartphone,
+    color: 'bg-cyan-700',
     type: 'api'
   },
   {

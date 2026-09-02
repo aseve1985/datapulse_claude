@@ -14,7 +14,7 @@ import DashboardView from './components/DashboardView';
 import { LoginView } from './components/LoginView';
 import { TermsModal } from './components/TermsModal';
 import { FeatureRequestModal } from './components/FeatureRequestModal';
-import { fetchSalesData, fetchServicesData, fetchCollectionsData, fetchMarketingData } from './services/api';
+import { fetchSalesData, fetchServicesData, fetchCollectionsData, fetchMarketingData, fetchCeluAhoraData } from './services/api';
 import { updateExchangeRates, EXCHANGE_RATES } from './constants';
 import type { SavedReport, ReportFilters } from './types';
 
@@ -428,6 +428,7 @@ export default function App() {
       case 'risks': title = 'Módulo de Riesgos'; break;
       case 'bi':    title = 'Business Intelligence'; break;
       case 'marketing': title = 'Módulo de Marketing'; break;
+      case 'celu_ahora': title = 'Módulo de Celu-Ahora'; break;
       case 'finance': title = 'Módulo de Finanzas'; break;
       case 'callcenter': title = 'Módulo de Callcenter'; break;
       case 'legal': title = 'Módulo de Legales'; break;
@@ -456,6 +457,9 @@ export default function App() {
       } else if (id === 'marketing') {
         const marketingResponse = await fetchMarketingData(fecha_desde, fecha_hasta);
         data = marketingResponse.records;
+      } else if (id === 'celu_ahora') {
+        const celuAhoraResponse = await fetchCeluAhoraData(fecha_desde, fecha_hasta);
+        data = celuAhoraResponse.records;
       }
       // Add other modules here as they become available
       setModuleData(data);
