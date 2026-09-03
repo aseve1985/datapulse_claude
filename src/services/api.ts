@@ -183,7 +183,7 @@ export async function fetchCeluAhoraData(
     id: r.crm_id || r.id || Math.random().toString(36).substring(2, 11),
     ...r,
     cantidad: 1,
-    metodo_pago: r.metodologia_venta_2 ? `${r.metodologia_venta_1} + ${r.metodologia_venta_2}` : r.metodologia_venta_1
+    metodo_pago: r.metodologia_venta_2 ? 'Adelanto+Financiado' : r.metodologia_venta_1
   }));
 
   records.sort((a: any, b: any) => {

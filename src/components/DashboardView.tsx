@@ -75,9 +75,50 @@ const isCurrencyFieldName = (field: string): boolean => {
     f.includes('price');
 };
 
+// Los montos llegan de Redshift como strings tipo "45000.000" (NUMERIC).
+// Los convertimos a número real solo en campos de moneda para exportar sin decimales de sobra,
+// sin tocar campos que parecen numéricos pero son texto (CUIL, teléfono, IDs).
+const getExportValue = (key: string, value: any): any => {
+  if (isCurrencyFieldName(key) && typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value))) {
+    return Number(value);
+  }
+  return value;
+};
+
+const cleanRowForExport = (row: Record<string, any>): Record<string, any> => {
+  const out: Record<string, any> = {};
+  Object.entries(row).forEach(([k, v]) => { out[k] = getExportValue(k, v); });
+  return out;
+};
+
 const formatChartValue = (metricField: string, value: number): string => {
   if (isCurrencyFieldName(metricField)) return formatCurrency(value);
   return value.toLocaleString('es-AR', { maximumFractionDigits: 0 });
+};
+
+const getDefaultFilterSlots = (moduleId?: string): { field: string; values: string[] }[] => {
+  if (moduleId === 'marketing') {
+    return [
+      { field: 'pais', values: [] },
+      { field: 'tipo_cliente', values: [] },
+      { field: 'vendedor', values: [] },
+      { field: 'agrupacion_source_ultimo', values: [] },
+    ];
+  }
+  if (moduleId === 'celu_ahora') {
+    return [
+      { field: 'pais', values: [] },
+      { field: 'marca', values: [] },
+      { field: 'fecha_venta', values: [] },
+      { field: 'metodo_pago', values: [] },
+    ];
+  }
+  return [
+    { field: 'pais', values: [] },
+    { field: '', values: [] },
+    { field: '', values: [] },
+    { field: '', values: [] },
+  ];
 };
 
 const formatDateOnly = (val: any): string => {
@@ -86,6 +127,13 @@ const formatDateOnly = (val: any): string => {
   const match = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : datePart;
 };
+
+const isDateFieldName = (field: string): boolean =>
+  field.toLowerCase().includes('fecha') || field.toLowerCase().includes('date');
+
+// Para filtros: los campos de fecha se agrupan por día (no por timestamp exacto)
+const getFilterableValue = (field: string, row: any): string =>
+  isDateFieldName(field) ? formatDateOnly(row[field]) : String(row[field]);
 
 const parseNumericValue = (val: any): number => {
   if (val === null || val === undefined || val === '') return NaN;
@@ -404,7 +452,7 @@ const SalesTable = React.memo(({ sales }: { sales: any[] }) => {
                     const numericValue = parseNumericValue(value);
                     const isNumeric = !isNaN(numericValue);
                     const isCurrency = isNumeric && isCurrencyFieldName(key);
-                    const isDate = !isCurrency && key.toLowerCase().includes('fecha');
+                    const isDate = !isCurrency && isDateFieldName(key);
                     return (
                       <td key={key} className={cn("px-4 py-3 text-xs whitespace-nowrap", isCurrency ? "font-bold text-blue-400" : "text-zinc-400")}>
                         {isCurrency ? formatCurrency(numericValue) : isDate ? formatDateOnly(value) : String(value ?? '-')}
@@ -973,10 +1021,9 @@ export default function DashboardView({
 
       if (moduleId === 'celu_ahora') {
         setCardConfigs(prev => prev.map((c, i) => {
-          if (i === 0) return { ...c, type: 'TOP', field: 'pais' };
+          if (i === 0) return { ...c, type: 'SUM', field: 'cantidad', title: 'Celulares Vendidos' };
           if (i === 1) return { ...c, type: 'TOP', field: 'marca' };
-          if (i === 2) return { ...c, type: 'UNIQUE_COUNT', field: 'fecha_venta' };
-          if (i === 3) return { ...c, type: 'TOP', field: 'metodo_pago' };
+          // i === 2 y 3 se renderizan con tarjetas de crédito a medida (ver celuAhoraCreditStats)
           return c;
         }));
 
@@ -1006,39 +1053,13 @@ export default function DashboardView({
 
       // Filter slots: 4 slots, module-specific defaults
       if (filterSlots.length === 0) {
-        const defaultSlots = moduleId === 'marketing'
-          ? [
-              { field: 'pais', values: [] },
-              { field: 'tipo_cliente', values: [] },
-              { field: 'vendedor', values: [] },
-              { field: 'agrupacion_source_ultimo', values: [] },
-            ]
-          : [
-              { field: 'pais', values: [] },
-              { field: '', values: [] },
-              { field: '', values: [] },
-              { field: '', values: [] },
-            ];
-        setFilterSlots(defaultSlots);
+        setFilterSlots(getDefaultFilterSlots(moduleId));
       }
     } else {
       restoredFromReport.current = false;
       // Filter slots: 4 slots, module-specific defaults
       if (filterSlots.length === 0) {
-        const defaultSlots = moduleId === 'marketing'
-          ? [
-              { field: 'pais', values: [] },
-              { field: 'tipo_cliente', values: [] },
-              { field: 'vendedor', values: [] },
-              { field: 'agrupacion_source_ultimo', values: [] },
-            ]
-          : [
-              { field: 'pais', values: [] },
-              { field: '', values: [] },
-              { field: '', values: [] },
-              { field: '', values: [] },
-            ];
-        setFilterSlots(defaultSlots);
+        setFilterSlots(getDefaultFilterSlots(moduleId));
       }
     }
   }, [availableFields]);
@@ -1078,7 +1099,7 @@ export default function DashboardView({
     return sales.filter(s => {
       return deferredFilterSlots.every(slot => {
         if (slot.values.length === 0) return true;
-        return slot.values.includes(String(s[slot.field]));
+        return slot.values.includes(getFilterableValue(slot.field, s));
       });
     });
   }, [sales, deferredFilterSlots]);
@@ -1092,7 +1113,7 @@ export default function DashboardView({
       const values = new Set<string>();
       sales.forEach(s => {
         if (s[slot.field] !== undefined && s[slot.field] !== null && s[slot.field] !== '') {
-          values.add(String(s[slot.field]));
+          values.add(getFilterableValue(slot.field, s));
         }
       });
       options[slot.field] = Array.from(values).sort();
@@ -1105,11 +1126,11 @@ export default function DashboardView({
     if (!filteredSales.length) return cardConfigs.map(() => 'N/A');
     return cardConfigs.map(config => {
       const { type, field } = config;
-      if (type === 'COUNT') return filteredSales.length.toLocaleString();
+      if (type === 'COUNT') return filteredSales.length.toLocaleString('es-AR');
       if (!field) return 'N/A';
       if (type === 'UNIQUE_COUNT') {
         const uniqueValues = new Set(filteredSales.map(s => s[field]).filter(v => v !== undefined && v !== null && v !== ''));
-        return uniqueValues.size.toLocaleString();
+        return uniqueValues.size.toLocaleString('es-AR');
       }
 
       const values = filteredSales.map(s => parseNumericValue(s[field])).filter(v => !isNaN(v));
@@ -1118,7 +1139,7 @@ export default function DashboardView({
         const sum = values.reduce((acc, v) => acc + v, 0);
         const result = type === 'SUM' ? sum : sum / values.length;
         if (isCurrencyFieldName(field)) return formatCurrency(result);
-        return result.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        return result.toLocaleString('es-AR', { maximumFractionDigits: 2 });
       }
       if (type === 'TOP') {
         const counts: any = {};
@@ -1149,11 +1170,24 @@ export default function DashboardView({
         }, 0);
         breakdown[country] = isCurrencyField
           ? formatCurrency(sum)
-          : sum.toLocaleString(undefined, { maximumFractionDigits: 2 });
+          : sum.toLocaleString('es-AR', { maximumFractionDigits: 2 });
       });
       return breakdown;
     });
   }, [filteredSales, cardConfigs]);
+
+  // Tarjetas 3 y 4 de Celu-Ahora: resumen de créditos originados (loan_id presente)
+  const celuAhoraCreditStats = useMemo(() => {
+    if (moduleId !== 'celu_ahora') return null;
+    const creditRows = filteredSales.filter((s: any) => s.loan_id !== null && s.loan_id !== undefined && s.loan_id !== '');
+    const totalMonto = creditRows.reduce((acc: number, s: any) => acc + (parseNumericValue(s.k_mas_i_credito) || 0), 0);
+    const porMetodo: Record<string, number> = {};
+    creditRows.forEach((s: any) => {
+      const metodo = s.metodo_pago || 'Sin dato';
+      porMetodo[metodo] = (porMetodo[metodo] || 0) + 1;
+    });
+    return { count: creditRows.length, totalMonto, porMetodo };
+  }, [filteredSales, moduleId]);
 
   const processedChartData = useMemo(() => {
     return chartConfigs.map(config => {
@@ -1228,7 +1262,7 @@ export default function DashboardView({
   const handleExportCSV = () => {
     if (filteredSales.length === 0) return;
     const headers = Object.keys(filteredSales[0]).join(',');
-    const rows = filteredSales.map(row => Object.values(row).map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const rows = filteredSales.map(row => Object.values(cleanRowForExport(row)).map(val => `"${String(val ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([`${headers}\n${rows}`], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1239,7 +1273,7 @@ export default function DashboardView({
 
   const handleExportExcel = () => {
     if (filteredSales.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(filteredSales);
+    const ws = XLSX.utils.json_to_sheet(filteredSales.map(cleanRowForExport));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Data");
     XLSX.writeFile(wb, `reporte_${title.toLowerCase().replace(/\s/g, '_')}.xlsx`);
@@ -1866,24 +1900,67 @@ export default function DashboardView({
 
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {cardConfigs.map((config, idx) => (
-                <StatCard 
-                  key={config.id}
-                  title={config.title} 
-                  value={stats[idx]} 
-                  icon={config.icon} 
-                  color={config.color}
-                  currentField={config.field}
-                  currentType={config.type}
-                  availableFields={availableFields}
-                  countryBreakdown={countryBreakdowns[idx]}
-                  onConfigChange={(newConfig: any) => {
-                    const updated = [...cardConfigs];
-                    updated[idx] = { ...updated[idx], ...newConfig };
-                    setCardConfigs(updated);
-                  }}
-                />
-              ))}
+              {cardConfigs.map((config, idx) => {
+                if (moduleId === 'celu_ahora' && idx === 2 && celuAhoraCreditStats) {
+                  return (
+                    <div key={config.id} className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 rounded-lg shadow-lg shadow-blue-900/20 bg-violet-600">
+                          <DollarSign className="w-5 h-5 text-white" />
+                        </div>
+                      </div>
+                      <p className="text-zinc-400 text-sm font-medium">Monto de Créditos Originados</p>
+                      <h3 className="text-2xl font-bold text-white mt-1 truncate">{formatCurrency(celuAhoraCreditStats.totalMonto)}</h3>
+                      <p className="text-[10px] text-zinc-400 mt-1 uppercase font-bold tracking-wider">
+                        {celuAhoraCreditStats.count.toLocaleString('es-AR')} créditos originados
+                      </p>
+                    </div>
+                  );
+                }
+                if (moduleId === 'celu_ahora' && idx === 3 && celuAhoraCreditStats) {
+                  const porMetodoEntries = Object.entries(celuAhoraCreditStats.porMetodo);
+                  return (
+                    <div key={config.id} className="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 rounded-lg shadow-lg shadow-blue-900/20 bg-cyan-600">
+                          <Sparkles className="w-5 h-5 text-white" />
+                        </div>
+                      </div>
+                      <p className="text-zinc-400 text-sm font-medium mb-2">Créditos por Método</p>
+                      {porMetodoEntries.length > 0 ? (
+                        <div className="space-y-1.5">
+                          {porMetodoEntries.map(([metodo, count]) => (
+                            <div key={metodo} className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">{metodo}</span>
+                              <span className="text-base font-bold text-white">{count.toLocaleString('es-AR')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <h3 className="text-2xl font-bold text-white mt-1">0</h3>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <StatCard
+                    key={config.id}
+                    title={config.title}
+                    value={stats[idx]}
+                    icon={config.icon}
+                    color={config.color}
+                    currentField={config.field}
+                    currentType={config.type}
+                    availableFields={availableFields}
+                    countryBreakdown={countryBreakdowns[idx]}
+                    onConfigChange={(newConfig: any) => {
+                      const updated = [...cardConfigs];
+                      updated[idx] = { ...updated[idx], ...newConfig };
+                      setCardConfigs(updated);
+                    }}
+                  />
+                );
+              })}
             </div>
 
             {/* Insights & Chat */}
