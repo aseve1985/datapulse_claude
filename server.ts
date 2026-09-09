@@ -12,6 +12,7 @@ import { parquetRead } from "hyparquet";
 import * as XLSX from "xlsx";
 import { generateCarteraExcel } from './carteraFideicomisoExcel';
 import chatRouter from './dwh-chat/router';
+import { getScoreColumnType, buildCarreraScoresQuery, type CatalogoScoreRow } from './server/riskCarreraScoresQuery';
 
 dotenv.config();
 
@@ -1348,6 +1349,88 @@ async function startServer() {
     } catch (error: any) {
       console.error("[UIF] Error querying Redshift:", error);
       res.status(500).json({ error: "Error al cargar datos UIF", details: error.message });
+    }
+  });
+
+  // ── Carrera de Scores Endpoints ─────────────────────────────────────────────────
+  let catalogoScoresCache: { scores: any[]; bandas: any[]; fetchedAt: number } | null = null;
+  const CATALOGO_SCORES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+  app.get('/api/risk/catalogo-scores', async (req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+    const now = Date.now();
+    if (catalogoScoresCache && now - catalogoScoresCache.fetchedAt <= CATALOGO_SCORES_CACHE_TTL_MS) {
+      return res.json({ scores: catalogoScoresCache.scores, bandas: catalogoScoresCache.bandas });
+    }
+    try {
+      const [scoresResult, bandasResult] = await Promise.all([
+        redshiftPool.query('SELECT * FROM gold.catalogo_scores_multipais ORDER BY pais, segmento, score_key'),
+        redshiftPool.query('SELECT * FROM gold.catalogo_scores_bandas_multipais ORDER BY score_key, decil'),
+      ]);
+      const scores = JSON.parse(JSON.stringify(scoresResult.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      const bandas = JSON.parse(JSON.stringify(bandasResult.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      catalogoScoresCache = { scores, bandas, fetchedAt: now };
+      res.json({ scores, bandas });
+    } catch (error: any) {
+      console.error('[CarreraScores] Error cargando catálogo:', error);
+      res.status(500).json({ error: 'Error al cargar el catálogo de scores', details: error.message });
+    }
+  });
+
+  let carreraScoresCache: { hechos: any[]; fetchedAt: number } | null = null;
+  const CARRERA_SCORES_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
+
+  app.get('/api/risk/carrera-scores', async (req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+    const now = Date.now();
+    if (carreraScoresCache && now - carreraScoresCache.fetchedAt <= CARRERA_SCORES_CACHE_TTL_MS) {
+      return res.json({ hechos: carreraScoresCache.hechos });
+    }
+    try {
+      const catalogResult = await redshiftPool.query('SELECT * FROM gold.catalogo_scores_multipais');
+      const scoreRows = catalogResult.rows as CatalogoScoreRow[];
+
+      const perScoreResults = await Promise.all(scoreRows.map(async (row) => {
+        try {
+          const columnType = await getScoreColumnType(redshiftPool!, row.tabla_score, row.campo_score);
+          const { sql, params } = buildCarreraScoresQuery(row, columnType);
+          const result = await redshiftPool!.query(sql, params);
+          return result.rows.map((r: any) => ({
+            score_key: row.score_key,
+            pais: row.pais,
+            segmento: row.segmento,
+            cepa: r.cepa,
+            banda: r.banda,
+            umbral_dias: Number(r.umbral_dias),
+            q_vendidos: Number(r.q_vendidos),
+            capital: Number(r.capital) || 0,
+            capital_mas_interes: Number(r.capital_mas_interes) || 0,
+            n_elegible: Number(r.n_elegible),
+            n_malos: Number(r.n_malos),
+          }));
+        } catch (error: any) {
+          console.error(`[CarreraScores] Error calculando score_key="${row.score_key}":`, error);
+          return [];
+        }
+      }));
+
+      const hechos = perScoreResults.flat();
+      carreraScoresCache = { hechos, fetchedAt: now };
+      console.log(`[CarreraScores] Calculadas ${hechos.length} filas de hechos para ${scoreRows.length} scores`);
+      res.json({ hechos });
+    } catch (error: any) {
+      console.error('[CarreraScores] Error calculando hechos:', error);
+      res.status(500).json({ error: 'Error al calcular la carrera de scores', details: error.message });
     }
   });
 
