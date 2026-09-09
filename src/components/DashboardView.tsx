@@ -40,6 +40,7 @@ import CarteraFideicomisoSubmodule from './submodules/CarteraFideicomisoSubmodul
 import RiBcraTasasSubmodule from './submodules/RiBcraTasasSubmodule';
 import RiAnaliticoSubmodule from './submodules/RiAnaliticoSubmodule';
 import RiAsistenteSubmodule from './submodules/RiAsistenteSubmodule';
+import RiCarreraScoresSubmodule from './submodules/RiCarreraScoresSubmodule';
 import BiDocumentacionSubmodule from './submodules/BiDocumentacionSubmodule';
 import BiObsidianSubmodule from './submodules/BiObsidianSubmodule';
 import AdmGastosProveedoresSubmodule from './submodules/AdmGastosProveedoresSubmodule';
@@ -1706,6 +1707,8 @@ export default function DashboardView({
             <RiAnaliticoSubmodule />
           ) : activeSubmodule.id === 'ri-asistente' ? (
             <RiAsistenteSubmodule />
+          ) : activeSubmodule.id === 'ri-carrera-scores' ? (
+            <RiCarreraScoresSubmodule />
           ) : activeSubmodule.id === 'bi-documentacion' ? (
             <BiDocumentacionSubmodule />
           ) : activeSubmodule.id === 'bi-obsidian' ? (

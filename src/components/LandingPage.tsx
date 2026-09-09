@@ -150,6 +150,12 @@ const modules = [
         title: 'Políticas de Riesgo',
         description: 'Políticas de riesgo, documentación y acceso a herramientas del área.',
         color: 'bg-slate-700'
+      },
+      {
+        id: 'ri-carrera-scores',
+        title: 'Carrera de Scores',
+        description: 'Seguimiento del poder de ordenamiento de los scores propios contra su performance esperada.',
+        color: 'bg-slate-700'
       }
     ]
   },
