@@ -31,3 +31,174 @@ const NUMERIC_TYPES = new Set(['double precision', 'numeric', 'integer', 'real',
 export function isNumericColumnType(dataType: string): boolean {
   return NUMERIC_TYPES.has(dataType);
 }
+
+export interface CatalogoScoreRow {
+  score_key: string;
+  pais: 'ARG' | 'COL';
+  segmento: 'NUEVOS' | 'RENOVADORES';
+  tabla_score: string;
+  campo_score: string;
+  centinela_error: string;
+  multiplicador_score: string; // numeric vuelve como string desde pg
+}
+
+function scoreCleaningFragments(isNumeric: boolean): { estadoScoreSql: string; scoreFinalSql: string } {
+  if (isNumeric) {
+    return {
+      estadoScoreSql: `CASE
+        WHEN score_raw IS NULL THEN 'SIN_SCORE'
+        WHEN score_raw = $2::numeric THEN 'ERROR_NODO'
+        ELSE 'VALIDO'
+      END`,
+      scoreFinalSql: `CASE WHEN score_raw IS NOT NULL AND score_raw <> $2::numeric THEN score_raw * $3 END`,
+    };
+  }
+  return {
+    estadoScoreSql: `CASE
+      WHEN score_raw IS NULL OR BTRIM(score_raw::text) = '' THEN 'SIN_SCORE'
+      WHEN BTRIM(score_raw::text) = $2 THEN 'ERROR_NODO'
+      WHEN NULLIF(REGEXP_SUBSTR(BTRIM(score_raw::text), '^[1-9][0-9]*$'), '') IS NOT NULL THEN 'VALIDO'
+      ELSE 'ERROR_NODO'
+    END`,
+    scoreFinalSql: `CASE
+      WHEN score_raw IS NOT NULL AND BTRIM(score_raw::text) <> '' AND BTRIM(score_raw::text) <> $2
+       AND NULLIF(REGEXP_SUBSTR(BTRIM(score_raw::text), '^[1-9][0-9]*$'), '') IS NOT NULL
+      THEN NULLIF(REGEXP_SUBSTR(BTRIM(score_raw::text), '^[1-9][0-9]*$'), '')::numeric * $3
+    END`,
+  };
+}
+
+// NOTA: se usa UNION ALL en lugar de "VALUES (5),(10),..." como tabla derivada porque
+// este cluster de Redshift rechaza esa sintaxis de VALUES multi-fila con un error de
+// parseo (verificado empíricamente contra el DWH real durante Task 2). UNION ALL es
+// equivalente y sí es soportado.
+const UMBRALES_SQL = `CROSS JOIN (
+  SELECT 5 AS dias UNION ALL SELECT 10 UNION ALL SELECT 30 UNION ALL SELECT 60 UNION ALL SELECT 90
+) AS umbral`;
+
+const AGG_SELECT_SQL = `
+  DATE_TRUNC('month', fecha_desembolso)::date AS cepa,
+  COALESCE(decil::text, estado_score) AS banda,
+  umbral.dias AS umbral_dias,
+  COUNT(*) AS q_vendidos,
+  SUM(capital) AS capital,
+  SUM(capital_mas_interes) AS capital_mas_interes,
+  SUM(CASE WHEN (fecha_vencimiento + umbral.dias) <= CURRENT_DATE THEN 1 ELSE 0 END) AS n_elegible,
+  SUM(CASE WHEN (fecha_vencimiento + umbral.dias) <= CURRENT_DATE AND dias_mora >= umbral.dias THEN 1 ELSE 0 END) AS n_malos
+`;
+
+const CANCELADO_DIAS_BANDA_SQL = (bindScoreKey: string) => `
+  cancelado AS (
+    SELECT *, (clasificacion_pago_credito = 'CREDITO VENCIDO PAGO TOTAL'
+               OR capital_mas_interes_paid >= 0.95 * capital_mas_interes) AS cancelada
+    FROM estado
+  ),
+  dias AS (
+    SELECT *, CASE WHEN cancelada THEN (fecha_pago - fecha_vencimiento)
+                   ELSE (CURRENT_DATE - fecha_vencimiento) END AS dias_mora
+    FROM cancelado
+  ),
+  banda AS (
+    SELECT d.*, bnd.decil
+    FROM dias d
+    LEFT JOIN gold.catalogo_scores_bandas_multipais bnd
+      ON bnd.score_key = ${bindScoreKey} AND d.estado_score = 'VALIDO'
+     AND d.score_final BETWEEN bnd.score_min AND bnd.score_max
+  )
+`;
+
+export function buildCarreraScoresQuery(
+  row: CatalogoScoreRow,
+  columnDataType: string
+): { sql: string; params: any[] } {
+  if (!ALLOWED_TABLAS.has(row.tabla_score)) {
+    throw new Error(`tabla_score no permitida: "${row.tabla_score}"`);
+  }
+  assertSafeIdentifier(row.campo_score, 'campo_score');
+
+  const isNumeric = isNumericColumnType(columnDataType);
+  const { estadoScoreSql, scoreFinalSql } = scoreCleaningFragments(isNumeric);
+  const flagRenovador = row.segmento === 'NUEVOS' ? 'NUEVO' : 'RENOVADOR';
+  const params = [flagRenovador, row.centinela_error, Number(row.multiplicador_score), row.score_key];
+
+  if (row.pais === 'ARG') {
+    const sql = `
+      WITH cuota1 AS (
+        SELECT loan_id, cuil, flag_renovador, fecha_desembolso, fecha_vencimiento, fecha_pago,
+               clasificacion_pago_credito, capital, capital_mas_interes, capital_mas_interes_paid,
+               ROW_NUMBER() OVER (PARTITION BY loan_id ORDER BY fecha_vencimiento ASC) AS rn
+        FROM gold.mora_arg
+      ),
+      base AS (
+        SELECT loan_id, cuil, fecha_desembolso, fecha_vencimiento, fecha_pago,
+               clasificacion_pago_credito, capital, capital_mas_interes, capital_mas_interes_paid
+        FROM cuota1
+        WHERE rn = 1 AND flag_renovador = $1
+      ),
+      pegada AS (
+        SELECT b.loan_id, r.${row.campo_score} AS score_raw,
+               ROW_NUMBER() OVER (PARTITION BY b.loan_id ORDER BY r.executiondate DESC) AS rn
+        FROM base b
+        JOIN risk_arg.risk_engine_arg r
+          ON r.siisa_cuil = b.cuil
+         AND r.executiondate <= (b.fecha_desembolso + INTERVAL '1 day')
+      ),
+      credito AS (
+        SELECT b.*, p.score_raw FROM base b LEFT JOIN pegada p ON p.loan_id = b.loan_id AND p.rn = 1
+      ),
+      estado AS (
+        SELECT *, ${estadoScoreSql} AS estado_score, ${scoreFinalSql} AS score_final
+        FROM credito
+      ),
+      ${CANCELADO_DIAS_BANDA_SQL('$4')}
+      SELECT ${AGG_SELECT_SQL}
+      FROM banda
+      ${UMBRALES_SQL}
+      GROUP BY 1, 2, 3
+      ORDER BY 1, 3, 2
+    `;
+    return { sql, params };
+  }
+
+  // COL
+  const joinCondition = row.segmento === 'NUEVOS'
+    ? `r.lead_id = b.lead_id`
+    : `r.polrenovadores_lead_id_libgot ~ '^[0-9]+$' AND r.polrenovadores_lead_id_libgot::int = b.lead_id`;
+
+  const sql = `
+    WITH cuota1 AS (
+      SELECT loan_id, lead_id, flag_renovador, fecha_desembolso, fecha_vencimiento, fecha_pago,
+             clasificacion_pago_credito, capital, capital_mas_interes, capital_mas_interes_paid,
+             ROW_NUMBER() OVER (PARTITION BY loan_id ORDER BY fecha_vencimiento ASC) AS rn
+      FROM gold.mora_col
+    ),
+    base AS (
+      SELECT loan_id, lead_id, fecha_desembolso, fecha_vencimiento, fecha_pago,
+             clasificacion_pago_credito, capital, capital_mas_interes, capital_mas_interes_paid
+      FROM cuota1
+      WHERE rn = 1 AND flag_renovador = $1
+    ),
+    pegada AS (
+      SELECT b.loan_id, r.${row.campo_score} AS score_raw,
+             ROW_NUMBER() OVER (PARTITION BY b.loan_id ORDER BY r.executiondate::timestamp DESC) AS rn
+      FROM base b
+      JOIN risk_col.risk_engine_col r
+        ON ${joinCondition}
+       AND r.executiondate::timestamp <= (b.fecha_desembolso + INTERVAL '1 day')
+    ),
+    credito AS (
+      SELECT b.*, p.score_raw FROM base b LEFT JOIN pegada p ON p.loan_id = b.loan_id AND p.rn = 1
+    ),
+    estado AS (
+      SELECT *, ${estadoScoreSql} AS estado_score, ${scoreFinalSql} AS score_final
+      FROM credito
+    ),
+    ${CANCELADO_DIAS_BANDA_SQL('$4')}
+    SELECT ${AGG_SELECT_SQL}
+    FROM banda
+    ${UMBRALES_SQL}
+    GROUP BY 1, 2, 3
+    ORDER BY 1, 3, 2
+  `;
+  return { sql, params };
+}
