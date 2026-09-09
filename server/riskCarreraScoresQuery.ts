@@ -124,23 +124,27 @@ export function buildCarreraScoresQuery(
   if (row.pais === 'ARG') {
     const sql = `
       WITH cuota1 AS (
-        SELECT loan_id, cuil, flag_renovador, fecha_desembolso, fecha_vencimiento, fecha_pago,
+        SELECT loan_id, flag_renovador, fecha_desembolso, fecha_vencimiento, fecha_pago,
                clasificacion_pago_credito, capital, capital_mas_interes, capital_mas_interes_paid,
                ROW_NUMBER() OVER (PARTITION BY loan_id ORDER BY fecha_vencimiento ASC) AS rn
         FROM gold.mora_arg
       ),
+      ventas AS (
+        SELECT loan_id, identification_number FROM gold.ventas_arg WHERE flag_venta = 1
+      ),
       base AS (
-        SELECT loan_id, cuil, fecha_desembolso, fecha_vencimiento, fecha_pago,
-               clasificacion_pago_credito, capital, capital_mas_interes, capital_mas_interes_paid
-        FROM cuota1
-        WHERE rn = 1 AND flag_renovador = $1
+        SELECT c.loan_id, v.identification_number, c.fecha_desembolso, c.fecha_vencimiento, c.fecha_pago,
+               c.clasificacion_pago_credito, c.capital, c.capital_mas_interes, c.capital_mas_interes_paid
+        FROM cuota1 c
+        JOIN ventas v ON v.loan_id = c.loan_id
+        WHERE c.rn = 1 AND c.flag_renovador = $1
       ),
       pegada AS (
         SELECT b.loan_id, r.${row.campo_score} AS score_raw,
                ROW_NUMBER() OVER (PARTITION BY b.loan_id ORDER BY r.executiondate DESC) AS rn
         FROM base b
         JOIN risk_arg.risk_engine_arg r
-          ON r.siisa_cuil = b.cuil
+          ON r.nrodoc = b.identification_number
          AND r.executiondate <= (b.fecha_desembolso + INTERVAL '1 day')
       ),
       credito AS (
@@ -161,10 +165,10 @@ export function buildCarreraScoresQuery(
   }
 
   // COL
-  const joinCondition = row.segmento === 'NUEVOS'
-    ? `r.lead_id = b.lead_id`
-    : `r.polrenovadores_lead_id_libgot ~ '^[0-9]+$' AND r.polrenovadores_lead_id_libgot::int = b.lead_id`;
-
+  // NOTA: el join siempre es por r.lead_id = b.lead_id, sin importar el segmento.
+  // Se verificó empíricamente que polrenovadores_lead_id_libgot (usado antes para
+  // RENOVADORES) matchea solo 36/84.450 (0,04%) de los créditos RENOVADOR, mientras
+  // que lead_id directo matchea 84.386/84.450 (99,9%) sobre los MISMOS créditos.
   const sql = `
     WITH cuota1 AS (
       SELECT loan_id, lead_id, flag_renovador, fecha_desembolso, fecha_vencimiento, fecha_pago,
@@ -183,7 +187,7 @@ export function buildCarreraScoresQuery(
              ROW_NUMBER() OVER (PARTITION BY b.loan_id ORDER BY r.executiondate::timestamp DESC) AS rn
       FROM base b
       JOIN risk_col.risk_engine_col r
-        ON ${joinCondition}
+        ON r.lead_id = b.lead_id
        AND r.executiondate::timestamp <= (b.fecha_desembolso + INTERVAL '1 day')
     ),
     credito AS (
