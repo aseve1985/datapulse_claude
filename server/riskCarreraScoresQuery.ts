@@ -50,7 +50,7 @@ function scoreCleaningFragments(isNumeric: boolean): { estadoScoreSql: string; s
         WHEN score_raw = $2::numeric THEN 'ERROR_NODO'
         ELSE 'VALIDO'
       END`,
-      scoreFinalSql: `CASE WHEN score_raw IS NOT NULL AND score_raw <> $2::numeric THEN score_raw * $3 END`,
+      scoreFinalSql: `CASE WHEN score_raw IS NOT NULL AND score_raw <> $2::numeric THEN ROUND(score_raw * $3) END`,
     };
   }
   return {
