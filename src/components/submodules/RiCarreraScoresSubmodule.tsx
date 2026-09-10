@@ -47,7 +47,13 @@ export default function RiCarreraScoresSubmodule() {
     return [...set].sort();
   }, [hechos, scoreKey]);
 
-  useEffect(() => { if (cepasDisponibles.length > 0 && !cepasDisponibles.includes(cepa)) setCepa(cepasDisponibles[cepasDisponibles.length - 1]); }, [cepasDisponibles]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (cepasDisponibles.length === 0) {
+      if (cepa !== '') setCepa('');
+    } else if (!cepasDisponibles.includes(cepa)) {
+      setCepa(cepasDisponibles[cepasDisponibles.length - 1]);
+    }
+  }, [cepasDisponibles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const grid = useMemo(() => scoreKey && cepa ? pivotGrid(hechos, bandas, scoreKey, cepa) : [], [hechos, bandas, scoreKey, cepa]);
   const scoreActual = scores.find(s => s.score_key === scoreKey);
@@ -55,6 +61,8 @@ export default function RiCarreraScoresSubmodule() {
     () => grid.length > 0 ? computeHeaderIndicators(grid, bandas, scoreKey, scoreActual?.lift_d1_d10 ? Number(scoreActual.lift_d1_d10) : null) : null,
     [grid, bandas, scoreKey, scoreActual]
   );
+  const totalRow = grid.find(r => r.esTotal);
+  const sinDatos = !cepa || !totalRow || totalRow.qVendidos === 0;
 
   if (loading) {
     return (
@@ -82,63 +90,71 @@ export default function RiCarreraScoresSubmodule() {
         <Selector label="País" value={pais} options={paises} onChange={(v) => { setPais(v); setSegmento(''); setScoreKey(''); }} />
         <Selector label="Segmento" value={segmento} options={segmentos} onChange={(v) => { setSegmento(v); setScoreKey(''); }} />
         <Selector label="Score" value={scoreKey} options={scoresDisponibles.map(s => s.score_key)} onChange={setScoreKey} labelFor={(k) => scores.find(s => s.score_key === k)?.nombre || k} />
-        <Selector label="Cepa de desembolso" value={cepa} options={cepasDisponibles} onChange={setCepa} />
+        <Selector label="Cepa de desembolso" value={cepa} options={cepasDisponibles} onChange={setCepa} labelFor={(c) => String(c).slice(0, 10)} />
       </div>
 
-      {indicadores && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <IndicadorCard titulo="Spread observado vs esperado"
-            valor={indicadores.spread !== null ? `${indicadores.spread.toFixed(2)}x` : 'volumen insuficiente'}
-            sub={indicadores.spreadEsperado !== null ? `esperado (lift d1/d10): ${indicadores.spreadEsperado.toFixed(2)}x` : undefined}
-            gris={indicadores.spread === null} />
-          <IndicadorCard titulo="Inversiones"
-            valor={String(indicadores.inversiones)}
-            sub={indicadores.inversiones === 0 ? 'sin inversiones — esperado' : 'algún par de tramos consecutivos se invirtió'} />
-          <IndicadorCard titulo="Cobertura" valor={`${indicadores.coberturaPct.toFixed(1)}%`} sub="Q con score / Q vendidos" />
+      {sinDatos ? (
+        <div className="text-zinc-500 text-sm text-center py-12">
+          Este score todavía no tiene datos para mostrar.
         </div>
-      )}
+      ) : (
+        <>
+          {indicadores && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <IndicadorCard titulo="Spread observado vs esperado"
+                valor={indicadores.spread !== null ? `${indicadores.spread.toFixed(2)}x` : 'volumen insuficiente'}
+                sub={indicadores.spreadEsperado !== null ? `esperado (lift d1/d10): ${indicadores.spreadEsperado.toFixed(2)}x` : undefined}
+                gris={indicadores.spread === null} />
+              <IndicadorCard titulo="Inversiones"
+                valor={String(indicadores.inversiones)}
+                sub={indicadores.inversiones === 0 ? 'sin inversiones — esperado' : 'algún par de tramos consecutivos se invirtió'} />
+              <IndicadorCard titulo="Cobertura" valor={`${indicadores.coberturaPct.toFixed(1)}%`} sub="Q con score / Q vendidos" />
+            </div>
+          )}
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-800">
-        <table className="w-full text-left border-collapse min-w-[1100px]">
-          <thead className="bg-slate-800">
-            <tr>
-              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Banda</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Q vendidos</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Capital</th>
-              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">K+I</th>
-              {UMBRALES.map(u => (
-                <th key={u} className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Mora {u}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {grid.map(row => (
-              <tr key={row.banda} className={row.esTotal ? 'bg-slate-800/60 font-bold' : 'hover:bg-slate-800/40'}>
-                <td className="px-4 py-3 text-xs text-zinc-200 whitespace-nowrap">
-                  {row.label}{row.scoreRange && <span className="text-zinc-500"> ({row.scoreRange})</span>}
-                </td>
-                <td className="px-4 py-3 text-xs text-zinc-300 whitespace-nowrap">{row.qVendidos.toLocaleString('es-AR')}</td>
-                <td className="px-4 py-3 text-xs text-blue-400 font-bold whitespace-nowrap">{formatMonto(row.capital)}</td>
-                <td className="px-4 py-3 text-xs text-blue-400 font-bold whitespace-nowrap">{formatMonto(row.capitalMasInteres)}</td>
-                {UMBRALES.map(u => {
-                  const celda = row.celdas[u];
-                  const pct = formatPct(celda.moraPct);
-                  return (
-                    <td key={u} className="px-4 py-3 text-xs whitespace-nowrap">
-                      {pct === null ? (
-                        <span className="text-zinc-600 italic">sin madurar</span>
-                      ) : (
-                        <span className="text-zinc-100 font-bold">{pct}</span>
-                      )}
-                      <div className="text-[9px] text-zinc-500">n {celda.nElegible.toLocaleString('es-AR')}</div>
+          <div className="overflow-x-auto rounded-2xl border border-slate-800">
+            <table className="w-full text-left border-collapse min-w-[1100px]">
+              <thead className="bg-slate-800">
+                <tr>
+                  <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Banda</th>
+                  <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Q vendidos</th>
+                  <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Capital</th>
+                  <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">K+I</th>
+                  {UMBRALES.map(u => (
+                    <th key={u} className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase whitespace-nowrap">Mora {u}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {grid.map(row => (
+                  <tr key={row.banda} className={row.esTotal ? 'bg-slate-800/60 font-bold' : 'hover:bg-slate-800/40'}>
+                    <td className="px-4 py-3 text-xs text-zinc-200 whitespace-nowrap">
+                      {row.label}{row.scoreRange && <span className="text-zinc-500"> ({row.scoreRange})</span>}
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                    <td className="px-4 py-3 text-xs text-zinc-300 whitespace-nowrap">{row.qVendidos.toLocaleString('es-AR')}</td>
+                    <td className="px-4 py-3 text-xs text-blue-400 font-bold whitespace-nowrap">{formatMonto(row.capital)}</td>
+                    <td className="px-4 py-3 text-xs text-blue-400 font-bold whitespace-nowrap">{formatMonto(row.capitalMasInteres)}</td>
+                    {UMBRALES.map(u => {
+                      const celda = row.celdas[u];
+                      const pct = formatPct(celda.moraPct);
+                      return (
+                        <td key={u} className="px-4 py-3 text-xs whitespace-nowrap">
+                          {pct === null ? (
+                            <span className="text-zinc-600 italic">sin madurar</span>
+                          ) : (
+                            <span className="text-zinc-100 font-bold">{pct}</span>
+                          )}
+                          <div className="text-[9px] text-zinc-500">n {celda.nElegible.toLocaleString('es-AR')}</div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

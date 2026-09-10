@@ -1394,11 +1394,13 @@ async function startServer() {
     }
     const now = Date.now();
     if (carreraScoresCache && now - carreraScoresCache.fetchedAt <= CARRERA_SCORES_CACHE_TTL_MS) {
-      return res.json({ hechos: carreraScoresCache.hechos });
+      return res.json({ hechos: carreraScoresCache.hechos, errores: [] });
     }
     try {
       const catalogResult = await redshiftPool.query('SELECT * FROM gold.catalogo_scores_multipais');
       const scoreRows = catalogResult.rows as CatalogoScoreRow[];
+
+      const errores: { score_key: string; message: string }[] = [];
 
       const perScoreResults = await Promise.all(scoreRows.map(async (row) => {
         try {
@@ -1420,14 +1422,19 @@ async function startServer() {
           }));
         } catch (error: any) {
           console.error(`[CarreraScores] Error calculando score_key="${row.score_key}":`, error);
+          errores.push({ score_key: row.score_key, message: error.message || String(error) });
           return [];
         }
       }));
 
       const hechos = perScoreResults.flat();
-      carreraScoresCache = { hechos, fetchedAt: now };
+      if (hechos.length > 0) {
+        carreraScoresCache = { hechos, fetchedAt: now };
+      } else {
+        console.error('[CarreraScores] Todos los scores fallaron esta vez — no se cachea el resultado vacío');
+      }
       console.log(`[CarreraScores] Calculadas ${hechos.length} filas de hechos para ${scoreRows.length} scores`);
-      res.json({ hechos });
+      res.json({ hechos, errores });
     } catch (error: any) {
       console.error('[CarreraScores] Error calculando hechos:', error);
       res.status(500).json({ error: 'Error al calcular la carrera de scores', details: error.message });

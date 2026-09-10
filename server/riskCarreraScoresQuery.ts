@@ -63,7 +63,7 @@ function scoreCleaningFragments(isNumeric: boolean): { estadoScoreSql: string; s
     scoreFinalSql: `CASE
       WHEN score_raw IS NOT NULL AND BTRIM(score_raw::text) <> '' AND BTRIM(score_raw::text) <> $2
        AND NULLIF(REGEXP_SUBSTR(BTRIM(score_raw::text), '^[1-9][0-9]*$'), '') IS NOT NULL
-      THEN NULLIF(REGEXP_SUBSTR(BTRIM(score_raw::text), '^[1-9][0-9]*$'), '')::numeric * $3
+      THEN ROUND(NULLIF(REGEXP_SUBSTR(BTRIM(score_raw::text), '^[1-9][0-9]*$'), '')::numeric * $3)
     END`,
   };
 }
@@ -116,10 +116,22 @@ export function buildCarreraScoresQuery(
   }
   assertSafeIdentifier(row.campo_score, 'campo_score');
 
+  if (row.pais !== 'ARG' && row.pais !== 'COL') {
+    throw new Error(`país no soportado en Carrera de Scores: "${row.pais}" (score_key=${row.score_key})`);
+  }
+  if (row.segmento !== 'NUEVOS' && row.segmento !== 'RENOVADORES') {
+    throw new Error(`segmento no soportado en Carrera de Scores: "${row.segmento}" (score_key=${row.score_key})`);
+  }
+
+  const multiplicador = Number(row.multiplicador_score);
+  if (!Number.isFinite(multiplicador)) {
+    throw new Error(`multiplicador_score inválido para ${row.score_key}: "${row.multiplicador_score}"`);
+  }
+
   const isNumeric = isNumericColumnType(columnDataType);
   const { estadoScoreSql, scoreFinalSql } = scoreCleaningFragments(isNumeric);
   const flagRenovador = row.segmento === 'NUEVOS' ? 'NUEVO' : 'RENOVADOR';
-  const params = [flagRenovador, row.centinela_error, Number(row.multiplicador_score), row.score_key];
+  const params = [flagRenovador, row.centinela_error, multiplicador, row.score_key];
 
   if (row.pais === 'ARG') {
     const sql = `

@@ -73,6 +73,25 @@ export function pivotGrid(
     return { banda, label, scoreRange, qVendidos, capital, capitalMasInteres, celdas };
   });
 
+  // Cualquier banda no reconocida (ej. un score fuera del rango de bandas del catálogo)
+  // se agrupa en una fila visible propia — nunca se descarta en silencio.
+  const bandasReconocidas = new Set(BANDA_ORDER);
+  const filasFueraDeRango = filtrados.filter(h => !bandasReconocidas.has(h.banda));
+  if (filasFueraDeRango.length > 0) {
+    const primeraUmbral = filasFueraDeRango.find(h => h.umbral_dias === UMBRALES[0]);
+    const qVendidos = primeraUmbral?.q_vendidos ?? 0;
+    const capital = primeraUmbral?.capital ?? 0;
+    const capitalMasInteres = primeraUmbral?.capital_mas_interes ?? 0;
+    const celdas: Record<number, GridCell> = {};
+    UMBRALES.forEach(umbral => {
+      const fila = filasFueraDeRango.find(h => h.umbral_dias === umbral);
+      const nElegible = fila?.n_elegible ?? 0;
+      const nMalos = fila?.n_malos ?? 0;
+      celdas[umbral] = { nElegible, moraPct: nElegible > 0 ? (nMalos / nElegible) * 100 : null };
+    });
+    rows.push({ banda: 'FUERA_DE_RANGO', label: 'FUERA DE RANGO', scoreRange: null, qVendidos, capital, capitalMasInteres, celdas });
+  }
+
   const total: GridRow = {
     banda: 'TOTAL', label: 'Total', scoreRange: null, esTotal: true,
     qVendidos: rows.reduce((acc, r) => acc + r.qVendidos, 0),
@@ -126,9 +145,10 @@ export function computeHeaderIndicators(
   const nPorTramo = TRAMOS_ORDEN.map(t => porTramo.get(t)?.nElegible ?? 0);
   const volumenSuficiente = nPorTramo.every(n => n >= MIN_N_PARA_SPREAD);
 
-  const valores = moraPorTramo.filter((m): m is number => m !== null);
-  const spread = volumenSuficiente && valores.length === 5 && Math.min(...valores) > 0
-    ? Math.max(...valores) / Math.min(...valores)
+  const mejorTramo = moraPorTramo[0];
+  const peorTramo = moraPorTramo[4];
+  const spread = volumenSuficiente && mejorTramo !== null && peorTramo !== null && mejorTramo > 0
+    ? peorTramo / mejorTramo
     : null;
 
   let inversiones = 0;
