@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Loader2, AlertCircle, RefreshCcw } from 'lucide-react';
+import { Chart, registerables } from 'chart.js';
+
+Chart.register(...registerables);
 
 type Pais = 'ARG' | 'COL';
 type PaisFiltro = Pais | 'AMBOS';
@@ -93,6 +96,18 @@ function combineAmbos(rows: ResumenMensual[]): ResumenMensual[] {
     .sort((a, b) => a.mes.localeCompare(b.mes));
 }
 
+function buildGastoPorCategoriaSeries(detalle: GastoRow[]) {
+  const meses = [...new Set(detalle.map(r => r.mes))].sort();
+  const categorias: Categoria[] = ['Plataformas', 'Bureaus', 'Otros'];
+  const series = categorias.map(categoria => ({
+    categoria,
+    data: meses.map(mes =>
+      detalle.filter(r => r.mes === mes && r.categoria === categoria).reduce((s, r) => s + (r.monto_usd ?? 0), 0)
+    ),
+  }));
+  return { meses, series };
+}
+
 export default function RiCostosSubmodule() {
   const [detalleGasto, setDetalleGasto] = useState<GastoRow[]>([]);
   const [resumenMensual, setResumenMensual] = useState<ResumenMensual[]>([]);
@@ -150,6 +165,86 @@ export default function RiCostosSubmodule() {
   }, [resumenFiltrado]);
 
   const deltaGasto = pctDelta(ultimoCerrado?.gastoTotalUsd ?? null, mesAnterior?.gastoTotalUsd ?? null);
+
+  const chartGastoRef = useRef<HTMLCanvasElement>(null);
+  const chartGastoInst = useRef<Chart | null>(null);
+  const chartCpRef = useRef<HTMLCanvasElement>(null);
+  const chartCpInst = useRef<Chart | null>(null);
+
+  const gastoPorCategoria = useMemo(() => buildGastoPorCategoriaSeries(detalleFiltrado), [detalleFiltrado]);
+
+  useEffect(() => {
+    if (!chartGastoRef.current) return;
+    chartGastoInst.current?.destroy();
+    const CATEGORIA_COLOR: Record<Categoria, string> = {
+      Plataformas: 'rgba(59,130,246,.82)',
+      Bureaus: 'rgba(245,158,11,.82)',
+      Otros: 'rgba(139,92,246,.82)',
+    };
+    chartGastoInst.current = new Chart(chartGastoRef.current, {
+      type: 'bar',
+      data: {
+        labels: gastoPorCategoria.meses.map(formatMesLabel),
+        datasets: gastoPorCategoria.series.map(s => ({
+          label: s.categoria,
+          data: s.data,
+          backgroundColor: CATEGORIA_COLOR[s.categoria],
+          borderRadius: 4,
+          borderSkipped: false,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: '#a1a1aa', font: { size: 10 }, boxWidth: 10 } },
+          tooltip: {
+            backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1, titleColor: '#e2e8f5', bodyColor: '#a1a1aa',
+            callbacks: { label: (c: any) => ` ${c.dataset.label}: USD ${Math.round(c.raw).toLocaleString('es-AR')}` },
+          },
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: '#71717a', font: { size: 10 } }, grid: { display: false } },
+          y: { stacked: true, ticks: { color: '#71717a', font: { size: 10 }, callback: (v: any) => `USD ${v}` }, grid: { color: 'rgba(51,65,85,.5)' } },
+        },
+      },
+    });
+    return () => { chartGastoInst.current?.destroy(); };
+  }, [gastoPorCategoria]);
+
+  useEffect(() => {
+    if (!chartCpRef.current) return;
+    chartCpInst.current?.destroy();
+    const labels = resumenFiltrado.map(r => formatMesLabel(r.mes));
+    chartCpInst.current = new Chart(chartCpRef.current, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'CPL', data: resumenFiltrado.map(r => r.cplUsd), borderColor: '#60a5fa', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPR', data: resumenFiltrado.map(r => r.cprUsd), borderColor: '#f59e0b', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPO', data: resumenFiltrado.map(r => r.cpoUsd), borderColor: '#a78bfa', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPV', data: resumenFiltrado.map(r => r.cpvUsd), borderColor: '#34d399', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: '#a1a1aa', font: { size: 10 }, boxWidth: 10 } },
+          tooltip: {
+            backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1, titleColor: '#e2e8f5', bodyColor: '#a1a1aa',
+            callbacks: { label: (c: any) => c.raw === null ? ` ${c.dataset.label}: sin dato (mes en curso)` : ` ${c.dataset.label}: USD ${c.raw}` },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#71717a', font: { size: 10 } }, grid: { display: false } },
+          y: { ticks: { color: '#71717a', font: { size: 10 }, callback: (v: any) => `USD ${v}` }, grid: { color: 'rgba(51,65,85,.5)' } },
+        },
+      },
+    });
+    return () => { chartCpInst.current?.destroy(); };
+  }, [resumenFiltrado]);
 
   if (loading) {
     return (
@@ -247,6 +342,49 @@ export default function RiCostosSubmodule() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Gráficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Gasto mensual por categoría (USD)</h3>
+          <div style={{ height: 260 }}><canvas ref={chartGastoRef} /></div>
+        </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+          <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">CPL / CPR / CPO / CPV (USD)</h3>
+          <div style={{ height: 260 }}><canvas ref={chartCpRef} /></div>
+        </div>
+      </div>
+
+      {/* Tabla de detalle */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <table className="w-full text-left border-collapse">
+          <thead className="bg-slate-800">
+            <tr>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">País</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Proveedor</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Categoría</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Mes</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">USD</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">Local</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detalleFiltrado
+              .slice()
+              .sort((a, b) => b.mes.localeCompare(a.mes) || a.pais.localeCompare(b.pais) || a.proveedor.localeCompare(b.proveedor))
+              .map((r, i) => (
+                <tr key={`${r.pais}-${r.proveedor}-${r.mes}-${i}`} className="border-t border-slate-800">
+                  <td className="px-4 py-2 text-xs text-zinc-300">{r.pais}</td>
+                  <td className="px-4 py-2 text-xs text-zinc-300">{r.alias}</td>
+                  <td className="px-4 py-2 text-xs text-zinc-500">{r.categoria}</td>
+                  <td className="px-4 py-2 text-xs text-zinc-500">{formatMesLabel(r.mes)}</td>
+                  <td className="px-4 py-2 text-xs text-zinc-300 text-right">{fmtUsd(r.monto_usd)}</td>
+                  <td className="px-4 py-2 text-xs text-zinc-300 text-right">{fmtLocal(r.pais === 'ARG' ? r.monto_ars : r.monto_cop, r.pais)}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
