@@ -2291,6 +2291,328 @@ ${JSON.stringify(rawRows)}`;
     }
   });
 
+  // ── Riesgos: Costos ──────────────────────────────────────────────────────────
+  interface CostosGastoRow {
+    pais: string;
+    proveedor: string;
+    mes: string; // 'YYYY-MM'
+    monto_usd: number | null;
+    monto_ars: number | null;
+    monto_cop: number | null;
+  }
+
+  interface CostosGastoRowEnriched extends CostosGastoRow {
+    alias: string;
+    categoria: 'Plataformas' | 'Bureaus' | 'Otros';
+  }
+
+  interface CostosFunnelRow {
+    pais: string;
+    mes: string; // 'YYYY-MM'
+    cantidad_leads: number;
+    cantidad_motor: number;
+    cantidad_ofertas: number;
+    cantidad_ventas_netas: number;
+  }
+
+  interface CostosResumenMensual {
+    pais: string;
+    mes: string;
+    gastoTotalUsd: number | null;
+    gastoTotalLocal: number | null;
+    cantidadLeads: number;
+    cantidadMotor: number;
+    cantidadOfertas: number;
+    cantidadVentasNetas: number;
+    cplUsd: number | null;
+    cplLocal: number | null;
+    cprUsd: number | null;
+    cprLocal: number | null;
+    cpoUsd: number | null;
+    cpoLocal: number | null;
+    cpvUsd: number | null;
+    cpvLocal: number | null;
+  }
+
+  const COSTOS_PROVEEDOR_CATEGORIA: Record<string, { alias: string; categoria: 'Plataformas' | 'Bureaus' | 'Otros' }> = {
+    'SERVICIO INTERACTIVO DE INFORMES SA': { alias: 'UFLOW', categoria: 'Plataformas' },
+    'UFLOW LLC': { alias: 'UFLOW', categoria: 'Plataformas' },
+    'LABORATORIO DE INVESTIGACIÓN Y DESARROLLO S.A.': { alias: 'NOSIS', categoria: 'Bureaus' },
+    'PEYPE DATOS ANALYTICS': { alias: 'PEYPE', categoria: 'Bureaus' },
+    'SEON TECHNOLOGIES US INC. (prorrateado)': { alias: 'SEON', categoria: 'Bureaus' },
+    'EXPERIAN COLOMBIA S.A.': { alias: 'DATACREDITO', categoria: 'Bureaus' },
+    'ZAJANA SAS': { alias: 'MAREIGUA', categoria: 'Bureaus' },
+    'EQUIFAX ARGENTINA S.A.': { alias: 'VERAZ', categoria: 'Otros' },
+  };
+
+  const COSTOS_GASTO_QUERY = `
+    WITH tc_arg AS (
+        SELECT DATE_TRUNC('month', fecha)::date AS mes,
+               mep_promedio AS tc_usd_ars
+        FROM finance_arg.tipo_cambio_arg
+    ),
+    tc_col AS (
+        SELECT DATE_TRUNC('month', fecha)::date AS mes,
+               trm_promedio AS tc_usd_cop
+        FROM finance_col.tipo_cambio_col
+    ),
+    directos AS (
+        SELECT
+            pais, proveedor,
+            DATE_TRUNC('month', fecha_creacion)::date AS mes,
+            moneda,
+            SUM(monto_sin_impuesto) AS monto
+        FROM platinum_ia.vw_gastos_multipais
+        WHERE proveedor IN (
+            'EQUIFAX ARGENTINA S.A.', 'LABORATORIO DE INVESTIGACIÓN Y DESARROLLO S.A.',
+            'PEYPE DATOS ANALYTICS', 'SERVICIO INTERACTIVO DE INFORMES SA',
+            'EXPERIAN COLOMBIA S.A.', 'UFLOW LLC', 'ZAJANA SAS'
+        )
+        AND DATE_TRUNC('month', fecha_creacion)::date < DATE_TRUNC('month', CURRENT_DATE)::date
+        GROUP BY 1,2,3,4
+    ),
+    directos_convertidos AS (
+        SELECT
+            d.pais, d.proveedor, d.mes,
+            CASE
+                WHEN d.pais = 'ARG' THEN d.monto / NULLIF(ta.tc_usd_ars, 0)
+                WHEN d.moneda = 'USD' THEN d.monto
+                ELSE d.monto / NULLIF(tc.tc_usd_cop, 0)
+            END AS monto_usd,
+            CASE WHEN d.pais = 'ARG' THEN d.monto ELSE NULL END AS monto_ars,
+            CASE
+                WHEN d.pais = 'COL' AND d.moneda = 'COP' THEN d.monto
+                WHEN d.pais = 'COL' AND d.moneda = 'USD' THEN d.monto * tc.tc_usd_cop
+                ELSE NULL
+            END AS monto_cop
+        FROM directos d
+        LEFT JOIN tc_arg ta ON d.pais = 'ARG' AND ta.mes = d.mes
+        LEFT JOIN tc_col tc ON d.pais = 'COL' AND tc.mes = d.mes
+    ),
+    seon_total AS (
+        SELECT DATE_TRUNC('month', fecha_creacion)::date AS mes,
+               SUM(monto) AS monto_usd_total
+        FROM platinum_ia.vw_gastos_multipais
+        WHERE proveedor = 'SEON TECHNOLOGIES US INC.'
+          AND DATE_TRUNC('month', fecha_creacion)::date < DATE_TRUNC('month', CURRENT_DATE)::date
+        GROUP BY 1
+    ),
+    seon_consultas AS (
+        SELECT
+            COALESCE(a.mes, b.mes) AS mes,
+            COALESCE(a.cantidad_arg, 0) AS cantidad_arg,
+            COALESCE(b.cantidad_col, 0) AS cantidad_col
+        FROM (
+            SELECT DATE_TRUNC('month', created_at)::date AS mes, COUNT(*) AS cantidad_arg
+            FROM risk_arg.seon_parsed_arg GROUP BY 1
+        ) a
+        FULL OUTER JOIN (
+            SELECT DATE_TRUNC('month', created_at)::date AS mes, COUNT(*) AS cantidad_col
+            FROM risk_col.seon_parsed_col GROUP BY 1
+        ) b ON a.mes = b.mes
+    ),
+    seon_split AS (
+        SELECT
+            st.mes, st.monto_usd_total, sc.cantidad_arg, sc.cantidad_col,
+            st.monto_usd_total * sc.cantidad_arg / NULLIF(sc.cantidad_arg + sc.cantidad_col, 0) AS seon_usd_arg,
+            st.monto_usd_total * sc.cantidad_col / NULLIF(sc.cantidad_arg + sc.cantidad_col, 0) AS seon_usd_col
+        FROM seon_total st
+        LEFT JOIN seon_consultas sc ON sc.mes = st.mes
+    ),
+    seon_convertido AS (
+        SELECT 'ARG' AS pais, 'SEON TECHNOLOGIES US INC. (prorrateado)' AS proveedor, s.mes,
+               s.seon_usd_arg AS monto_usd, s.seon_usd_arg * ta.tc_usd_ars AS monto_ars, NULL::numeric AS monto_cop
+        FROM seon_split s LEFT JOIN tc_arg ta ON ta.mes = s.mes
+        UNION ALL
+        SELECT 'COL', 'SEON TECHNOLOGIES US INC. (prorrateado)', s.mes,
+               s.seon_usd_col, NULL::numeric, s.seon_usd_col * tc.tc_usd_cop
+        FROM seon_split s LEFT JOIN tc_col tc ON tc.mes = s.mes
+    )
+    SELECT pais, proveedor, mes, ROUND(monto_usd, 0) AS monto_usd, ROUND(monto_ars, 0) AS monto_ars, ROUND(monto_cop, 0) AS monto_cop
+    FROM directos_convertidos
+    UNION ALL
+    SELECT pais, proveedor, mes, ROUND(monto_usd, 0), ROUND(monto_ars, 0), ROUND(monto_cop, 0)
+    FROM seon_convertido
+    ORDER BY pais, mes, proveedor
+  `;
+
+  const COSTOS_FUNNEL_QUERY = `
+    WITH leads_arg AS (
+        SELECT DATE_TRUNC('month', fecha_lead)::date AS mes, COUNT(DISTINCT lead_id) AS cantidad_leads
+        FROM auxiliary_tables.funnel_lead_arg WHERE is_renovation = 0 GROUP BY 1
+    ),
+    motor_arg AS (
+        SELECT DATE_TRUNC('month', executiondate)::date AS mes, COUNT(DISTINCT executionid) AS cantidad_motor
+        FROM risk_arg.risk_engine_arg WHERE tipo_cliente = 0 GROUP BY 1
+    ),
+    ofertas_arg AS (
+        SELECT DATE_TRUNC('month', fecha_oferta)::date AS mes, COUNT(DISTINCT lead_id) AS cantidad_ofertas
+        FROM auxiliary_tables.funnel_lead_arg WHERE is_renovation = 0 AND fecha_oferta IS NOT NULL GROUP BY 1
+    ),
+    ventas_arg AS (
+        SELECT DATE_TRUNC('month', fecha_desembolso)::date AS mes, COUNT(DISTINCT loan_id) AS cantidad_ventas_netas
+        FROM gold.ventas_arg WHERE flag_venta = 1 AND renovacion = 'NUEVO' GROUP BY 1
+    ),
+    funnel_arg AS (
+        SELECT 'ARG' AS pais, COALESCE(l.mes, m.mes, o.mes, v.mes) AS mes,
+               COALESCE(l.cantidad_leads, 0) AS cantidad_leads,
+               COALESCE(m.cantidad_motor, 0) AS cantidad_motor,
+               COALESCE(o.cantidad_ofertas, 0) AS cantidad_ofertas,
+               COALESCE(v.cantidad_ventas_netas, 0) AS cantidad_ventas_netas
+        FROM leads_arg l
+        FULL OUTER JOIN motor_arg m ON m.mes = l.mes
+        FULL OUTER JOIN ofertas_arg o ON o.mes = COALESCE(l.mes, m.mes)
+        FULL OUTER JOIN ventas_arg v ON v.mes = COALESCE(l.mes, m.mes, o.mes)
+    ),
+    leads_col AS (
+        SELECT DATE_TRUNC('month', fecha_lead)::date AS mes, COUNT(DISTINCT lead_id) AS cantidad_leads
+        FROM auxiliary_tables.funnel_lead_col WHERE is_renovation = 'false' GROUP BY 1
+    ),
+    motor_col AS (
+        SELECT DATE_TRUNC('month', executiondate::timestamp)::date AS mes, COUNT(DISTINCT executionid) AS cantidad_motor
+        FROM risk_col.risk_engine_col WHERE tipo_cliente = 0 GROUP BY 1
+    ),
+    ofertas_col AS (
+        SELECT DATE_TRUNC('month', fecha_oferta)::date AS mes, COUNT(DISTINCT lead_id) AS cantidad_ofertas
+        FROM auxiliary_tables.funnel_lead_col WHERE is_renovation = 'false' AND fecha_oferta IS NOT NULL GROUP BY 1
+    ),
+    ventas_col AS (
+        SELECT DATE_TRUNC('month', fecha_desembolso)::date AS mes, COUNT(DISTINCT loan_id) AS cantidad_ventas_netas
+        FROM gold.ventas_col WHERE flag_venta = 1 AND renovacion = 'NUEVO' GROUP BY 1
+    ),
+    funnel_col AS (
+        SELECT 'COL' AS pais, COALESCE(l.mes, m.mes, o.mes, v.mes) AS mes,
+               COALESCE(l.cantidad_leads, 0) AS cantidad_leads,
+               COALESCE(m.cantidad_motor, 0) AS cantidad_motor,
+               COALESCE(o.cantidad_ofertas, 0) AS cantidad_ofertas,
+               COALESCE(v.cantidad_ventas_netas, 0) AS cantidad_ventas_netas
+        FROM leads_col l
+        FULL OUTER JOIN motor_col m ON m.mes = l.mes
+        FULL OUTER JOIN ofertas_col o ON o.mes = COALESCE(l.mes, m.mes)
+        FULL OUTER JOIN ventas_col v ON v.mes = COALESCE(l.mes, m.mes, o.mes)
+    )
+    SELECT * FROM funnel_arg WHERE DATE_TRUNC('month', mes)::date BETWEEN '2025-08-01' AND DATE_TRUNC('month', CURRENT_DATE)::date
+    UNION ALL
+    SELECT * FROM funnel_col WHERE DATE_TRUNC('month', mes)::date BETWEEN '2025-08-01' AND DATE_TRUNC('month', CURRENT_DATE)::date
+    ORDER BY pais, mes
+  `;
+
+  function costosToYearMonth(value: unknown): string {
+    if (typeof value === 'string') return value.slice(0, 7);
+    if (value instanceof Date) return value.toISOString().slice(0, 7);
+    return String(value).slice(0, 7);
+  }
+
+  function enrichGastoRows(rows: CostosGastoRow[]): CostosGastoRowEnriched[] {
+    return rows.map(r => {
+      const meta = COSTOS_PROVEEDOR_CATEGORIA[r.proveedor];
+      return { ...r, alias: meta?.alias ?? r.proveedor, categoria: meta?.categoria ?? 'Otros' };
+    });
+  }
+
+  function buildResumenMensual(gastoRows: CostosGastoRow[], funnelRows: CostosFunnelRow[]): CostosResumenMensual[] {
+    const gastoPorClave = new Map<string, { totalUsd: number; totalLocal: number }>();
+    for (const row of gastoRows) {
+      const clave = `${row.pais}|${row.mes}`;
+      const acc = gastoPorClave.get(clave) ?? { totalUsd: 0, totalLocal: 0 };
+      acc.totalUsd += row.monto_usd ?? 0;
+      const local = row.pais === 'ARG' ? row.monto_ars : row.monto_cop;
+      acc.totalLocal += local ?? 0;
+      gastoPorClave.set(clave, acc);
+    }
+
+    const divide = (total: number | null, cantidad: number): number | null =>
+      total === null || cantidad <= 0 ? null : +(total / cantidad).toFixed(2);
+
+    return funnelRows
+      .map(f => {
+        const clave = `${f.pais}|${f.mes}`;
+        const gasto = gastoPorClave.get(clave) ?? null;
+        const gastoTotalUsd = gasto ? gasto.totalUsd : null;
+        const gastoTotalLocal = gasto ? gasto.totalLocal : null;
+        return {
+          pais: f.pais,
+          mes: f.mes,
+          gastoTotalUsd,
+          gastoTotalLocal,
+          cantidadLeads: f.cantidad_leads,
+          cantidadMotor: f.cantidad_motor,
+          cantidadOfertas: f.cantidad_ofertas,
+          cantidadVentasNetas: f.cantidad_ventas_netas,
+          cplUsd: divide(gastoTotalUsd, f.cantidad_leads),
+          cplLocal: divide(gastoTotalLocal, f.cantidad_leads),
+          cprUsd: divide(gastoTotalUsd, f.cantidad_motor),
+          cprLocal: divide(gastoTotalLocal, f.cantidad_motor),
+          cpoUsd: divide(gastoTotalUsd, f.cantidad_ofertas),
+          cpoLocal: divide(gastoTotalLocal, f.cantidad_ofertas),
+          cpvUsd: divide(gastoTotalUsd, f.cantidad_ventas_netas),
+          cpvLocal: divide(gastoTotalLocal, f.cantidad_ventas_netas),
+        };
+      })
+      .sort((a, b) => (a.pais === b.pais ? a.mes.localeCompare(b.mes) : a.pais.localeCompare(b.pais)));
+  }
+
+  let costosCache: { detalleGasto: CostosGastoRowEnriched[]; resumenMensual: CostosResumenMensual[]; fetchedAt: number } | null = null;
+  const COSTOS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+
+  async function loadCostosCache(): Promise<void> {
+    if (costosCache && Date.now() - costosCache.fetchedAt < COSTOS_CACHE_TTL_MS) return;
+    if (!redshiftPool) throw new Error('Redshift no configurado');
+    console.log('[COSTOS] Querying Redshift...');
+    const [gastoResult, funnelResult] = await Promise.all([
+      redshiftPool.query(COSTOS_GASTO_QUERY),
+      redshiftPool.query(COSTOS_FUNNEL_QUERY),
+    ]);
+    const toSafeRows = (rows: any[]) => JSON.parse(JSON.stringify(rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+
+    const gastoRows: CostosGastoRow[] = toSafeRows(gastoResult.rows).map((r: any) => ({
+      pais: r.pais,
+      proveedor: r.proveedor,
+      mes: costosToYearMonth(r.mes),
+      monto_usd: r.monto_usd,
+      monto_ars: r.monto_ars,
+      monto_cop: r.monto_cop,
+    }));
+    const funnelRows: CostosFunnelRow[] = toSafeRows(funnelResult.rows).map((r: any) => ({
+      pais: r.pais,
+      mes: costosToYearMonth(r.mes),
+      cantidad_leads: r.cantidad_leads,
+      cantidad_motor: r.cantidad_motor,
+      cantidad_ofertas: r.cantidad_ofertas,
+      cantidad_ventas_netas: r.cantidad_ventas_netas,
+    }));
+
+    const detalleGasto = enrichGastoRows(gastoRows);
+    const resumenMensual = buildResumenMensual(gastoRows, funnelRows);
+    costosCache = { detalleGasto, resumenMensual, fetchedAt: Date.now() };
+    console.log(`[COSTOS] Cached ${detalleGasto.length} filas de gasto, ${resumenMensual.length} filas de resumen`);
+  }
+
+  app.get('/api/riesgo-costos', async (_req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+    try {
+      await loadCostosCache();
+      res.json({
+        detalleGasto: costosCache!.detalleGasto,
+        resumenMensual: costosCache!.resumenMensual,
+        cachedAt: costosCache!.fetchedAt,
+      });
+    } catch (error: any) {
+      console.error('[COSTOS] Error:', error);
+      res.status(500).json({ error: 'Error al cargar datos de costos', details: error.message });
+    }
+  });
+
+  app.get('/api/riesgo-costos/refresh', (_req, res) => {
+    costosCache = null;
+    res.json({ ok: true });
+  });
+
   // Catch-all for unhandled API routes
   app.all("/api/*", (req, res) => {
     console.warn(`[Server] Unhandled API route: ${req.method} ${req.path}`);
