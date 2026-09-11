@@ -144,10 +144,10 @@ export default function RiCostosSubmodule() {
     return cerrados[cerrados.length - 1] ?? null;
   }, [resumenFiltrado, ultimoCerrado]);
 
-  const mesEnCurso = useMemo(
-    () => resumenFiltrado.find(r => r.gastoTotalUsd === null) ?? null,
-    [resumenFiltrado]
-  );
+  const mesEnCurso = useMemo(() => {
+    const sinCosto = resumenFiltrado.filter(r => r.gastoTotalUsd === null);
+    return sinCosto.length > 0 ? sinCosto[sinCosto.length - 1] : null;
+  }, [resumenFiltrado]);
 
   const deltaGasto = pctDelta(ultimoCerrado?.gastoTotalUsd ?? null, mesAnterior?.gastoTotalUsd ?? null);
 
