@@ -50,6 +50,14 @@ function fmtUsd(v: number | null): string {
   return `USD ${Math.round(v).toLocaleString('es-AR')}`;
 }
 
+// Unit-cost values (CPL/CPR/CPO/CPV) are small fractional USD amounts — rounding
+// them to whole dollars turns them all into a misleading "USD 0". Keep more
+// decimal precision for these instead of using fmtUsd.
+function fmtUsdUnit(v: number | null): string {
+  if (v === null) return '—';
+  return `USD ${v.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+}
+
 function fmtLocal(v: number | null, pais: PaisFiltro): string {
   if (v === null || pais === 'AMBOS') return '—';
   const prefix = pais === 'ARG' ? '$' : 'COP';
@@ -62,37 +70,46 @@ function pctDelta(actual: number | null, anterior: number | null): number | null
 }
 
 function combineAmbos(rows: ResumenMensual[]): ResumenMensual[] {
-  const porMes = new Map<string, { gastoTotalUsd: number | null; leads: number; motor: number; ofertas: number; ventas: number }>();
+  const porMes = new Map<string, { gastoTotalUsd: number; anyNull: boolean; leads: number; motor: number; ofertas: number; ventas: number }>();
   for (const r of rows) {
-    const acc = porMes.get(r.mes) ?? { gastoTotalUsd: null, leads: 0, motor: 0, ofertas: 0, ventas: 0 };
-    if (r.gastoTotalUsd !== null) acc.gastoTotalUsd = (acc.gastoTotalUsd ?? 0) + r.gastoTotalUsd;
+    const acc = porMes.get(r.mes) ?? { gastoTotalUsd: 0, anyNull: false, leads: 0, motor: 0, ofertas: 0, ventas: 0 };
+    if (r.gastoTotalUsd === null) acc.anyNull = true;
+    else acc.gastoTotalUsd += r.gastoTotalUsd;
     acc.leads += r.cantidadLeads;
     acc.motor += r.cantidadMotor;
     acc.ofertas += r.cantidadOfertas;
     acc.ventas += r.cantidadVentasNetas;
     porMes.set(r.mes, acc);
   }
+  // Higher precision (4 decimals) to avoid manufacturing a misleading "0" for
+  // real small unit-cost values — mirrors server.ts's buildResumenMensual divide().
   const divide = (total: number | null, cantidad: number): number | null =>
-    total === null || cantidad <= 0 ? null : +(total / cantidad).toFixed(2);
+    total === null || cantidad <= 0 ? null : +(total / cantidad).toFixed(4);
   return [...porMes.entries()]
-    .map(([mes, acc]) => ({
-      pais: 'AMBOS' as const,
-      mes,
-      gastoTotalUsd: acc.gastoTotalUsd,
-      gastoTotalLocal: null,
-      cantidadLeads: acc.leads,
-      cantidadMotor: acc.motor,
-      cantidadOfertas: acc.ofertas,
-      cantidadVentasNetas: acc.ventas,
-      cplUsd: divide(acc.gastoTotalUsd, acc.leads),
-      cplLocal: null,
-      cprUsd: divide(acc.gastoTotalUsd, acc.motor),
-      cprLocal: null,
-      cpoUsd: divide(acc.gastoTotalUsd, acc.ofertas),
-      cpoLocal: null,
-      cpvUsd: divide(acc.gastoTotalUsd, acc.ventas),
-      cpvLocal: null,
-    }))
+    .map(([mes, acc]) => {
+      // If ANY contributing country-row for this month had gastoTotalUsd === null
+      // (e.g. one country's gasto tracking hadn't started yet that month), the
+      // combined total must be null too — never a partial/understated sum.
+      const gastoTotalUsd = acc.anyNull ? null : acc.gastoTotalUsd;
+      return {
+        pais: 'AMBOS' as const,
+        mes,
+        gastoTotalUsd,
+        gastoTotalLocal: null,
+        cantidadLeads: acc.leads,
+        cantidadMotor: acc.motor,
+        cantidadOfertas: acc.ofertas,
+        cantidadVentasNetas: acc.ventas,
+        cplUsd: divide(gastoTotalUsd, acc.leads),
+        cplLocal: null,
+        cprUsd: divide(gastoTotalUsd, acc.motor),
+        cprLocal: null,
+        cpoUsd: divide(gastoTotalUsd, acc.ofertas),
+        cpoLocal: null,
+        cpvUsd: divide(gastoTotalUsd, acc.ventas),
+        cpvLocal: null,
+      };
+    })
     .sort((a, b) => a.mes.localeCompare(b.mes));
 }
 
@@ -234,12 +251,12 @@ export default function RiCostosSubmodule() {
           legend: { display: true, labels: { color: '#a1a1aa', font: { size: 10 }, boxWidth: 10 } },
           tooltip: {
             backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1, titleColor: '#e2e8f5', bodyColor: '#a1a1aa',
-            callbacks: { label: (c: any) => c.raw === null ? ` ${c.dataset.label}: sin dato (mes en curso)` : ` ${c.dataset.label}: USD ${c.raw}` },
+            callbacks: { label: (c: any) => c.raw === null ? ` ${c.dataset.label}: sin dato (mes en curso)` : ` ${c.dataset.label}: ${fmtUsdUnit(c.raw)}` },
           },
         },
         scales: {
           x: { ticks: { color: '#71717a', font: { size: 10 } }, grid: { display: false } },
-          y: { ticks: { color: '#71717a', font: { size: 10 }, callback: (v: any) => `USD ${v}` }, grid: { color: 'rgba(51,65,85,.5)' } },
+          y: { ticks: { color: '#71717a', font: { size: 10 }, callback: (v: any) => `USD ${Number(v).toFixed(2)}` }, grid: { color: 'rgba(51,65,85,.5)' } },
         },
       },
     });
@@ -307,22 +324,22 @@ export default function RiCostosSubmodule() {
         </div>
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">CPL (costo por lead)</span>
-          <p className="text-xl font-bold text-white">{fmtUsd(ultimoCerrado?.cplUsd ?? null)}</p>
+          <p className="text-xl font-bold text-white">{fmtUsdUnit(ultimoCerrado?.cplUsd ?? null)}</p>
           {paisFiltro !== 'AMBOS' && <p className="text-xs text-zinc-500">{fmtLocal(ultimoCerrado?.cplLocal ?? null, paisFiltro)}</p>}
         </div>
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">CPR (costo por motor)</span>
-          <p className="text-xl font-bold text-white">{fmtUsd(ultimoCerrado?.cprUsd ?? null)}</p>
+          <p className="text-xl font-bold text-white">{fmtUsdUnit(ultimoCerrado?.cprUsd ?? null)}</p>
           {paisFiltro !== 'AMBOS' && <p className="text-xs text-zinc-500">{fmtLocal(ultimoCerrado?.cprLocal ?? null, paisFiltro)}</p>}
         </div>
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">CPO (costo por oferta)</span>
-          <p className="text-xl font-bold text-white">{fmtUsd(ultimoCerrado?.cpoUsd ?? null)}</p>
+          <p className="text-xl font-bold text-white">{fmtUsdUnit(ultimoCerrado?.cpoUsd ?? null)}</p>
           {paisFiltro !== 'AMBOS' && <p className="text-xs text-zinc-500">{fmtLocal(ultimoCerrado?.cpoLocal ?? null, paisFiltro)}</p>}
         </div>
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-2">
           <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">CPV (costo por venta)</span>
-          <p className="text-xl font-bold text-white">{fmtUsd(ultimoCerrado?.cpvUsd ?? null)}</p>
+          <p className="text-xl font-bold text-white">{fmtUsdUnit(ultimoCerrado?.cpvUsd ?? null)}</p>
           {paisFiltro !== 'AMBOS' && <p className="text-xs text-zinc-500">{fmtLocal(ultimoCerrado?.cpvLocal ?? null, paisFiltro)}</p>}
         </div>
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex flex-col gap-2">

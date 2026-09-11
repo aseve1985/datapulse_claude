@@ -2511,18 +2511,26 @@ ${JSON.stringify(rawRows)}`;
   }
 
   function buildResumenMensual(gastoRows: CostosGastoRow[], funnelRows: CostosFunnelRow[]): CostosResumenMensual[] {
-    const gastoPorClave = new Map<string, { totalUsd: number; totalLocal: number }>();
+    // Track whether a (pais,mes) key had at least one row contribute a real
+    // (non-null) amount. If a key exists but every row's amount was null (e.g.
+    // missing exchange rate, or a SEON month with no matching consulta counts),
+    // the total must stay null — not a manufactured 0 that looks like real
+    // zero spend.
+    const gastoPorClave = new Map<string, { totalUsd: number | null; totalLocal: number | null }>();
     for (const row of gastoRows) {
       const clave = `${row.pais}|${row.mes}`;
-      const acc = gastoPorClave.get(clave) ?? { totalUsd: 0, totalLocal: 0 };
-      acc.totalUsd += row.monto_usd ?? 0;
+      const acc = gastoPorClave.get(clave) ?? { totalUsd: null, totalLocal: null };
+      if (row.monto_usd !== null) acc.totalUsd = (acc.totalUsd ?? 0) + row.monto_usd;
       const local = row.pais === 'ARG' ? row.monto_ars : row.monto_cop;
-      acc.totalLocal += local ?? 0;
+      if (local !== null) acc.totalLocal = (acc.totalLocal ?? 0) + local;
       gastoPorClave.set(clave, acc);
     }
 
+    // Real CPL/CPR/CPO/CPV values can be small fractional USD amounts (e.g. ~0.024).
+    // Rounding to 2 decimals can lose ~16% precision and can turn a genuine tiny
+    // value into a literal 0, indistinguishable from "no data" — use 4 decimals.
     const divide = (total: number | null, cantidad: number): number | null =>
-      total === null || cantidad <= 0 ? null : +(total / cantidad).toFixed(2);
+      total === null || cantidad <= 0 ? null : +(total / cantidad).toFixed(4);
 
     return funnelRows
       .map(f => {
