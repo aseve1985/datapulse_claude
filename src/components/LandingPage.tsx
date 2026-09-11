@@ -150,6 +150,12 @@ const modules = [
         title: 'Políticas de Riesgo',
         description: 'Políticas de riesgo, documentación y acceso a herramientas del área.',
         color: 'bg-slate-700'
+      },
+      {
+        id: 'ri-costos',
+        title: 'Costos',
+        description: 'Gasto operativo por proveedor/categoría y costo por lead, motor, oferta y venta — Argentina y Colombia.',
+        color: 'bg-slate-700'
       }
     ]
   },
