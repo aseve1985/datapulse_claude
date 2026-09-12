@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Loader2, AlertCircle, RefreshCcw } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCcw, Filter } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
+import MultiSelect from '../ui/MultiSelect';
 
 Chart.register(...registerables);
+
+type Moneda = 'usd' | 'local';
 
 type Pais = 'ARG' | 'COL';
 type PaisFiltro = Pais | 'AMBOS';
@@ -113,6 +116,10 @@ function combineAmbos(rows: ResumenMensual[]): ResumenMensual[] {
     .sort((a, b) => a.mes.localeCompare(b.mes));
 }
 
+function totalesPorMes(meses: string[], series: Array<{ data: number[] }>): number[] {
+  return meses.map((_, i) => series.reduce((s, ser) => s + ser.data[i], 0));
+}
+
 function buildGastoPorCategoriaSeries(detalle: GastoRow[]) {
   const meses = [...new Set(detalle.map(r => r.mes))].sort();
   const categorias: Categoria[] = ['Plataformas', 'Bureaus', 'Otros'];
@@ -122,7 +129,52 @@ function buildGastoPorCategoriaSeries(detalle: GastoRow[]) {
       detalle.filter(r => r.mes === mes && r.categoria === categoria).reduce((s, r) => s + (r.monto_usd ?? 0), 0)
     ),
   }));
-  return { meses, series };
+  return { meses, series, totales: totalesPorMes(meses, series) };
+}
+
+const PROVEEDOR_COLORS = [
+  'rgba(59,130,246,.82)', 'rgba(245,158,11,.82)', 'rgba(139,92,246,.82)',
+  'rgba(52,211,153,.82)', 'rgba(244,63,94,.82)', 'rgba(56,189,248,.82)',
+  'rgba(251,146,60,.82)', 'rgba(217,70,239,.82)',
+];
+
+function buildGastoPorProveedorSeries(detalle: GastoRow[]) {
+  const meses = [...new Set(detalle.map(r => r.mes))].sort();
+  const proveedores = [...new Set(detalle.map(r => r.alias))].sort();
+  const series = proveedores.map((proveedor, i) => ({
+    proveedor,
+    color: PROVEEDOR_COLORS[i % PROVEEDOR_COLORS.length],
+    data: meses.map(mes =>
+      detalle.filter(r => r.mes === mes && r.alias === proveedor).reduce((s, r) => s + (r.monto_usd ?? 0), 0)
+    ),
+  }));
+  return { meses, series, totales: totalesPorMes(meses, series) };
+}
+
+// Draws the stack's total above each bar group — a local (per-chart) Chart.js
+// plugin instead of an external datalabels dependency. Assumes all-non-negative
+// stacked values, so the last dataset drawn is always the topmost segment.
+function totalLabelPlugin(totales: number[]) {
+  return {
+    id: 'totalLabel',
+    afterDatasetsDraw(chart: Chart) {
+      const lastDatasetIndex = chart.data.datasets.length - 1;
+      if (lastDatasetIndex < 0) return;
+      const meta = chart.getDatasetMeta(lastDatasetIndex);
+      if (!meta?.data) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.font = '600 10px sans-serif';
+      ctx.fillStyle = '#e2e8f5';
+      ctx.textAlign = 'center';
+      meta.data.forEach((bar: any, index: number) => {
+        const total = totales[index];
+        if (!total) return;
+        ctx.fillText(`USD ${Math.round(total).toLocaleString('es-AR')}`, bar.x, bar.y - 6);
+      });
+      ctx.restore();
+    },
+  };
 }
 
 export default function RiCostosSubmodule() {
@@ -131,6 +183,10 @@ export default function RiCostosSubmodule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paisFiltro, setPaisFiltro] = useState<PaisFiltro>('AMBOS');
+  const [filtroCategoria, setFiltroCategoria] = useState<string[]>([]);
+  const [filtroProveedor, setFiltroProveedor] = useState<string[]>([]);
+  const [filtroMes, setFiltroMes] = useState<string[]>([]);
+  const [moneda, setMoneda] = useState<Moneda>('usd');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -165,6 +221,39 @@ export default function RiCostosSubmodule() {
     return detalleGasto.filter(r => r.pais === paisFiltro);
   }, [detalleGasto, paisFiltro]);
 
+  const categoriaOptions: Categoria[] = ['Plataformas', 'Bureaus', 'Otros'];
+
+  const proveedorOptions = useMemo(
+    () => [...new Set(detalleFiltrado.map(r => r.alias))].sort(),
+    [detalleFiltrado]
+  );
+
+  const mesOptions = useMemo(
+    () => [...new Set(resumenFiltrado.map(r => r.mes))].sort(),
+    [resumenFiltrado]
+  );
+
+  const mesOptionLabels = useMemo(
+    () => Object.fromEntries(mesOptions.map(m => [m, formatMesLabel(m)])),
+    [mesOptions]
+  );
+
+  // Categoría/proveedor/mes narrow the category/provider charts and the detail
+  // table (all desegregable by provider). CPL/CPR/CPO/CPV are totals-based —
+  // only "mes" applies to those (see resumenFiltradoConMes below).
+  const detalleFiltradoConFiltros = useMemo(() => {
+    return detalleFiltrado.filter(r =>
+      (filtroCategoria.length === 0 || filtroCategoria.includes(r.categoria)) &&
+      (filtroProveedor.length === 0 || filtroProveedor.includes(r.alias)) &&
+      (filtroMes.length === 0 || filtroMes.includes(r.mes))
+    );
+  }, [detalleFiltrado, filtroCategoria, filtroProveedor, filtroMes]);
+
+  const resumenFiltradoConMes = useMemo(() => {
+    if (filtroMes.length === 0) return resumenFiltrado;
+    return resumenFiltrado.filter(r => filtroMes.includes(r.mes));
+  }, [resumenFiltrado, filtroMes]);
+
   const ultimoCerrado = useMemo(() => {
     const cerrados = resumenFiltrado.filter(r => r.gastoTotalUsd !== null);
     return cerrados[cerrados.length - 1] ?? null;
@@ -187,8 +276,11 @@ export default function RiCostosSubmodule() {
   const chartGastoInst = useRef<Chart | null>(null);
   const chartCpRef = useRef<HTMLCanvasElement>(null);
   const chartCpInst = useRef<Chart | null>(null);
+  const chartProveedorRef = useRef<HTMLCanvasElement>(null);
+  const chartProveedorInst = useRef<Chart | null>(null);
 
-  const gastoPorCategoria = useMemo(() => buildGastoPorCategoriaSeries(detalleFiltrado), [detalleFiltrado]);
+  const gastoPorCategoria = useMemo(() => buildGastoPorCategoriaSeries(detalleFiltradoConFiltros), [detalleFiltradoConFiltros]);
+  const gastoPorProveedor = useMemo(() => buildGastoPorProveedorSeries(detalleFiltradoConFiltros), [detalleFiltradoConFiltros]);
 
   useEffect(() => {
     if (!chartGastoRef.current) return;
@@ -210,9 +302,11 @@ export default function RiCostosSubmodule() {
           borderSkipped: false,
         })),
       },
+      plugins: [totalLabelPlugin(gastoPorCategoria.totales)],
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        layout: { padding: { top: 18 } },
         plugins: {
           legend: { display: true, labels: { color: '#a1a1aa', font: { size: 10 }, boxWidth: 10 } },
           tooltip: {
@@ -230,18 +324,54 @@ export default function RiCostosSubmodule() {
   }, [gastoPorCategoria]);
 
   useEffect(() => {
+    if (!chartProveedorRef.current) return;
+    chartProveedorInst.current?.destroy();
+    chartProveedorInst.current = new Chart(chartProveedorRef.current, {
+      type: 'bar',
+      data: {
+        labels: gastoPorProveedor.meses.map(formatMesLabel),
+        datasets: gastoPorProveedor.series.map(s => ({
+          label: s.proveedor,
+          data: s.data,
+          backgroundColor: s.color,
+          borderRadius: 4,
+          borderSkipped: false,
+        })),
+      },
+      plugins: [totalLabelPlugin(gastoPorProveedor.totales)],
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 18 } },
+        plugins: {
+          legend: { display: true, labels: { color: '#a1a1aa', font: { size: 10 }, boxWidth: 10 } },
+          tooltip: {
+            backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1, titleColor: '#e2e8f5', bodyColor: '#a1a1aa',
+            callbacks: { label: (c: any) => ` ${c.dataset.label}: USD ${Math.round(c.raw).toLocaleString('es-AR')}` },
+          },
+        },
+        scales: {
+          x: { stacked: true, ticks: { color: '#71717a', font: { size: 10 } }, grid: { display: false } },
+          y: { stacked: true, ticks: { color: '#71717a', font: { size: 10 }, callback: (v: any) => `USD ${v}` }, grid: { color: 'rgba(51,65,85,.5)' } },
+        },
+      },
+    });
+    return () => { chartProveedorInst.current?.destroy(); };
+  }, [gastoPorProveedor]);
+
+  useEffect(() => {
     if (!chartCpRef.current) return;
     chartCpInst.current?.destroy();
-    const labels = resumenFiltrado.map(r => formatMesLabel(r.mes));
+    const labels = resumenFiltradoConMes.map(r => formatMesLabel(r.mes));
     chartCpInst.current = new Chart(chartCpRef.current, {
       type: 'line',
       data: {
         labels,
         datasets: [
-          { label: 'CPL', data: resumenFiltrado.map(r => r.cplUsd), borderColor: '#60a5fa', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
-          { label: 'CPR', data: resumenFiltrado.map(r => r.cprUsd), borderColor: '#f59e0b', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
-          { label: 'CPO', data: resumenFiltrado.map(r => r.cpoUsd), borderColor: '#a78bfa', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
-          { label: 'CPV', data: resumenFiltrado.map(r => r.cpvUsd), borderColor: '#34d399', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPL', data: resumenFiltradoConMes.map(r => r.cplUsd), borderColor: '#60a5fa', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPR', data: resumenFiltradoConMes.map(r => r.cprUsd), borderColor: '#f59e0b', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPO', data: resumenFiltradoConMes.map(r => r.cpoUsd), borderColor: '#a78bfa', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+          { label: 'CPV', data: resumenFiltradoConMes.map(r => r.cpvUsd), borderColor: '#34d399', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
         ],
       },
       options: {
@@ -261,7 +391,7 @@ export default function RiCostosSubmodule() {
       },
     });
     return () => { chartCpInst.current?.destroy(); };
-  }, [resumenFiltrado]);
+  }, [resumenFiltradoConMes]);
 
   if (loading) {
     return (
@@ -361,6 +491,28 @@ export default function RiCostosSubmodule() {
         )}
       </div>
 
+      {/* Filtros */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-end gap-4">
+        <Filter className="w-3.5 h-3.5 text-zinc-600 shrink-0 mb-2" />
+        <MultiSelect label="Categoría" options={categoriaOptions} value={filtroCategoria} onChange={setFiltroCategoria} />
+        <MultiSelect label="Proveedor" options={proveedorOptions} value={filtroProveedor} onChange={setFiltroProveedor} />
+        <MultiSelect label="Mes" options={mesOptions} value={filtroMes} onChange={setFiltroMes} optionLabels={mesOptionLabels} />
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Moneda</span>
+          <div className="flex rounded-lg border border-slate-700 overflow-hidden">
+            {(['usd', 'local'] as Moneda[]).map(m => (
+              <button
+                key={m}
+                onClick={() => setMoneda(m)}
+                className={`px-3 py-1.5 text-xs font-bold transition-colors ${moneda === m ? 'bg-blue-600 text-white' : 'bg-slate-800 text-zinc-400 hover:bg-slate-700'}`}
+              >
+                {m === 'usd' ? 'USD' : 'Local'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Gráficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
@@ -371,6 +523,46 @@ export default function RiCostosSubmodule() {
           <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">CPL / CPR / CPO / CPV (USD)</h3>
           <div style={{ height: 260 }}><canvas ref={chartCpRef} /></div>
         </div>
+      </div>
+
+      {/* Tabla CPL/CPR/CPO/CPV por mes */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider px-4 pt-4">CPL / CPR / CPO / CPV por mes ({moneda === 'usd' ? 'USD' : 'moneda local'})</h3>
+        <table className="w-full text-left border-collapse mt-3">
+          <thead className="bg-slate-800">
+            <tr>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Mes</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">CPL</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">CPR</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">CPO</th>
+              <th className="px-4 py-3 text-[10px] font-bold text-zinc-400 uppercase tracking-wider text-right">CPV</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumenFiltradoConMes
+              .slice()
+              .sort((a, b) => b.mes.localeCompare(a.mes))
+              .map(r => {
+                const val = (usd: number | null, local: number | null) =>
+                  moneda === 'usd' ? fmtUsdUnit(usd) : fmtLocal(local, paisFiltro);
+                return (
+                  <tr key={r.mes} className="border-t border-slate-800">
+                    <td className="px-4 py-2 text-xs text-zinc-300">{formatMesLabel(r.mes)}</td>
+                    <td className="px-4 py-2 text-xs text-zinc-300 text-right">{val(r.cplUsd, r.cplLocal)}</td>
+                    <td className="px-4 py-2 text-xs text-zinc-300 text-right">{val(r.cprUsd, r.cprLocal)}</td>
+                    <td className="px-4 py-2 text-xs text-zinc-300 text-right">{val(r.cpoUsd, r.cpoLocal)}</td>
+                    <td className="px-4 py-2 text-xs text-zinc-300 text-right">{val(r.cpvUsd, r.cpvLocal)}</td>
+                  </tr>
+                );
+              })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Gráfico de gasto por proveedor */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Gasto mensual por proveedor (USD)</h3>
+        <div style={{ height: 280 }}><canvas ref={chartProveedorRef} /></div>
       </div>
 
       {/* Tabla de detalle */}
@@ -387,7 +579,7 @@ export default function RiCostosSubmodule() {
             </tr>
           </thead>
           <tbody>
-            {detalleFiltrado
+            {detalleFiltradoConFiltros
               .slice()
               .sort((a, b) => b.mes.localeCompare(a.mes) || a.pais.localeCompare(b.pais) || a.proveedor.localeCompare(b.proveedor))
               .map((r, i) => (
