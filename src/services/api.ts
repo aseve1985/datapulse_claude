@@ -196,3 +196,21 @@ export async function fetchCeluAhoraData(
 
   return { records, fullResponse: data };
 }
+
+export async function fetchCatalogoScores(): Promise<{ scores: any[]; bandas: any[] }> {
+  const response = await fetch('/api/risk/catalogo-scores', { headers: { 'accept': 'application/json' } });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.details || errorData.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchCarreraScores(): Promise<{ hechos: any[] }> {
+  const response = await fetch('/api/risk/carrera-scores', { headers: { 'accept': 'application/json' } });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.details || errorData.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}

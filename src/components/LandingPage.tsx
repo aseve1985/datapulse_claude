@@ -156,6 +156,12 @@ const modules = [
         title: 'Costos',
         description: 'Gasto operativo por proveedor/categoría y costo por lead, motor, oferta y venta — Argentina y Colombia.',
         color: 'bg-slate-700'
+      },
+      {
+        id: 'ri-carrera-scores',
+        title: 'Carrera de Scores',
+        description: 'Seguimiento del poder de ordenamiento de los scores propios contra su performance esperada.',
+        color: 'bg-slate-700'
       }
     ]
   },

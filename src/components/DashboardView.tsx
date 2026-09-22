@@ -41,6 +41,7 @@ import RiBcraTasasSubmodule from './submodules/RiBcraTasasSubmodule';
 import RiAnaliticoSubmodule from './submodules/RiAnaliticoSubmodule';
 import RiAsistenteSubmodule from './submodules/RiAsistenteSubmodule';
 import RiCostosSubmodule from './submodules/RiCostosSubmodule';
+import RiCarreraScoresSubmodule from './submodules/RiCarreraScoresSubmodule';
 import BiDocumentacionSubmodule from './submodules/BiDocumentacionSubmodule';
 import BiObsidianSubmodule from './submodules/BiObsidianSubmodule';
 import AdmGastosProveedoresSubmodule from './submodules/AdmGastosProveedoresSubmodule';
@@ -1649,7 +1650,7 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas', 'tesoreria'].includes(sub.id);
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas', 'tesoreria'].includes(sub.id);
                   const isDisabled = ['ri-analitico', 'bi-tools', 'marketing-estrategia'].includes(sub.id);
                   return (
                     <motion.button
@@ -1709,6 +1710,8 @@ export default function DashboardView({
             <RiAsistenteSubmodule />
           ) : activeSubmodule.id === 'ri-costos' ? (
             <RiCostosSubmodule />
+          ) : activeSubmodule.id === 'ri-carrera-scores' ? (
+            <RiCarreraScoresSubmodule />
           ) : activeSubmodule.id === 'bi-documentacion' ? (
             <BiDocumentacionSubmodule />
           ) : activeSubmodule.id === 'bi-obsidian' ? (
