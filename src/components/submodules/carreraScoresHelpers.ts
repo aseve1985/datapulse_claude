@@ -41,27 +41,47 @@ export interface GridRow {
   esTotal?: boolean;
 }
 
+function computeTotalRow(rows: GridRow[]): GridRow {
+  return {
+    banda: 'TOTAL', label: 'Total', scoreRange: null, esTotal: true,
+    qVendidos: rows.reduce((acc, r) => acc + r.qVendidos, 0),
+    capital: rows.reduce((acc, r) => acc + r.capital, 0),
+    capitalMasInteres: rows.reduce((acc, r) => acc + r.capitalMasInteres, 0),
+    celdas: Object.fromEntries(UMBRALES.map(umbral => {
+      const nElegible = rows.reduce((acc, r) => acc + r.celdas[umbral].nElegible, 0);
+      const nMalos = rows.reduce((acc, r) => acc + (r.celdas[umbral].moraPct !== null
+        ? Math.round((r.celdas[umbral].moraPct! / 100) * r.celdas[umbral].nElegible) : 0), 0);
+      return [umbral, { nElegible, moraPct: nElegible > 0 ? (nMalos / nElegible) * 100 : null }];
+    })),
+  };
+}
+
 export function pivotGrid(
   hechos: HechoRow[],
   bandas: BandaCatalogo[],
   scoreKey: string,
-  cepa: string
+  cepas: string[]
 ): GridRow[] {
-  const filtrados = hechos.filter(h => h.score_key === scoreKey && h.cepa === cepa);
+  const cepasSet = new Set(cepas);
+  const filtrados = hechos.filter(h => h.score_key === scoreKey && cepasSet.has(h.cepa));
   const bandasDelScore = new Map(bandas.filter(b => b.score_key === scoreKey).map(b => [String(b.decil), b]));
 
   const rows: GridRow[] = BANDA_ORDER.map(banda => {
     const filasBanda = filtrados.filter(h => h.banda === banda);
     const catalogoBanda = bandasDelScore.get(banda);
-    const qVendidos = filasBanda[0]?.q_vendidos ?? 0;
-    const capital = filasBanda[0]?.capital ?? 0;
-    const capitalMasInteres = filasBanda[0]?.capital_mas_interes ?? 0;
+    // q_vendidos/capital/capital_mas_interes se repiten idénticos en las 5 filas de
+    // umbral de una misma cepa — para no contarlos 5 veces al sumar entre cepas,
+    // se toma una sola fila (umbral de referencia) por cepa antes de sumar.
+    const unaFilaPorCepa = [...new Map(filasBanda.filter(h => h.umbral_dias === UMBRALES[0]).map(h => [h.cepa, h])).values()];
+    const qVendidos = unaFilaPorCepa.reduce((acc, h) => acc + h.q_vendidos, 0);
+    const capital = unaFilaPorCepa.reduce((acc, h) => acc + h.capital, 0);
+    const capitalMasInteres = unaFilaPorCepa.reduce((acc, h) => acc + h.capital_mas_interes, 0);
 
     const celdas: Record<number, GridCell> = {};
     UMBRALES.forEach(umbral => {
-      const fila = filasBanda.find(h => h.umbral_dias === umbral);
-      const nElegible = fila?.n_elegible ?? 0;
-      const nMalos = fila?.n_malos ?? 0;
+      const filasUmbral = filasBanda.filter(h => h.umbral_dias === umbral);
+      const nElegible = filasUmbral.reduce((acc, h) => acc + h.n_elegible, 0);
+      const nMalos = filasUmbral.reduce((acc, h) => acc + h.n_malos, 0);
       celdas[umbral] = { nElegible, moraPct: nElegible > 0 ? (nMalos / nElegible) * 100 : null };
     });
 
@@ -78,34 +98,30 @@ export function pivotGrid(
   const bandasReconocidas = new Set(BANDA_ORDER);
   const filasFueraDeRango = filtrados.filter(h => !bandasReconocidas.has(h.banda));
   if (filasFueraDeRango.length > 0) {
-    const primeraUmbral = filasFueraDeRango.find(h => h.umbral_dias === UMBRALES[0]);
-    const qVendidos = primeraUmbral?.q_vendidos ?? 0;
-    const capital = primeraUmbral?.capital ?? 0;
-    const capitalMasInteres = primeraUmbral?.capital_mas_interes ?? 0;
+    const unaFilaPorCepa = [...new Map(filasFueraDeRango.filter(h => h.umbral_dias === UMBRALES[0]).map(h => [h.cepa, h])).values()];
+    const qVendidos = unaFilaPorCepa.reduce((acc, h) => acc + h.q_vendidos, 0);
+    const capital = unaFilaPorCepa.reduce((acc, h) => acc + h.capital, 0);
+    const capitalMasInteres = unaFilaPorCepa.reduce((acc, h) => acc + h.capital_mas_interes, 0);
     const celdas: Record<number, GridCell> = {};
     UMBRALES.forEach(umbral => {
-      const fila = filasFueraDeRango.find(h => h.umbral_dias === umbral);
-      const nElegible = fila?.n_elegible ?? 0;
-      const nMalos = fila?.n_malos ?? 0;
+      const filasUmbral = filasFueraDeRango.filter(h => h.umbral_dias === umbral);
+      const nElegible = filasUmbral.reduce((acc, h) => acc + h.n_elegible, 0);
+      const nMalos = filasUmbral.reduce((acc, h) => acc + h.n_malos, 0);
       celdas[umbral] = { nElegible, moraPct: nElegible > 0 ? (nMalos / nElegible) * 100 : null };
     });
     rows.push({ banda: 'FUERA_DE_RANGO', label: 'FUERA DE RANGO', scoreRange: null, qVendidos, capital, capitalMasInteres, celdas });
   }
 
-  const total: GridRow = {
-    banda: 'TOTAL', label: 'Total', scoreRange: null, esTotal: true,
-    qVendidos: rows.reduce((acc, r) => acc + r.qVendidos, 0),
-    capital: rows.reduce((acc, r) => acc + r.capital, 0),
-    capitalMasInteres: rows.reduce((acc, r) => acc + r.capitalMasInteres, 0),
-    celdas: Object.fromEntries(UMBRALES.map(umbral => {
-      const nElegible = rows.reduce((acc, r) => acc + r.celdas[umbral].nElegible, 0);
-      const nMalos = rows.reduce((acc, r) => acc + (r.celdas[umbral].moraPct !== null
-        ? Math.round((r.celdas[umbral].moraPct! / 100) * r.celdas[umbral].nElegible) : 0), 0);
-      return [umbral, { nElegible, moraPct: nElegible > 0 ? (nMalos / nElegible) * 100 : null }];
-    })),
-  };
+  return [...rows, computeTotalRow(rows)];
+}
 
-  return [...rows, total];
+/**
+ * Filtra la grilla a las bandas elegidas (la fila Total no cuenta como banda) y
+ * recalcula el Total sobre lo que queda visible.
+ */
+export function filterGridByBanda(grid: GridRow[], bandasSeleccionadas: Set<string>): GridRow[] {
+  const rows = grid.filter(r => !r.esTotal && bandasSeleccionadas.has(r.banda));
+  return [...rows, computeTotalRow(rows)];
 }
 
 export interface HeaderIndicators {
