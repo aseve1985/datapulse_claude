@@ -5,7 +5,7 @@ import { Chart, registerables } from 'chart.js';
 Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
-  parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo,
+  parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseSheetDate,
   weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell, ANIO,
   type DiaFlujo, type DiaProyeccion, type ProveedorRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
@@ -57,6 +57,8 @@ export default function FlujoFinancieroSubmodule() {
   const [provBusqueda, setProvBusqueda] = useState('');
   const [provSociedad, setProvSociedad] = useState('');
   const [provAprobacion, setProvAprobacion] = useState('');
+  const [provTipo, setProvTipo] = useState('');
+  const [provVencimiento, setProvVencimiento] = useState('');
 
   const fetchData = useCallback(async (force = false) => {
     setLoading(true); setError(null);
@@ -93,6 +95,10 @@ export default function FlujoFinancieroSubmodule() {
   const dias: string[] = useMemo(() => daysInMonth(ANIO, selMonth), [selMonth]);
 
   useEffect(() => { setSelWeekIdx(0); }, [selMonth]);
+  // Los valores de sociedad/tipo/vencimiento son específicos de cada país — al cambiar
+  // de país se limpian para no dejar un filtro seleccionado que no existe en el otro
+  // dataset y termine mostrando la tabla vacía sin que se note por qué.
+  useEffect(() => { setProvSociedad(''); setProvTipo(''); setProvVencimiento(''); }, [pais]);
   useEffect(() => { if (dias.length > 0) setSelDay(d => dias.includes(d) ? d : dias[0]); }, [dias]);
 
   // Rango de la Fila 1 según la vista elegida
@@ -116,39 +122,70 @@ export default function FlujoFinancieroSubmodule() {
     () => activo ? getKpiPeriodo(activo.real, activo.proy, rangoMes.start, rangoMes.end) : null,
     [activo, rangoMes]
   );
-  const ratiosPorMes = useMemo(() => {
-    if (!activo) return [];
+  // El gráfico de evolución sigue la misma Vista (día/semana/mes) elegida arriba —
+  // "mes" muestra los 12 meses del año (como antes), "semana" las semanas del mes
+  // elegido, "día" los días del mes elegido.
+  const MS_CORTAS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const ratiosChart = useMemo(() => {
+    if (!activo) return [] as { label: string; ratio: number }[];
+    if (vista === 'semana') {
+      return semanas.map(w => ({ label: w.label, ratio: getKpiPeriodo(activo.real, activo.proy, w.start, w.end).ratio }));
+    }
+    if (vista === 'dia') {
+      return dias.map(d => {
+        const dt = new Date(d + 'T12:00:00');
+        return { label: `${dt.getDate()}`, ratio: getKpiPeriodo(activo.real, activo.proy, d, d).ratio };
+      });
+    }
     return Array.from({ length: 12 }, (_, m) => {
       const diasDelMes = daysInMonth(ANIO, m);
-      const k = getKpiPeriodo(activo.real, activo.proy, diasDelMes[0], diasDelMes[diasDelMes.length - 1]);
-      return { mes: m, ratio: k.ratio };
+      return { label: MS_CORTAS[m], ratio: getKpiPeriodo(activo.real, activo.proy, diasDelMes[0], diasDelMes[diasDelMes.length - 1]).ratio };
     });
-  }, [activo]);
+  }, [activo, vista, semanas, dias]);
+
+  const indiceResaltado = vista === 'semana' ? selWeekIdx : vista === 'dia' ? dias.indexOf(selDay) : selMonth;
+
+  // Proveedores tiene su propio set de filtros, independiente del selector "Mes" de
+  // arriba (que solo gobierna las Filas 1/2, Otros Rubros y el gráfico) — igual que en
+  // el HTML original, donde el panel de Proveedores filtraba por sus propios controles.
+  const proveedoresPais = activo?.proveedores ?? [];
 
   const proveedoresFiltrados = useMemo(() => {
-    if (!activo) return [];
     const q = provBusqueda.trim().toLowerCase();
-    return activo.proveedores.filter(p => {
+    return proveedoresPais.filter(p => {
       if (q && !p.nombre.toLowerCase().includes(q) && !p.detalle.toLowerCase().includes(q)) return false;
       if (provSociedad && p.sociedad !== provSociedad) return false;
       if (provAprobacion && p.aprobacion !== provAprobacion) return false;
+      if (provTipo && p.detalle !== provTipo) return false;
+      if (provVencimiento && p.vencimiento !== provVencimiento) return false;
       return true;
     });
-  }, [activo, provBusqueda, provSociedad, provAprobacion]);
+  }, [proveedoresPais, provBusqueda, provSociedad, provAprobacion, provTipo, provVencimiento]);
 
   const sociedadesDisponibles = useMemo(
-    () => activo ? [...new Set(activo.proveedores.map(p => p.sociedad).filter(s => s.trim() !== ''))].sort() : [],
-    [activo]
+    () => [...new Set(proveedoresPais.map(p => p.sociedad).filter(s => s.trim() !== ''))].sort(),
+    [proveedoresPais]
   );
+  const tiposDisponibles = useMemo(
+    () => [...new Set(proveedoresPais.map(p => p.detalle).filter(s => s.trim() !== ''))].sort(),
+    [proveedoresPais]
+  );
+  const vencimientosDisponibles = useMemo(() => {
+    const vistos = new Set<string>();
+    const out: string[] = [];
+    for (const p of proveedoresPais) {
+      if (p.vencimiento.trim() !== '' && !vistos.has(p.vencimiento)) { vistos.add(p.vencimiento); out.push(p.vencimiento); }
+    }
+    return out.sort((a, b) => (parseSheetDate(a)?.getTime() ?? 0) - (parseSheetDate(b)?.getTime() ?? 0));
+  }, [proveedoresPais]);
 
   const chartRatioRef = useRef<HTMLCanvasElement>(null);
   const chartRatioInst = useRef<Chart | null>(null);
 
   useEffect(() => {
     chartRatioInst.current?.destroy();
-    if (!chartRatioRef.current || ratiosPorMes.length === 0) return;
+    if (!chartRatioRef.current || ratiosChart.length === 0) return;
 
-    const MS_CORTAS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
     const colorPorRatio = (r: number) => {
       const est = rcT(r, pais);
       return est.cls === 'sem-red' ? '#f43f5e' : est.cls === 'sem-yellow' ? '#f59e0b' : '#10b981';
@@ -157,12 +194,12 @@ export default function FlujoFinancieroSubmodule() {
     chartRatioInst.current = new Chart(chartRatioRef.current, {
       type: 'bar',
       data: {
-        labels: MS_CORTAS,
+        labels: ratiosChart.map(r => r.label),
         datasets: [{
-          data: ratiosPorMes.map(r => r.ratio),
-          backgroundColor: ratiosPorMes.map(r => colorPorRatio(r.ratio)),
-          borderColor: ratiosPorMes.map((_, i) => i === selMonth ? '#fff' : 'transparent'),
-          borderWidth: ratiosPorMes.map((_, i) => i === selMonth ? 2 : 0),
+          data: ratiosChart.map(r => r.ratio),
+          backgroundColor: ratiosChart.map(r => colorPorRatio(r.ratio)),
+          borderColor: ratiosChart.map((_, i) => i === indiceResaltado ? '#fff' : 'transparent'),
+          borderWidth: ratiosChart.map((_, i) => i === indiceResaltado ? 2 : 0),
           borderRadius: 5,
         } as any],
       },
@@ -181,7 +218,7 @@ export default function FlujoFinancieroSubmodule() {
     });
 
     return () => { chartRatioInst.current?.destroy(); };
-  }, [ratiosPorMes, selMonth, pais]);
+  }, [ratiosChart, indiceResaltado, pais]);
 
   if (loading) return (
     <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', padding: '80px 0', background: C.bg }}>
@@ -308,12 +345,14 @@ export default function FlujoFinancieroSubmodule() {
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: C.txt2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 9 }}>{c.lbl}</div>
                     <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -1, lineHeight: 1, marginBottom: 5, ...mono, color: c.val < 0 ? C.redL : C.txt }}>{fmt(c.val)}</div>
                     <div style={{ fontSize: 11, color: C.txt3 }}>{fmtLocal(c.val, pais)}</div>
-                    {proyVal !== null && Math.abs(delta ?? 0) >= 1 && (
+                    {proyVal !== null && (
                       <>
                         <div style={{ fontSize: 10, color: C.txt3, fontStyle: 'italic', marginTop: 6 }}>Proy: <strong style={{ color: C.txt2 }}>{fmt(proyVal)}</strong></div>
-                        <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: bueno ? C.greenL : C.redL }}>
-                          {(delta ?? 0) > 0 ? '+' : ''}{fmt(delta ?? 0)} vs proy
-                        </div>
+                        {Math.abs(delta ?? 0) >= 1 && (
+                          <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: bueno ? C.greenL : C.redL }}>
+                            {(delta ?? 0) > 0 ? '+' : ''}{fmt(delta ?? 0)} vs proy
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -405,7 +444,9 @@ export default function FlujoFinancieroSubmodule() {
             <div style={{ ...card, padding: 16, marginBottom: 12 }}>
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2 }}>Evolución del Ratio Orig/Cob</div>
-                <div style={{ fontSize: 10, color: C.txt3 }}>Mensual 2026 · {pais === 'AR' ? 'Argentina' : 'Colombia'}</div>
+                <div style={{ fontSize: 10, color: C.txt3 }}>
+                  {vista === 'dia' ? `Diario · ${MN[selMonth]} 2026` : vista === 'semana' ? `Semanal · ${MN[selMonth]} 2026` : 'Mensual 2026'} · {pais === 'AR' ? 'Argentina' : 'Colombia'}
+                </div>
               </div>
               <div style={{ height: 195, position: 'relative' }}>
                 <canvas ref={chartRatioRef} />
@@ -415,23 +456,31 @@ export default function FlujoFinancieroSubmodule() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>Proveedores</span>
               <div style={{ flex: 1, height: 1, background: C.border }} />
-              <span style={{ fontSize: 11, color: C.txt3 }}>{proveedoresFiltrados.length} de {activo.proveedores.length}</span>
+              <span style={{ fontSize: 11, color: C.txt3 }}>{proveedoresFiltrados.length} de {proveedoresPais.length}</span>
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
               <input
-                type="text" placeholder="Buscar por nombre o detalle..." value={provBusqueda}
+                type="text" placeholder="🔍 Buscar por nombre o impuesto..." value={provBusqueda}
                 onChange={e => setProvBusqueda(e.target.value)}
                 style={{ flex: '1 1 220px', background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}
               />
-              <select value={provSociedad} onChange={e => setProvSociedad(e.target.value)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
-                <option value="">Todas las sociedades</option>
-                {sociedadesDisponibles.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
               <select value={provAprobacion} onChange={e => setProvAprobacion(e.target.value)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
                 <option value="">Todos los estados</option>
                 <option value="Si">Pagado</option>
                 <option value="pendiente">Pendiente</option>
+              </select>
+              <select value={provTipo} onChange={e => setProvTipo(e.target.value)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
+                <option value="">Todos los tipos</option>
+                {tiposDisponibles.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={provSociedad} onChange={e => setProvSociedad(e.target.value)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
+                <option value="">Sociedad: todas</option>
+                {sociedadesDisponibles.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={provVencimiento} onChange={e => setProvVencimiento(e.target.value)} title="Filtrar por vencimiento" style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
+                <option value="">Vencimiento: todos</option>
+                {vencimientosDisponibles.map(v => <option key={v} value={v}>{formatSheetCell(v)}</option>)}
               </select>
             </div>
 
