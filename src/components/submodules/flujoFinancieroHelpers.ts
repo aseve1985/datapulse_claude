@@ -172,8 +172,14 @@ export function sumRangeProy(dias: DiaProyeccion[], campo: CampoProy, start: str
 }
 
 export function valorEnDia(dias: DiaFlujo[], campo: CampoReal, dateStr: string): number {
-  const d = dias.find(x => x.dateStr === dateStr);
-  return d ? (d[campo] as number) : 0;
+  const exacto = dias.find(x => x.dateStr === dateStr);
+  if (exacto) return exacto[campo] as number;
+  // Sin fila exacta para esa fecha (ej. fin de semana sin columna en el sheet) —
+  // el saldo no se mueve sin actividad registrada, así que se toma el último
+  // día disponible anterior o igual a la fecha buscada.
+  const anteriores = dias.filter(x => x.dateStr <= dateStr).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+  const ultimo = anteriores[anteriores.length - 1];
+  return ultimo ? (ultimo[campo] as number) : 0;
 }
 
 export interface KpiPeriodo {
