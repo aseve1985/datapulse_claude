@@ -839,11 +839,22 @@ async function startServer() {
 
   // ── Sales S3 Parquet Endpoint ────────────────────────────────────────────────
   let salesS3Cache: { data: any[]; fetchedAt: number } | null = null;
+  let salesS3Inflight: Promise<any[]> | null = null;
   const SALES_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
   async function getSalesS3Records(): Promise<any[]> {
     const now = Date.now();
-    if (!salesS3Cache || now - salesS3Cache.fetchedAt > SALES_CACHE_TTL_MS) {
+    if (salesS3Cache && now - salesS3Cache.fetchedAt <= SALES_CACHE_TTL_MS) {
+      console.log("[S3] Serving sales data from cache");
+      return salesS3Cache.data;
+    }
+    // Sin guard de in-flight, dos llamadas concurrentes en frío (p.ej. ARG y COL
+    // pedidas en el mismo Promise.allSettled) verían salesS3Cache === null a la vez
+    // y cada una dispararía su propia descarga+parseo del parquet completo. Se
+    // memoiza la promesa para que los llamadores concurrentes esperen la misma descarga.
+    if (salesS3Inflight) return salesS3Inflight;
+
+    salesS3Inflight = (async () => {
       console.log("[S3] Downloading ventas_platinum.parquet...");
       const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
       const cmd = new GetObjectCommand({
@@ -868,10 +879,14 @@ async function startServer() {
 
       salesS3Cache = { data: rows, fetchedAt: now };
       console.log(`[S3] Cached ${rows.length} records from parquet`);
-    } else {
-      console.log("[S3] Serving sales data from cache");
+      return rows;
+    })();
+
+    try {
+      return await salesS3Inflight;
+    } finally {
+      salesS3Inflight = null;
     }
-    return salesS3Cache.data;
   }
 
   async function getOriginacionesDiariasPorPais(pais: 'ARG' | 'COL', fechaDesde: string, fechaHasta: string): Promise<Record<string, number>> {
@@ -2346,14 +2361,22 @@ ${JSON.stringify(rawRows)}`;
       const arOriginaciones = valores.arOriginaciones as Record<string, number>;
       const coOriginaciones = valores.coOriginaciones as Record<string, number>;
 
-      flujoFinancieroCache = {
+      const resultado = {
         ar: { real: arReal, proy: arProy, proveedores: arProveedores, originaciones: arOriginaciones },
         co: { real: coReal, proy: coProy, proveedores: coProveedores, originaciones: coOriginaciones },
         errores,
         fetchedAt: Date.now(),
       };
+      // Un resultado degradado (con errores) se devuelve igual al caller, pero NO se
+      // persiste en la cache: si quedara cacheado por los 15 minutos completos, un
+      // usuario que arregla permisos de Sheets tendría que esperar hasta 15 min (o
+      // pegarle a /refresh a mano) para ver datos reales. Dejando flujoFinancieroCache
+      // sin tocar, el próximo request reintenta todas las fuentes desde cero.
+      if (errores.length === 0) {
+        flujoFinancieroCache = resultado;
+      }
       console.log(`[FlujoFinanciero] Fetched: AR real ${arReal.length}f/proy ${arProy.length}f, CO real ${coReal.length}f/proy ${coProy.length}f${errores.length ? `, ${errores.length} fuente(s) con error` : ''}`);
-      res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, errores: flujoFinancieroCache.errores, cached: false });
+      res.json({ ar: resultado.ar, co: resultado.co, errores: resultado.errores, cached: false });
     } catch (error: any) {
       console.error('[FlujoFinanciero] Error:', error);
       res.status(500).json({ error: 'Error al cargar datos de flujo financiero', details: error.message });

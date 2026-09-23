@@ -6,11 +6,25 @@ Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
   parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo,
-  weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell,
+  weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell, ANIO,
   type DiaFlujo, type DiaProyeccion, type ProveedorRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
 
 const MN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// Etiquetas amigables por fuente para el aviso de datos parciales — nunca se muestra
+// el `message` crudo del error (puede traer identificadores internos de la service
+// account de Google), solo esta etiqueta derivada de la clave `fuente`.
+const FUENTE_LABELS: Record<string, string> = {
+  arReal: 'Cashflow Argentina',
+  arProy: 'Proyecciones Argentina',
+  arProveedores: 'Proveedores Argentina',
+  coReal: 'Cashflow Colombia',
+  coProy: 'Proyecciones Colombia',
+  coProveedores: 'Proveedores Colombia',
+  arOriginaciones: 'Originaciones (S3) Argentina',
+  coOriginaciones: 'Originaciones (S3) Colombia',
+};
 
 const C = {
   bg: '#060d1c', bgCard: '#0c1528', bgCard2: '#111e35', border: '#1a2845', border2: '#243558',
@@ -32,6 +46,7 @@ export default function FlujoFinancieroSubmodule() {
   const [dataAr, setDataAr] = useState<PaisData | null>(null);
   const [dataCo, setDataCo] = useState<PaisData | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [errores, setErrores] = useState<{ fuente: string; message: string }[]>([]);
 
   const [pais, setPais] = useState<Pais>('AR');
   const [selMonth, setSelMonth] = useState(new Date().getMonth());
@@ -61,6 +76,7 @@ export default function FlujoFinancieroSubmodule() {
         proy: parseDailyProy(json.co.proy, ROWS_CO_PROY),
         proveedores: parseProveedoresCo(json.co.proveedores),
       });
+      setErrores(json.errores ?? []);
       setLastRefresh(new Date());
     } catch (e: any) {
       setError(e.message ?? 'Error al cargar datos');
@@ -73,8 +89,8 @@ export default function FlujoFinancieroSubmodule() {
 
   const activo = pais === 'AR' ? dataAr : dataCo;
 
-  const semanas: Semana[] = useMemo(() => weeksInMonth(2026, selMonth), [selMonth]);
-  const dias: string[] = useMemo(() => daysInMonth(2026, selMonth), [selMonth]);
+  const semanas: Semana[] = useMemo(() => weeksInMonth(ANIO, selMonth), [selMonth]);
+  const dias: string[] = useMemo(() => daysInMonth(ANIO, selMonth), [selMonth]);
 
   useEffect(() => { setSelWeekIdx(0); }, [selMonth]);
   useEffect(() => { if (dias.length > 0) setSelDay(d => dias.includes(d) ? d : dias[0]); }, [dias]);
@@ -103,7 +119,7 @@ export default function FlujoFinancieroSubmodule() {
   const ratiosPorMes = useMemo(() => {
     if (!activo) return [];
     return Array.from({ length: 12 }, (_, m) => {
-      const diasDelMes = daysInMonth(2026, m);
+      const diasDelMes = daysInMonth(ANIO, m);
       const k = getKpiPeriodo(activo.real, activo.proy, diasDelMes[0], diasDelMes[diasDelMes.length - 1]);
       return { mes: m, ratio: k.ratio };
     });
@@ -253,7 +269,17 @@ export default function FlujoFinancieroSubmodule() {
 
       {/* ── MAIN ── */}
       <div style={{ padding: '20px 24px', maxWidth: 1680, margin: '0 auto' }}>
-        {!activo || !kpiPeriodo || !kpiMes ? (
+        {errores.length > 0 && (
+          <div style={{ ...card, borderColor: 'rgba(252,211,77,.4)', background: 'rgba(252,211,77,.06)', padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <AlertCircle style={{ width: 18, height: 18, color: C.amberL, flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12, color: C.txt2, lineHeight: 1.5 }}>
+              <strong style={{ color: C.amberL }}>No se pudieron cargar:</strong>{' '}
+              {errores.map(e => FUENTE_LABELS[e.fuente] ?? e.fuente).join(', ')}
+              . Mostrando datos parciales.
+            </div>
+          </div>
+        )}
+        {!activo || !kpiPeriodo || !kpiMes || activo.real.length === 0 ? (
           <p style={{ color: C.txt2, fontSize: 13 }}>Sin datos para {pais === 'AR' ? 'Argentina' : 'Colombia'}.</p>
         ) : (
           <>
@@ -320,12 +346,18 @@ export default function FlujoFinancieroSubmodule() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
               {([
-                { lbl: 'Ventas', val: kpiMes.originaciones, proy: kpiMes.proy?.originaciones ?? null },
-                { lbl: 'Cobranzas', val: kpiMes.cobranzas, proy: kpiMes.proy?.cobranzas ?? null },
-                { lbl: 'Proveedores', val: kpiMes.proveedores, proy: kpiMes.proy?.proveedores ?? null },
-                { lbl: 'Impuestos', val: kpiMes.impuestos, proy: kpiMes.proy?.impuestos ?? null },
+                { lbl: 'Ventas', val: kpiMes.originaciones, proy: kpiMes.proy?.originaciones ?? null, isEgreso: false },
+                { lbl: 'Cobranzas', val: kpiMes.cobranzas, proy: kpiMes.proy?.cobranzas ?? null, isEgreso: false },
+                { lbl: 'Proveedores', val: kpiMes.proveedores, proy: kpiMes.proy?.proveedores ?? null, isEgreso: true },
+                { lbl: 'Impuestos', val: kpiMes.impuestos, proy: kpiMes.proy?.impuestos ?? null, isEgreso: true },
               ] as const).map(c => {
                 const pct = c.proy && c.proy > 0 ? (c.val / c.proy) * 100 : null;
+                // Superar el 100% es favorable para un ingreso (Ventas/Cobranzas: cobrar o
+                // vender de más es bueno) y desfavorable para un egreso (Proveedores/
+                // Impuestos: gastar de más es malo) — misma lógica que Fila 1's `bueno`.
+                const feo = pct !== null && c.isEgreso && pct > 100;
+                const bien = pct !== null && !c.isEgreso && pct > 100;
+                const pctColor = feo ? C.redL : bien ? C.greenL : C.txt2;
                 return (
                   <div key={c.lbl} style={{ ...card, padding: '16px 18px' }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>{c.lbl}</div>
@@ -334,7 +366,7 @@ export default function FlujoFinancieroSubmodule() {
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 4 }}>
                           <span>vs proyectado mes</span>
-                          <span style={{ fontWeight: 700, color: pct !== null && pct > 100 ? C.redL : C.txt2 }}>{pct !== null ? pct.toFixed(1) + '%' : '—'}</span>
+                          <span style={{ fontWeight: 700, color: pctColor }}>{pct !== null ? pct.toFixed(1) + '%' : '—'}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3 }}>
                           <span>Proyectado</span><span>{fmt(c.proy)}</span>

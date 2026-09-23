@@ -2,6 +2,8 @@
 
 export type Pais = 'AR' | 'CO';
 
+export const ANIO = 2026;
+
 export interface RowMap {
   fechas: number;
   saldoInicio?: number;
@@ -124,7 +126,7 @@ export function parseDailyReal(rows: string[][], map: RowMap, originacionesPorDi
   const out: DiaFlujo[] = [];
   for (let c = 1; c < dateRow.length; c++) {
     const date = parseSheetDate(dateRow[c]);
-    if (!date || date.getFullYear() !== 2026) continue;
+    if (!date || date.getFullYear() !== ANIO) continue;
     const dateStr = toDateStr(date);
     out.push({
       dateStr, month: date.getMonth(), day: date.getDate(),
@@ -142,7 +144,7 @@ export function parseDailyReal(rows: string[][], map: RowMap, originacionesPorDi
       tarjetas: get(map.tarjetas, c),
       totalIngFin: get(map.totalIngFin, c),
       totalEgrFin: get(map.totalEgrFin, c),
-      freeCashflowFin: get(map.freeCashflowFin, c),
+      freeCashflowFin: getSigned(map.freeCashflowFin, c),
       saldoFinal: getSigned(map.saldoFinal, c),
     });
   }
@@ -165,7 +167,7 @@ export function parseDailyProy(rows: string[][], map: RowMap): DiaProyeccion[] {
   const out: DiaProyeccion[] = [];
   for (let c = 1; c < dateRow.length; c++) {
     const date = parseSheetDate(dateRow[c]);
-    if (!date || date.getFullYear() !== 2026) continue;
+    if (!date || date.getFullYear() !== ANIO) continue;
     out.push({
       dateStr: toDateStr(date),
       cobranzas: get(map.cobranzas, c),
@@ -198,7 +200,12 @@ export function valorEnDia(dias: DiaFlujo[], campo: CampoReal, dateStr: string):
   // día disponible anterior o igual a la fecha buscada.
   const anteriores = dias.filter(x => x.dateStr <= dateStr).sort((a, b) => a.dateStr.localeCompare(b.dateStr));
   const ultimo = anteriores[anteriores.length - 1];
-  return ultimo ? (ultimo[campo] as number) : 0;
+  if (!ultimo) return 0;
+  // saldoInicio de un día sin columna propia no es el saldoInicio del último día
+  // disponible (eso predata toda la actividad de ese día) — el valor correcto es
+  // el saldoFinal (cierre) de ese último día, que es la apertura del día buscado.
+  const campoFallback: CampoReal = campo === 'saldoInicio' ? 'saldoFinal' : campo;
+  return ultimo[campoFallback] as number;
 }
 
 export interface KpiPeriodo {
@@ -288,7 +295,7 @@ export function rcT(ratio: number, pais: Pais): RatioEstado {
   return { cls: 'sem-green', alerta: false };
 }
 
-// ===== Proveedores and ventas parsers =====
+// ===== Proveedores parsers =====
 
 export interface ProveedorRow {
   sociedad: string; detalle: string; mes: string; diaPago: string;
