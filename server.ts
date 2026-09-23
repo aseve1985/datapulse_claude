@@ -841,41 +841,60 @@ async function startServer() {
   let salesS3Cache: { data: any[]; fetchedAt: number } | null = null;
   const SALES_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
 
+  async function getSalesS3Records(): Promise<any[]> {
+    const now = Date.now();
+    if (!salesS3Cache || now - salesS3Cache.fetchedAt > SALES_CACHE_TTL_MS) {
+      console.log("[S3] Downloading ventas_platinum.parquet...");
+      const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
+      const cmd = new GetObjectCommand({
+        Bucket: "data-lake-libgot-externos",
+        Key: "platinum_ia/ventas_multipais/ventas_platinum.parquet",
+      });
+      const response = await s3.send(cmd);
+      const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
+
+      const asyncBuffer = {
+        byteLength: bytes.byteLength,
+        slice: async (start: number, end?: number): Promise<ArrayBuffer> =>
+          bytes.buffer.slice(bytes.byteOffset + start, bytes.byteOffset + (end ?? bytes.byteLength)) as ArrayBuffer,
+      };
+
+      let rows: any[] = [];
+      await parquetRead({
+        file: asyncBuffer,
+        rowFormat: "object",
+        onComplete: (data: any[]) => { rows = data; },
+      });
+
+      salesS3Cache = { data: rows, fetchedAt: now };
+      console.log(`[S3] Cached ${rows.length} records from parquet`);
+    } else {
+      console.log("[S3] Serving sales data from cache");
+    }
+    return salesS3Cache.data;
+  }
+
+  async function getOriginacionesDiariasPorPais(pais: 'ARG' | 'COL', fechaDesde: string, fechaHasta: string): Promise<Record<string, number>> {
+    const records = await getSalesS3Records();
+    const from = new Date(fechaDesde);
+    const to = new Date(fechaHasta + 'T23:59:59');
+    const out: Record<string, number> = {};
+    for (const r of records) {
+      if (r.pais !== pais) continue;
+      const raw = r.fecha_desembolso;
+      if (!raw) continue;
+      const d = new Date(raw);
+      if (d < from || d > to) continue;
+      const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      out[dateStr] = (out[dateStr] ?? 0) + (Number(r.capital_desembolsado) || 0);
+    }
+    return out;
+  }
+
   app.get("/api/sales-s3", async (req, res) => {
     const { fecha_desde, fecha_hasta } = req.query;
-
     try {
-      const now = Date.now();
-      if (!salesS3Cache || now - salesS3Cache.fetchedAt > SALES_CACHE_TTL_MS) {
-        console.log("[S3] Downloading ventas_platinum.parquet...");
-        const s3 = new S3Client({ region: process.env.AWS_REGION || "us-east-1" });
-        const cmd = new GetObjectCommand({
-          Bucket: "data-lake-libgot-externos",
-          Key: "platinum_ia/ventas_multipais/ventas_platinum.parquet",
-        });
-        const response = await s3.send(cmd);
-        const bytes = await (response.Body as any).transformToByteArray() as Uint8Array;
-
-        const asyncBuffer = {
-          byteLength: bytes.byteLength,
-          slice: async (start: number, end?: number): Promise<ArrayBuffer> =>
-            bytes.buffer.slice(bytes.byteOffset + start, bytes.byteOffset + (end ?? bytes.byteLength)) as ArrayBuffer,
-        };
-
-        let rows: any[] = [];
-        await parquetRead({
-          file: asyncBuffer,
-          rowFormat: "object",
-          onComplete: (data: any[]) => { rows = data; },
-        });
-
-        salesS3Cache = { data: rows, fetchedAt: now };
-        console.log(`[S3] Cached ${rows.length} records from parquet`);
-      } else {
-        console.log("[S3] Serving sales data from cache");
-      }
-
-      let data = salesS3Cache.data;
+      let data = await getSalesS3Records();
 
       if (fecha_desde || fecha_hasta) {
         const from = fecha_desde ? new Date(String(fecha_desde)) : null;
