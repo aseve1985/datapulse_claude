@@ -244,9 +244,130 @@ export default function FlujoFinancieroSubmodule() {
                 );
               })()}
             </div>
+
+            {/* Fila 2: resumen del mes calendario completo */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>
+                Resumen - {MN[selMonth]} 2026
+              </span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
+              {/* Ventas: excepción — compara contra objetivo, no contra proyección de cashflow */}
+              <div style={{ ...card, padding: '16px 18px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>Ventas</div>
+                <div style={{ fontSize: 22, fontWeight: 800, ...mono, marginBottom: 6 }}>{fmt(kpiMes.originaciones)}</div>
+                <div style={{ fontSize: 11, color: C.txt3, marginBottom: 10 }}>{fmtLocal(kpiMes.originaciones, pais)}</div>
+                {ventasMes ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 6 }}>
+                      <span>Obj. ventas</span><span>{fmtLocal(ventasMes.monto, pais)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800 }}>{ventasMes.nuevos.toLocaleString('es-AR')}</div>
+                        <div style={{ fontSize: 9, color: C.txt3, textTransform: 'uppercase' }}>Nuevos</div>
+                      </div>
+                      <div style={{ textAlign: 'center', flex: 1 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800 }}>{ventasMes.renovadores.toLocaleString('es-AR')}</div>
+                        <div style={{ fontSize: 9, color: C.txt3, textTransform: 'uppercase' }}>Renovadores</div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 10.5, color: C.amberL, fontStyle: 'italic' }}>Sin objetivo para este período</div>
+                )}
+              </div>
+
+              {([
+                { lbl: 'Cobranzas', val: kpiMes.cobranzas, proy: kpiMes.proy?.cobranzas ?? null },
+                { lbl: 'Proveedores', val: kpiMes.proveedores, proy: kpiMes.proy?.proveedores ?? null },
+                { lbl: 'Impuestos', val: kpiMes.impuestos, proy: kpiMes.proy?.impuestos ?? null },
+              ] as const).map(c => {
+                const pct = c.proy && c.proy > 0 ? (c.val / c.proy) * 100 : null;
+                return (
+                  <div key={c.lbl} style={{ ...card, padding: '16px 18px' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>{c.lbl}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, ...mono, marginBottom: 8 }}>{fmt(c.val)}</div>
+                    {c.proy !== null && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 4 }}>
+                          <span>vs proyectado mes</span>
+                          <span style={{ fontWeight: 700, color: pct !== null && pct > 100 ? C.redL : C.txt2 }}>{pct !== null ? pct.toFixed(1) + '%' : '—'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3 }}>
+                          <span>Proyectado</span><span>{fmt(c.proy)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+
+              {(() => {
+                const ratioEstado = rcT(kpiMes.ratio, pais);
+                const color = ratioEstado.cls === 'sem-red' ? C.redL : ratioEstado.cls === 'sem-yellow' ? C.amberL : C.greenL;
+                return (
+                  <div style={{ ...card, padding: '16px 18px', borderColor: ratioEstado.alerta ? 'rgba(244,63,94,.4)' : C.border }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>Ratio Orig/Cob</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, ...mono, color, marginBottom: 8 }}>{kpiMes.ratio.toFixed(1)}%</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 4 }}>
+                      <span>Período seleccionado</span><span>{kpiPeriodo.ratio.toFixed(1)}%</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3 }}>
+                      <span>Objetivo</span><span>&lt; {pais === 'AR' ? '62' : '67'}%</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Otros rubros del mes */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>Otros Rubros · {MN[selMonth]} 2026</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+            <OtrosRubros pais={pais} real={activo.real} start={rangoMes.start} end={rangoMes.end} card={card} mono={mono} />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function OtrosRubros({ pais, real, start, end, card, mono }: {
+  pais: Pais; real: DiaFlujo[]; start: string; end: string; card: CSSProperties; mono: CSSProperties;
+}) {
+  const sum = (campo: keyof Omit<DiaFlujo, 'dateStr' | 'month' | 'day'>) =>
+    real.filter(d => d.dateStr >= start && d.dateStr <= end).reduce((s, d) => s + (d[campo] as number), 0);
+
+  const filas = pais === 'AR'
+    ? [
+        { lbl: 'Sueldos', val: sum('sueldos') },
+        { lbl: 'Gastos Bancarios', val: sum('gastosBanc') },
+        { lbl: 'Caución', val: sum('caucion') },
+        { lbl: 'Recupero Colombia', val: sum('recuperoColombia') },
+        { lbl: 'Préstamos', val: sum('prestamos') },
+        { lbl: 'Devolución Caución', val: sum('devCaucion') },
+      ]
+    : [
+        { lbl: 'Sueldos', val: sum('sueldos') },
+        { lbl: 'Gastos Bancarios', val: sum('gastosBanc') },
+        { lbl: 'Tarjetas de Crédito', val: sum('tarjetas') },
+        { lbl: 'Total Ingresos Financieros', val: sum('totalIngFin') },
+        { lbl: 'Total Egresos Financieros', val: sum('totalEgrFin') },
+        { lbl: 'Free Cashflow Financiero', val: sum('freeCashflowFin') },
+      ];
+
+  return (
+    <div style={{ ...card, padding: 0, marginBottom: 12 }}>
+      {filas.map((f, i) => (
+        <div key={f.lbl} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 18px', borderBottom: i < filas.length - 1 ? `1px solid ${C.border}` : 'none' }}>
+          <span style={{ fontSize: 12, color: C.txt2 }}>{f.lbl}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, ...mono, color: f.val < 0 ? C.redL : C.txt }}>{fmt(f.val)}</span>
+        </div>
+      ))}
     </div>
   );
 }
