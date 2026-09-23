@@ -2286,6 +2286,62 @@ ${JSON.stringify(rawRows)}`;
     res.json({ ok: true });
   });
 
+  // ── Flujo Financiero ────────────────────────────────────────────────────────
+  const CASHFLOW_AR_ID = '1FPFod-4AEAZ6L7Qn622PyrDhXG-mROkQdbzadZUq2sM';
+  const CASHFLOW_CO_ID = '1h979gF1KFAnuJbLd4Bz1OFTaJvTj8sLS6kQRcbj92c0';
+  const PROVEEDORES_AR_ID = '1yBWR2FRISRXPxGx2mvWeL_9Jt6MCOpeFJzeEemavAak';
+  const PROVEEDORES_CO_ID = '1d2iPVtFwFH2DippOHPyUnYR0H3o-cZ7E';
+  const OBJETIVOS_AR_ID = '1iMbRbXEHmT7eErcV5QdJhU5jIXke09Ugmun2tw0lZt4';
+  const OBJETIVOS_CO_ID = '1WT2gdVmWI5HzlvR3-01Iom55CYGChvCOlgEMLGR3Hjs';
+
+  let flujoFinancieroCache: {
+    ar: { real: string[][]; proy: string[][]; proveedores: string[][]; ventas: string[][]; originaciones: Record<string, number> };
+    co: { real: string[][]; proy: string[][]; proveedores: string[][]; ventas: string[][]; originaciones: Record<string, number> };
+    fetchedAt: number;
+  } | null = null;
+  const FLUJO_FINANCIERO_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
+
+  app.get('/api/flujo-financiero', async (_req, res) => {
+    try {
+      if (flujoFinancieroCache && Date.now() - flujoFinancieroCache.fetchedAt < FLUJO_FINANCIERO_CACHE_TTL_MS) {
+        return res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, cached: true });
+      }
+
+      const [
+        arReal, arProy, arProveedores, arVentas,
+        coReal, coProy, coProveedores, coVentas,
+        arOriginaciones, coOriginaciones,
+      ] = await Promise.all([
+        fetchRawSheetByGid(CASHFLOW_AR_ID, '473723070', 45),
+        fetchRawSheetByGid(CASHFLOW_AR_ID, '972031162', 20),
+        fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 1000),
+        fetchRawSheetByPartialName(OBJETIVOS_AR_ID, 'Objetivos diarios', 400),
+        fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50),
+        fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25),
+        fetchRawSheetByPartialName(PROVEEDORES_CO_ID, 'Liq. de pagos', 1000),
+        fetchRawSheetByPartialName(OBJETIVOS_CO_ID, 'Objetivos diarios', 400),
+        getOriginacionesDiariasPorPais('ARG', '2026-01-01', '2026-12-31'),
+        getOriginacionesDiariasPorPais('COL', '2026-01-01', '2026-12-31'),
+      ]);
+
+      flujoFinancieroCache = {
+        ar: { real: arReal, proy: arProy, proveedores: arProveedores, ventas: arVentas, originaciones: arOriginaciones },
+        co: { real: coReal, proy: coProy, proveedores: coProveedores, ventas: coVentas, originaciones: coOriginaciones },
+        fetchedAt: Date.now(),
+      };
+      console.log(`[FlujoFinanciero] Fetched: AR real ${arReal.length}f/proy ${arProy.length}f, CO real ${coReal.length}f/proy ${coProy.length}f`);
+      res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, cached: false });
+    } catch (error: any) {
+      console.error('[FlujoFinanciero] Error:', error);
+      res.status(500).json({ error: 'Error al cargar datos de flujo financiero', details: error.message });
+    }
+  });
+
+  app.get('/api/flujo-financiero/refresh', (_req, res) => {
+    flujoFinancieroCache = null;
+    res.json({ ok: true });
+  });
+
   // ── RI-BCRA Tasas ─────────────────────────────────────────────────────────────
   let riBcraTasasCache: { data: Record<string, unknown>[]; fetchedAt: number } | null = null;
   const RI_BCRA_TASAS_CACHE_TTL_MS = 10 * 60 * 60 * 1000; // 10 horas
