@@ -1,6 +1,8 @@
 // src/components/submodules/FlujoFinancieroSubmodule.tsx
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { RefreshCcw, Loader2, AlertCircle } from 'lucide-react';
+import { Chart, registerables } from 'chart.js';
+Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
   parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseVentasObjetivo,
@@ -101,6 +103,57 @@ export default function FlujoFinancieroSubmodule() {
     () => activo ? getVentasPeriodo(activo.ventas, rangoMes.start, rangoMes.end) : null,
     [activo, rangoMes]
   );
+
+  const ratiosPorMes = useMemo(() => {
+    if (!activo) return [];
+    return Array.from({ length: 12 }, (_, m) => {
+      const diasDelMes = daysInMonth(2026, m);
+      const k = getKpiPeriodo(activo.real, activo.proy, diasDelMes[0], diasDelMes[diasDelMes.length - 1]);
+      return { mes: m, ratio: k.ratio };
+    });
+  }, [activo]);
+
+  const chartRatioRef = useRef<HTMLCanvasElement>(null);
+  const chartRatioInst = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    chartRatioInst.current?.destroy();
+    if (!chartRatioRef.current || ratiosPorMes.length === 0) return;
+
+    const MS_CORTAS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const colorPorRatio = (r: number) => {
+      const est = rcT(r, pais);
+      return est.cls === 'sem-red' ? '#f43f5e' : est.cls === 'sem-yellow' ? '#f59e0b' : '#10b981';
+    };
+
+    chartRatioInst.current = new Chart(chartRatioRef.current, {
+      type: 'bar',
+      data: {
+        labels: MS_CORTAS,
+        datasets: [{
+          data: ratiosPorMes.map(r => r.ratio),
+          backgroundColor: ratiosPorMes.map(r => colorPorRatio(r.ratio)),
+          borderColor: ratiosPorMes.map((_, i) => i === selMonth ? '#fff' : 'transparent'),
+          borderWidth: ratiosPorMes.map((_, i) => i === selMonth ? 2 : 0),
+          borderRadius: 5,
+        } as any],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (c: any) => ` ${c.raw.toFixed(1)}%` } },
+        },
+        scales: {
+          x: { ticks: { color: C.txt3, font: { size: 10 } }, grid: { color: 'rgba(26,40,69,0.8)' } },
+          y: { ticks: { color: C.txt3, font: { size: 10 }, callback: (v: any) => `${v}%` }, grid: { color: 'rgba(26,40,69,0.8)' } },
+        },
+      },
+    });
+
+    return () => { chartRatioInst.current?.destroy(); };
+  }, [ratiosPorMes, selMonth, pais]);
 
   if (loading) return (
     <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', padding: '80px 0', background: C.bg }}>
@@ -329,6 +382,16 @@ export default function FlujoFinancieroSubmodule() {
               <div style={{ flex: 1, height: 1, background: C.border }} />
             </div>
             <OtrosRubros pais={pais} real={activo.real} start={rangoMes.start} end={rangoMes.end} card={card} mono={mono} />
+
+            <div style={{ ...card, padding: 16, marginBottom: 12 }}>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2 }}>Evolución del Ratio Orig/Cob</div>
+                <div style={{ fontSize: 10, color: C.txt3 }}>Mensual 2026 · {pais === 'AR' ? 'Argentina' : 'Colombia'}</div>
+              </div>
+              <div style={{ height: 195, position: 'relative' }}>
+                <canvas ref={chartRatioRef} />
+              </div>
+            </div>
           </>
         )}
       </div>
