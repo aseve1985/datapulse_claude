@@ -157,3 +157,176 @@ export function parseDailyProy(rows: string[][], map: RowMap): DiaProyeccion[] {
   }
   return out;
 }
+
+// ===== Range aggregation and KPI period builder =====
+
+type CampoReal = keyof Omit<DiaFlujo, 'dateStr' | 'month' | 'day'>;
+type CampoProy = keyof Omit<DiaProyeccion, 'dateStr'>;
+
+export function sumRangeReal(dias: DiaFlujo[], campo: CampoReal, start: string, end: string): number {
+  return dias.filter(d => d.dateStr >= start && d.dateStr <= end).reduce((s, d) => s + (d[campo] as number), 0);
+}
+
+export function sumRangeProy(dias: DiaProyeccion[], campo: CampoProy, start: string, end: string): number {
+  return dias.filter(d => d.dateStr >= start && d.dateStr <= end).reduce((s, d) => s + (d[campo] as number), 0);
+}
+
+export function valorEnDia(dias: DiaFlujo[], campo: CampoReal, dateStr: string): number {
+  const d = dias.find(x => x.dateStr === dateStr);
+  return d ? (d[campo] as number) : 0;
+}
+
+export interface KpiPeriodo {
+  saldoInicio: number;
+  cobranzas: number;
+  originaciones: number;
+  proveedores: number;
+  impuestos: number;
+  saldoFinal: number;
+  ratio: number;
+  proy: { cobranzas: number; originaciones: number; proveedores: number; impuestos: number; ratio: number } | null;
+}
+
+// Usada tanto para la Fila 1 (start=end=día, o el rango de la semana/mes elegido) como
+// para la Fila 2 (siempre start/end = primer/último día del mes calendario completo).
+export function getKpiPeriodo(diasReal: DiaFlujo[], diasProy: DiaProyeccion[], start: string, end: string): KpiPeriodo {
+  const cobranzas = sumRangeReal(diasReal, 'cobranzas', start, end);
+  const originaciones = sumRangeReal(diasReal, 'originaciones', start, end);
+  const proveedores = sumRangeReal(diasReal, 'proveedores', start, end);
+  const impuestos = sumRangeReal(diasReal, 'impuestos', start, end);
+  const saldoInicio = valorEnDia(diasReal, 'saldoInicio', start);
+  const saldoFinal = valorEnDia(diasReal, 'saldoFinal', end);
+  const ratio = cobranzas > 0 ? (originaciones / cobranzas) * 100 : 0;
+
+  const hayProy = diasProy.some(d => d.dateStr >= start && d.dateStr <= end);
+  const pCobranzas = sumRangeProy(diasProy, 'cobranzas', start, end);
+  const pOriginaciones = sumRangeProy(diasProy, 'originaciones', start, end);
+
+  return {
+    saldoInicio, cobranzas, originaciones, proveedores, impuestos, saldoFinal, ratio,
+    proy: hayProy ? {
+      cobranzas: pCobranzas,
+      originaciones: pOriginaciones,
+      proveedores: sumRangeProy(diasProy, 'proveedores', start, end),
+      impuestos: sumRangeProy(diasProy, 'impuestos', start, end),
+      ratio: pCobranzas > 0 ? (pOriginaciones / pCobranzas) * 100 : 0,
+    } : null,
+  };
+}
+
+// ===== Weeks/days, formatting, and semáforo =====
+
+const MS_CORTO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+export interface Semana { start: string; end: string; label: string; }
+
+export function weeksInMonth(year: number, month: number): Semana[] {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  const back = first.getDay() === 6 ? 0 : (first.getDay() + 1);
+  let ws = new Date(first); ws.setDate(ws.getDate() - back);
+  const out: Semana[] = [];
+  while (ws <= last) {
+    const we = new Date(ws); we.setDate(we.getDate() + 6);
+    const fd = (d: Date) => `${d.getDate()} ${MS_CORTO[d.getMonth()]}`;
+    out.push({ start: toDateStr(ws), end: toDateStr(we), label: `${fd(ws)} - ${fd(we)}` });
+    const n = new Date(ws); n.setDate(n.getDate() + 7); ws = n;
+  }
+  return out;
+}
+
+export function daysInMonth(year: number, month: number): string[] {
+  const count = new Date(year, month + 1, 0).getDate();
+  return Array.from({ length: count }, (_, i) => toDateStr(new Date(year, month, i + 1)));
+}
+
+export function fmt(n: number): string {
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return (abs / 1e9).toFixed(1) + 'B';
+  if (abs >= 1e6) return (abs / 1e6).toFixed(1) + 'M';
+  if (abs >= 1e3) return (abs / 1e3).toFixed(0) + 'K';
+  return abs.toFixed(0);
+}
+
+export function fmtLocal(v: number, pais: Pais): string {
+  const prefix = pais === 'AR' ? '$' : 'COP';
+  return `${prefix} ${Math.round(v).toLocaleString('es-AR')}`;
+}
+
+export interface RatioEstado { cls: 'sem-green' | 'sem-yellow' | 'sem-red'; alerta: boolean; }
+
+export function rcT(ratio: number, pais: Pais): RatioEstado {
+  const hi = pais === 'CO' ? 69 : 65;
+  const mid = pais === 'CO' ? 67 : 62;
+  if (ratio >= hi) return { cls: 'sem-red', alerta: true };
+  if (ratio >= mid) return { cls: 'sem-yellow', alerta: false };
+  return { cls: 'sem-green', alerta: false };
+}
+
+// ===== Proveedores and ventas parsers =====
+
+export interface ProveedorRow {
+  sociedad: string; detalle: string; mes: string; diaPago: string;
+  vencimiento: string; nombre: string; importe: number; aprobacion: string;
+}
+
+export function parseProveedoresAr(rows: string[][]): ProveedorRow[] {
+  const out: ProveedorRow[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[8]) continue; // sin nombre → descartar
+    const sociedad = (row[0] ?? '').trim();
+    if (sociedad === 'Social Plus S.A.') continue;
+    const aprobacion = (row[15] ?? '').trim();
+    if (aprobacion !== 'Si' && aprobacion !== 'pendiente') continue;
+    out.push({
+      sociedad, detalle: row[1] ?? '', mes: row[2] ?? '', diaPago: row[3] ?? '',
+      vencimiento: row[6] ?? '', nombre: row[8] ?? '', importe: parseSheetNum(row[9] ?? ''), aprobacion,
+    });
+  }
+  return out;
+}
+
+export function parseProveedoresCo(rows: string[][]): ProveedorRow[] {
+  const out: ProveedorRow[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[8]) continue;
+    const aprobacion = (row[14] ?? '').trim();
+    if (aprobacion === 'No') continue;
+    out.push({
+      sociedad: row[1] ?? '', detalle: row[2] ?? '', mes: row[3] ?? '', diaPago: row[4] ?? '',
+      vencimiento: row[7] ?? '', nombre: row[8] ?? '', importe: parseSheetNum(row[9] ?? ''), aprobacion,
+    });
+  }
+  return out;
+}
+
+export interface VentasObjetivoRow { dateStr: string; nuevos: number; renovadores: number; monto: number; }
+
+export function parseVentasObjetivo(rows: string[][]): VentasObjetivoRow[] {
+  const out: VentasObjetivoRow[] = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[0]) continue;
+    const date = parseSheetDate(row[0]);
+    if (!date) continue;
+    out.push({
+      dateStr: toDateStr(date),
+      nuevos: parseSheetNum(row[3] ?? ''),
+      renovadores: parseSheetNum(row[4] ?? ''),
+      monto: parseSheetNum(row[5] ?? ''),
+    });
+  }
+  return out;
+}
+
+export function getVentasPeriodo(ventas: VentasObjetivoRow[], start: string, end: string): { nuevos: number; renovadores: number; monto: number } | null {
+  const filtered = ventas.filter(v => v.dateStr >= start && v.dateStr <= end);
+  if (filtered.length === 0) return null;
+  return {
+    nuevos: Math.round(filtered.reduce((s, v) => s + v.nuevos, 0)),
+    renovadores: Math.round(filtered.reduce((s, v) => s + v.renovadores, 0)),
+    monto: filtered.reduce((s, v) => s + v.monto, 0),
+  };
+}
