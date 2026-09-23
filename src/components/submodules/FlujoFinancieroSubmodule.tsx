@@ -6,7 +6,7 @@ Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
   parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseVentasObjetivo,
-  weeksInMonth, daysInMonth, getKpiPeriodo, getVentasPeriodo, fmt, fmtLocal, rcT,
+  weeksInMonth, daysInMonth, getKpiPeriodo, getVentasPeriodo, fmt, fmtLocal, rcT, formatSheetCell,
   type DiaFlujo, type DiaProyeccion, type ProveedorRow, type VentasObjetivoRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
 
@@ -129,7 +129,7 @@ export default function FlujoFinancieroSubmodule() {
   }, [activo, provBusqueda, provSociedad, provAprobacion]);
 
   const sociedadesDisponibles = useMemo(
-    () => activo ? [...new Set(activo.proveedores.map(p => p.sociedad))].sort() : [],
+    () => activo ? [...new Set(activo.proveedores.map(p => p.sociedad).filter(s => s.trim() !== ''))].sort() : [],
     [activo]
   );
 
@@ -450,9 +450,9 @@ export default function FlujoFinancieroSubmodule() {
                     <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
                       <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.sociedad}</td>
                       <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.detalle}</td>
-                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.mes}</td>
-                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.diaPago}</td>
-                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.vencimiento}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{formatSheetCell(p.mes)}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{formatSheetCell(p.diaPago)}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{formatSheetCell(p.vencimiento)}</td>
                       <td style={{ padding: '7px 14px', color: C.txt }}>{p.nombre}</td>
                       <td style={{ padding: '7px 14px', ...mono, color: C.txt, fontWeight: 700 }}>{fmtLocal(p.importe, pais)}</td>
                       <td style={{ padding: '7px 14px' }}>

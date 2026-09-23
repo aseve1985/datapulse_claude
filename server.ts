@@ -2297,6 +2297,7 @@ ${JSON.stringify(rawRows)}`;
   let flujoFinancieroCache: {
     ar: { real: string[][]; proy: string[][]; proveedores: string[][]; ventas: string[][]; originaciones: Record<string, number> };
     co: { real: string[][]; proy: string[][]; proveedores: string[][]; ventas: string[][]; originaciones: Record<string, number> };
+    errores: { fuente: string; message: string }[];
     fetchedAt: number;
   } | null = null;
   const FLUJO_FINANCIERO_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
@@ -2304,33 +2305,61 @@ ${JSON.stringify(rawRows)}`;
   app.get('/api/flujo-financiero', async (_req, res) => {
     try {
       if (flujoFinancieroCache && Date.now() - flujoFinancieroCache.fetchedAt < FLUJO_FINANCIERO_CACHE_TTL_MS) {
-        return res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, cached: true });
+        return res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, errores: flujoFinancieroCache.errores, cached: true });
       }
 
-      const [
-        arReal, arProy, arProveedores, arVentas,
-        coReal, coProy, coProveedores, coVentas,
-        arOriginaciones, coOriginaciones,
-      ] = await Promise.all([
-        fetchRawSheetByGid(CASHFLOW_AR_ID, '473723070', 45),
-        fetchRawSheetByGid(CASHFLOW_AR_ID, '972031162', 20),
-        fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 1000),
-        fetchRawSheetByPartialName(OBJETIVOS_AR_ID, 'Objetivos diarios', 400),
-        fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50),
-        fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25),
-        fetchRawSheetByPartialName(PROVEEDORES_CO_ID, 'Liq. de pagos', 1000),
-        fetchRawSheetByPartialName(OBJETIVOS_CO_ID, 'Objetivos diarios', 400),
-        getOriginacionesDiariasPorPais('ARG', '2026-01-01', '2026-12-31'),
-        getOriginacionesDiariasPorPais('COL', '2026-01-01', '2026-12-31'),
-      ]);
+      // Cada fuente se resuelve de forma independiente: si una falla (permisos/formato
+      // del lado de Sheets), degrada a un fallback vacío en vez de tumbar el resto del
+      // dashboard (incluyendo el otro país). Ver docs/superpowers/specs/2026-09-10-flujo-financiero-design.md.
+      const fuentes: { label: string; fetcher: () => Promise<unknown> }[] = [
+        { label: 'arReal', fetcher: () => fetchRawSheetByGid(CASHFLOW_AR_ID, '473723070', 45) },
+        { label: 'arProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_AR_ID, '972031162', 20) },
+        { label: 'arProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 1000) },
+        { label: 'arVentas', fetcher: () => fetchRawSheetByPartialName(OBJETIVOS_AR_ID, 'Objetivos diarios', 400) },
+        { label: 'coReal', fetcher: () => fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50) },
+        { label: 'coProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25) },
+        { label: 'coProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_CO_ID, 'Liq. de pagos', 1000) },
+        { label: 'coVentas', fetcher: () => fetchRawSheetByPartialName(OBJETIVOS_CO_ID, 'Objetivos diarios', 400) },
+        { label: 'arOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('ARG', '2026-01-01', '2026-12-31') },
+        { label: 'coOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('COL', '2026-01-01', '2026-12-31') },
+      ];
+
+      const resultados = await Promise.allSettled(fuentes.map(f => f.fetcher()));
+
+      const errores: { fuente: string; message: string }[] = [];
+      const valores: Record<string, unknown> = {};
+      resultados.forEach((resultado, i) => {
+        const { label } = fuentes[i];
+        const esOriginaciones = label === 'arOriginaciones' || label === 'coOriginaciones';
+        if (resultado.status === 'fulfilled') {
+          valores[label] = resultado.value;
+        } else {
+          const message = resultado.reason instanceof Error ? resultado.reason.message : String(resultado.reason);
+          console.error(`[FlujoFinanciero] Fuente "${label}" falló:`, resultado.reason);
+          errores.push({ fuente: label, message });
+          valores[label] = esOriginaciones ? {} : [];
+        }
+      });
+
+      const arReal = valores.arReal as string[][];
+      const arProy = valores.arProy as string[][];
+      const arProveedores = valores.arProveedores as string[][];
+      const arVentas = valores.arVentas as string[][];
+      const coReal = valores.coReal as string[][];
+      const coProy = valores.coProy as string[][];
+      const coProveedores = valores.coProveedores as string[][];
+      const coVentas = valores.coVentas as string[][];
+      const arOriginaciones = valores.arOriginaciones as Record<string, number>;
+      const coOriginaciones = valores.coOriginaciones as Record<string, number>;
 
       flujoFinancieroCache = {
         ar: { real: arReal, proy: arProy, proveedores: arProveedores, ventas: arVentas, originaciones: arOriginaciones },
         co: { real: coReal, proy: coProy, proveedores: coProveedores, ventas: coVentas, originaciones: coOriginaciones },
+        errores,
         fetchedAt: Date.now(),
       };
-      console.log(`[FlujoFinanciero] Fetched: AR real ${arReal.length}f/proy ${arProy.length}f, CO real ${coReal.length}f/proy ${coProy.length}f`);
-      res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, cached: false });
+      console.log(`[FlujoFinanciero] Fetched: AR real ${arReal.length}f/proy ${arProy.length}f, CO real ${coReal.length}f/proy ${coProy.length}f${errores.length ? `, ${errores.length} fuente(s) con error` : ''}`);
+      res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, errores: flujoFinancieroCache.errores, cached: false });
     } catch (error: any) {
       console.error('[FlujoFinanciero] Error:', error);
       res.status(500).json({ error: 'Error al cargar datos de flujo financiero', details: error.message });

@@ -59,8 +59,27 @@ export function parseSheetDate(val: string): Date | null {
     const parts = val.split('-');
     return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
   }
+  // Un string puramente numérico que no cayó en el rango de serial de Sheets no es una
+  // fecha (p.ej. un día de mes suelto como "5" o "31") — el fallback genérico new Date()
+  // de abajo lo interpretaría de forma ambigua/incorrecta (new Date("5") → 01/05/2001),
+  // así que se descarta antes de llegar ahí.
+  if (!isNaN(num) && val.trim() !== '') return null;
   const d = new Date(val);
   return isNaN(d.getTime()) ? null : d;
+}
+
+// Las celdas de fecha vienen de Sheets como serial numérico crudo (valueRenderOption:
+// 'UNFORMATTED_VALUE'), p.ej. "46023" en vez de una fecha legible. Reusa la detección
+// de serial que ya tiene parseSheetDate (num > 40000 && num < 55000) para no duplicarla;
+// valores no-fecha (texto, o números chicos como día del mes) se devuelven sin tocar.
+export function formatSheetCell(val: string): string {
+  const fecha = parseSheetDate(val);
+  if (fecha && !isNaN(fecha.getTime())) {
+    const dd = String(fecha.getDate()).padStart(2, '0');
+    const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}`;
+  }
+  return val;
 }
 
 export function parseSheetNum(val: string): number {
