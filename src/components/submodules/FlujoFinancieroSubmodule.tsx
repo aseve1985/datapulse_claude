@@ -40,6 +40,10 @@ export default function FlujoFinancieroSubmodule() {
   const [selWeekIdx, setSelWeekIdx] = useState(0);
   const [selDay, setSelDay] = useState<string>('');
 
+  const [provBusqueda, setProvBusqueda] = useState('');
+  const [provSociedad, setProvSociedad] = useState('');
+  const [provAprobacion, setProvAprobacion] = useState('');
+
   const fetchData = useCallback(async (force = false) => {
     setLoading(true); setError(null);
     try {
@@ -112,6 +116,22 @@ export default function FlujoFinancieroSubmodule() {
       return { mes: m, ratio: k.ratio };
     });
   }, [activo]);
+
+  const proveedoresFiltrados = useMemo(() => {
+    if (!activo) return [];
+    const q = provBusqueda.trim().toLowerCase();
+    return activo.proveedores.filter(p => {
+      if (q && !p.nombre.toLowerCase().includes(q) && !p.detalle.toLowerCase().includes(q)) return false;
+      if (provSociedad && p.sociedad !== provSociedad) return false;
+      if (provAprobacion && p.aprobacion !== provAprobacion) return false;
+      return true;
+    });
+  }, [activo, provBusqueda, provSociedad, provAprobacion]);
+
+  const sociedadesDisponibles = useMemo(
+    () => activo ? [...new Set(activo.proveedores.map(p => p.sociedad))].sort() : [],
+    [activo]
+  );
 
   const chartRatioRef = useRef<HTMLCanvasElement>(null);
   const chartRatioInst = useRef<Chart | null>(null);
@@ -391,6 +411,62 @@ export default function FlujoFinancieroSubmodule() {
               <div style={{ height: 195, position: 'relative' }}>
                 <canvas ref={chartRatioRef} />
               </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>Proveedores</span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <span style={{ fontSize: 11, color: C.txt3 }}>{proveedoresFiltrados.length} de {activo.proveedores.length}</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+              <input
+                type="text" placeholder="Buscar por nombre o detalle..." value={provBusqueda}
+                onChange={e => setProvBusqueda(e.target.value)}
+                style={{ flex: '1 1 220px', background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}
+              />
+              <select value={provSociedad} onChange={e => setProvSociedad(e.target.value)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
+                <option value="">Todas las sociedades</option>
+                {sociedadesDisponibles.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={provAprobacion} onChange={e => setProvAprobacion(e.target.value)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
+                <option value="">Todos los estados</option>
+                <option value="Si">Pagado</option>
+                <option value="pendiente">Pendiente</option>
+              </select>
+            </div>
+
+            <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 32 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: C.bgCard2 }}>
+                    {['Sociedad', 'Detalle', 'Mes', 'Día pago', 'Vencimiento', 'Nombre', 'Importe', 'Estado'].map(h => (
+                      <th key={h} style={{ padding: '8px 14px', textAlign: 'left', color: C.txt3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {proveedoresFiltrados.map((p, i) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.sociedad}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.detalle}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.mes}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.diaPago}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt2 }}>{p.vencimiento}</td>
+                      <td style={{ padding: '7px 14px', color: C.txt }}>{p.nombre}</td>
+                      <td style={{ padding: '7px 14px', ...mono, color: C.txt, fontWeight: 700 }}>{fmtLocal(p.importe, pais)}</td>
+                      <td style={{ padding: '7px 14px' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, color: p.aprobacion === 'Si' ? C.greenL : C.amberL, background: p.aprobacion === 'Si' ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)' }}>
+                          {p.aprobacion === 'Si' ? 'Pagado' : 'Pendiente'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {proveedoresFiltrados.length === 0 && (
+                    <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: C.txt3 }}>Sin resultados para estos filtros.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </>
         )}
