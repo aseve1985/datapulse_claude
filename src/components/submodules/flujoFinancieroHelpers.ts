@@ -326,32 +326,3 @@ export function parseProveedoresCo(rows: string[][]): ProveedorRow[] {
   }
   return out;
 }
-
-export interface VentasObjetivoRow { dateStr: string; nuevos: number; renovadores: number; monto: number; }
-
-export function parseVentasObjetivo(rows: string[][]): VentasObjetivoRow[] {
-  const out: VentasObjetivoRow[] = [];
-  for (let r = 1; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row || !row[0]) continue;
-    const date = parseSheetDate(row[0]);
-    if (!date) continue;
-    out.push({
-      dateStr: toDateStr(date),
-      nuevos: parseSheetNum(row[3] ?? ''),
-      renovadores: parseSheetNum(row[4] ?? ''),
-      monto: parseSheetNum(row[5] ?? ''),
-    });
-  }
-  return out;
-}
-
-export function getVentasPeriodo(ventas: VentasObjetivoRow[], start: string, end: string): { nuevos: number; renovadores: number; monto: number } | null {
-  const filtered = ventas.filter(v => v.dateStr >= start && v.dateStr <= end);
-  if (filtered.length === 0) return null;
-  return {
-    nuevos: Math.round(filtered.reduce((s, v) => s + v.nuevos, 0)),
-    renovadores: Math.round(filtered.reduce((s, v) => s + v.renovadores, 0)),
-    monto: filtered.reduce((s, v) => s + v.monto, 0),
-  };
-}

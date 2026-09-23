@@ -2291,12 +2291,10 @@ ${JSON.stringify(rawRows)}`;
   const CASHFLOW_CO_ID = '1h979gF1KFAnuJbLd4Bz1OFTaJvTj8sLS6kQRcbj92c0';
   const PROVEEDORES_AR_ID = '1yBWR2FRISRXPxGx2mvWeL_9Jt6MCOpeFJzeEemavAak';
   const PROVEEDORES_CO_ID = '1d2iPVtFwFH2DippOHPyUnYR0H3o-cZ7E';
-  const OBJETIVOS_AR_ID = '1iMbRbXEHmT7eErcV5QdJhU5jIXke09Ugmun2tw0lZt4';
-  const OBJETIVOS_CO_ID = '1WT2gdVmWI5HzlvR3-01Iom55CYGChvCOlgEMLGR3Hjs';
 
   let flujoFinancieroCache: {
-    ar: { real: string[][]; proy: string[][]; proveedores: string[][]; ventas: string[][]; originaciones: Record<string, number> };
-    co: { real: string[][]; proy: string[][]; proveedores: string[][]; ventas: string[][]; originaciones: Record<string, number> };
+    ar: { real: string[][]; proy: string[][]; proveedores: string[][]; originaciones: Record<string, number> };
+    co: { real: string[][]; proy: string[][]; proveedores: string[][]; originaciones: Record<string, number> };
     errores: { fuente: string; message: string }[];
     fetchedAt: number;
   } | null = null;
@@ -2315,11 +2313,9 @@ ${JSON.stringify(rawRows)}`;
         { label: 'arReal', fetcher: () => fetchRawSheetByGid(CASHFLOW_AR_ID, '473723070', 45) },
         { label: 'arProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_AR_ID, '972031162', 20) },
         { label: 'arProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 1000) },
-        { label: 'arVentas', fetcher: () => fetchRawSheetByPartialName(OBJETIVOS_AR_ID, 'Objetivos diarios', 400) },
         { label: 'coReal', fetcher: () => fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50) },
         { label: 'coProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25) },
         { label: 'coProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_CO_ID, 'Liq. de pagos', 1000) },
-        { label: 'coVentas', fetcher: () => fetchRawSheetByPartialName(OBJETIVOS_CO_ID, 'Objetivos diarios', 400) },
         { label: 'arOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('ARG', '2026-01-01', '2026-12-31') },
         { label: 'coOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('COL', '2026-01-01', '2026-12-31') },
       ];
@@ -2344,17 +2340,15 @@ ${JSON.stringify(rawRows)}`;
       const arReal = valores.arReal as string[][];
       const arProy = valores.arProy as string[][];
       const arProveedores = valores.arProveedores as string[][];
-      const arVentas = valores.arVentas as string[][];
       const coReal = valores.coReal as string[][];
       const coProy = valores.coProy as string[][];
       const coProveedores = valores.coProveedores as string[][];
-      const coVentas = valores.coVentas as string[][];
       const arOriginaciones = valores.arOriginaciones as Record<string, number>;
       const coOriginaciones = valores.coOriginaciones as Record<string, number>;
 
       flujoFinancieroCache = {
-        ar: { real: arReal, proy: arProy, proveedores: arProveedores, ventas: arVentas, originaciones: arOriginaciones },
-        co: { real: coReal, proy: coProy, proveedores: coProveedores, ventas: coVentas, originaciones: coOriginaciones },
+        ar: { real: arReal, proy: arProy, proveedores: arProveedores, originaciones: arOriginaciones },
+        co: { real: coReal, proy: coProy, proveedores: coProveedores, originaciones: coOriginaciones },
         errores,
         fetchedAt: Date.now(),
       };

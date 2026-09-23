@@ -5,9 +5,9 @@ import { Chart, registerables } from 'chart.js';
 Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
-  parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseVentasObjetivo,
-  weeksInMonth, daysInMonth, getKpiPeriodo, getVentasPeriodo, fmt, fmtLocal, rcT, formatSheetCell,
-  type DiaFlujo, type DiaProyeccion, type ProveedorRow, type VentasObjetivoRow, type Pais, type Semana,
+  parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo,
+  weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell,
+  type DiaFlujo, type DiaProyeccion, type ProveedorRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
 
 const MN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -24,7 +24,6 @@ interface PaisData {
   real: DiaFlujo[];
   proy: DiaProyeccion[];
   proveedores: ProveedorRow[];
-  ventas: VentasObjetivoRow[];
 }
 
 export default function FlujoFinancieroSubmodule() {
@@ -56,13 +55,11 @@ export default function FlujoFinancieroSubmodule() {
         real: parseDailyReal(json.ar.real, ROWS_AR_REAL, json.ar.originaciones),
         proy: parseDailyProy(json.ar.proy, ROWS_AR_PROY),
         proveedores: parseProveedoresAr(json.ar.proveedores),
-        ventas: parseVentasObjetivo(json.ar.ventas),
       });
       setDataCo({
         real: parseDailyReal(json.co.real, ROWS_CO_REAL, json.co.originaciones),
         proy: parseDailyProy(json.co.proy, ROWS_CO_PROY),
         proveedores: parseProveedoresCo(json.co.proveedores),
-        ventas: parseVentasObjetivo(json.co.ventas),
       });
       setLastRefresh(new Date());
     } catch (e: any) {
@@ -103,11 +100,6 @@ export default function FlujoFinancieroSubmodule() {
     () => activo ? getKpiPeriodo(activo.real, activo.proy, rangoMes.start, rangoMes.end) : null,
     [activo, rangoMes]
   );
-  const ventasMes = useMemo(
-    () => activo ? getVentasPeriodo(activo.ventas, rangoMes.start, rangoMes.end) : null,
-    [activo, rangoMes]
-  );
-
   const ratiosPorMes = useMemo(() => {
     if (!activo) return [];
     return Array.from({ length: 12 }, (_, m) => {
@@ -327,33 +319,8 @@ export default function FlujoFinancieroSubmodule() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
-              {/* Ventas: excepción — compara contra objetivo, no contra proyección de cashflow */}
-              <div style={{ ...card, padding: '16px 18px' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>Ventas</div>
-                <div style={{ fontSize: 22, fontWeight: 800, ...mono, marginBottom: 6 }}>{fmt(kpiMes.originaciones)}</div>
-                <div style={{ fontSize: 11, color: C.txt3, marginBottom: 10 }}>{fmtLocal(kpiMes.originaciones, pais)}</div>
-                {ventasMes ? (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 6 }}>
-                      <span>Obj. ventas</span><span>{fmtLocal(ventasMes.monto, pais)}</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 16, fontWeight: 800 }}>{ventasMes.nuevos.toLocaleString('es-AR')}</div>
-                        <div style={{ fontSize: 9, color: C.txt3, textTransform: 'uppercase' }}>Nuevos</div>
-                      </div>
-                      <div style={{ textAlign: 'center', flex: 1 }}>
-                        <div style={{ fontSize: 16, fontWeight: 800 }}>{ventasMes.renovadores.toLocaleString('es-AR')}</div>
-                        <div style={{ fontSize: 9, color: C.txt3, textTransform: 'uppercase' }}>Renovadores</div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 10.5, color: C.amberL, fontStyle: 'italic' }}>Sin objetivo para este período</div>
-                )}
-              </div>
-
               {([
+                { lbl: 'Ventas', val: kpiMes.originaciones, proy: kpiMes.proy?.originaciones ?? null },
                 { lbl: 'Cobranzas', val: kpiMes.cobranzas, proy: kpiMes.proy?.cobranzas ?? null },
                 { lbl: 'Proveedores', val: kpiMes.proveedores, proy: kpiMes.proy?.proveedores ?? null },
                 { lbl: 'Impuestos', val: kpiMes.impuestos, proy: kpiMes.proy?.impuestos ?? null },
