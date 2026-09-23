@@ -186,16 +186,65 @@ export default function FlujoFinancieroSubmodule() {
         )}
       </div>
 
-      {/* ── MAIN (continúa en Tasks 6-9) ── */}
+      {/* ── MAIN ── */}
       <div style={{ padding: '20px 24px', maxWidth: 1680, margin: '0 auto' }}>
         {!activo || !kpiPeriodo || !kpiMes ? (
           <p style={{ color: C.txt2, fontSize: 13 }}>Sin datos para {pais === 'AR' ? 'Argentina' : 'Colombia'}.</p>
         ) : (
-          <p style={{ color: C.txt3, fontSize: 11 }}>
-            Período: {rangoPeriodo.start} a {rangoPeriodo.end} · Cobranzas del período: {fmtLocal(kpiPeriodo.cobranzas, pais)} ·
-            Mes completo: {fmtLocal(kpiMes.cobranzas, pais)}
-            {ventasMes ? ` · Objetivo ventas mes: ${fmtLocal(ventasMes.monto, pais)}` : ''}
-          </p>
+          <>
+            {/* Fila 1: posición del período elegido */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 14px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>
+                {vista === 'dia' ? 'Posición del Día' : vista === 'semana' ? 'Posición de la Semana' : 'Totales del Mes'}
+              </span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
+              {([
+                { lbl: 'Saldo Inicio', val: kpiPeriodo.saldoInicio, proy: null, isEgreso: false },
+                { lbl: 'Cobranzas', val: kpiPeriodo.cobranzas, proy: kpiPeriodo.proy?.cobranzas ?? null, isEgreso: false },
+                { lbl: 'Originaciones', val: -kpiPeriodo.originaciones, proy: kpiPeriodo.proy?.originaciones ?? null, isEgreso: true },
+                { lbl: 'Proveedores', val: -kpiPeriodo.proveedores, proy: kpiPeriodo.proy?.proveedores ?? null, isEgreso: true },
+                { lbl: 'Impuestos', val: -kpiPeriodo.impuestos, proy: kpiPeriodo.proy?.impuestos ?? null, isEgreso: true },
+                { lbl: 'Saldo Final', val: kpiPeriodo.saldoFinal, proy: null, isEgreso: false },
+              ] as const).map(c => {
+                const proyVal = c.proy === null ? null : (c.isEgreso ? -c.proy : c.proy);
+                const delta = proyVal === null ? null : Math.abs(c.val) - Math.abs(proyVal);
+                const bueno = delta === null ? null : (c.isEgreso ? delta < 0 : delta > 0);
+                return (
+                  <div key={c.lbl} style={{ ...card, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: C.txt2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 9 }}>{c.lbl}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -1, lineHeight: 1, marginBottom: 5, ...mono, color: c.val < 0 ? C.redL : C.txt }}>{fmt(c.val)}</div>
+                    <div style={{ fontSize: 11, color: C.txt3 }}>{fmtLocal(c.val, pais)}</div>
+                    {proyVal !== null && Math.abs(delta ?? 0) >= 1 && (
+                      <>
+                        <div style={{ fontSize: 10, color: C.txt3, fontStyle: 'italic', marginTop: 6 }}>Proy: <strong style={{ color: C.txt2 }}>{fmt(proyVal)}</strong></div>
+                        <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: bueno ? C.greenL : C.redL }}>
+                          {(delta ?? 0) > 0 ? '+' : ''}{fmt(delta ?? 0)} vs proy
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+              {(() => {
+                const ratioEstado = rcT(kpiPeriodo.ratio, pais);
+                const color = ratioEstado.cls === 'sem-red' ? C.redL : ratioEstado.cls === 'sem-yellow' ? C.amberL : C.greenL;
+                return (
+                  <div style={{ ...card, padding: '14px 16px', borderColor: ratioEstado.alerta ? 'rgba(244,63,94,.4)' : C.border }}>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, color: C.txt2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 9 }}>Ratio Orig/Cob</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, ...mono, color }}>{kpiPeriodo.ratio.toFixed(1)}%</div>
+                    <div style={{ fontSize: 10, color: C.txt3, marginTop: 4 }}>Orig {fmt(kpiPeriodo.originaciones)} / Cob {fmt(kpiPeriodo.cobranzas)}</div>
+                    {kpiPeriodo.proy && (
+                      <div style={{ fontSize: 10, color: C.txt3, fontStyle: 'italic', marginTop: 6 }}>Proy: <strong style={{ color: C.txt2 }}>{kpiPeriodo.proy.ratio.toFixed(1)}%</strong></div>
+                    )}
+                    {ratioEstado.alerta && <div style={{ marginTop: 6, fontSize: 9, fontWeight: 700, color: C.redL }}>ALERTA</div>}
+                  </div>
+                );
+              })()}
+            </div>
+          </>
         )}
       </div>
     </div>
