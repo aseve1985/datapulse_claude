@@ -212,6 +212,12 @@ const modules = [
         title: 'Tesorería',
         description: 'Flujo de caja diario y mensual. Saldos, cobranzas y egresos operativos.',
         color: 'bg-slate-800'
+      },
+      {
+        id: 'flujo-financiero',
+        title: 'Flujo Financiero',
+        description: 'Cashflow diario/mensual, proveedores y ratio originación/cobranza — Argentina y Colombia.',
+        color: 'bg-slate-800'
       }
     ]
   },
