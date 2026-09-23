@@ -2305,7 +2305,7 @@ ${JSON.stringify(rawRows)}`;
   const CASHFLOW_AR_ID = '1FPFod-4AEAZ6L7Qn622PyrDhXG-mROkQdbzadZUq2sM';
   const CASHFLOW_CO_ID = '1h979gF1KFAnuJbLd4Bz1OFTaJvTj8sLS6kQRcbj92c0';
   const PROVEEDORES_AR_ID = '1yBWR2FRISRXPxGx2mvWeL_9Jt6MCOpeFJzeEemavAak';
-  const PROVEEDORES_CO_ID = '1d2iPVtFwFH2DippOHPyUnYR0H3o-cZ7E';
+  const PROVEEDORES_CO_ID = '1HdPAGuNC9r3H3DNDVJ0N-j_Az4oEuapVajYKxOjFVyQ';
 
   let flujoFinancieroCache: {
     ar: { real: string[][]; proy: string[][]; proveedores: string[][]; originaciones: Record<string, number> };
@@ -2330,7 +2330,7 @@ ${JSON.stringify(rawRows)}`;
         { label: 'arProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 1000) },
         { label: 'coReal', fetcher: () => fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50) },
         { label: 'coProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25) },
-        { label: 'coProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_CO_ID, 'Liq. de pagos', 1000) },
+        { label: 'coProveedores', fetcher: () => fetchRawSheetByGid(PROVEEDORES_CO_ID, '1769437501', 1000) },
         { label: 'arOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('ARG', '2026-01-01', '2026-12-31') },
         { label: 'coOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('COL', '2026-01-01', '2026-12-31') },
       ];

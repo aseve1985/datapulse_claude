@@ -324,6 +324,10 @@ export function parseProveedoresCo(rows: string[][]): ProveedorRow[] {
   for (let r = 1; r < rows.length; r++) {
     const row = rows[r];
     if (!row || !row[8]) continue;
+    // La hoja migrada trae filas de instrucciones antes del encabezado real (que puede
+    // no estar siempre en la fila 0) — se descarta la fila de encabezado en sí (su propia
+    // columna "nombre" trae el literal "Nombre del proveedor", no un proveedor real).
+    if (row[1]?.trim() === 'Sociedad' || row[8]?.trim() === 'Nombre del proveedor') continue;
     const aprobacion = (row[14] ?? '').trim();
     if (aprobacion === 'No') continue;
     out.push({
