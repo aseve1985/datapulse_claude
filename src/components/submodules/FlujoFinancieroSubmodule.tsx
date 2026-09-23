@@ -58,7 +58,8 @@ export default function FlujoFinancieroSubmodule() {
   const [provSociedad, setProvSociedad] = useState('');
   const [provAprobacion, setProvAprobacion] = useState('');
   const [provTipo, setProvTipo] = useState('');
-  const [provVencimiento, setProvVencimiento] = useState('');
+  const [provMes, setProvMes] = useState('');
+  const [chartGran, setChartGran] = useState<Vista>('mes');
 
   const fetchData = useCallback(async (force = false) => {
     setLoading(true); setError(null);
@@ -98,7 +99,7 @@ export default function FlujoFinancieroSubmodule() {
   // Los valores de sociedad/tipo/vencimiento son específicos de cada país — al cambiar
   // de país se limpian para no dejar un filtro seleccionado que no existe en el otro
   // dataset y termine mostrando la tabla vacía sin que se note por qué.
-  useEffect(() => { setProvSociedad(''); setProvTipo(''); setProvVencimiento(''); }, [pais]);
+  useEffect(() => { setProvSociedad(''); setProvTipo(''); setProvMes(''); }, [pais]);
   useEffect(() => { if (dias.length > 0) setSelDay(d => dias.includes(d) ? d : dias[0]); }, [dias]);
 
   // Rango de la Fila 1 según la vista elegida
@@ -122,16 +123,17 @@ export default function FlujoFinancieroSubmodule() {
     () => activo ? getKpiPeriodo(activo.real, activo.proy, rangoMes.start, rangoMes.end) : null,
     [activo, rangoMes]
   );
-  // El gráfico de evolución sigue la misma Vista (día/semana/mes) elegida arriba —
-  // "mes" muestra los 12 meses del año (como antes), "semana" las semanas del mes
-  // elegido, "día" los días del mes elegido.
+  // El gráfico de evolución tiene su propio selector de agrupación (chartGran),
+  // independiente de la Vista de arriba — igual que Proveedores, no queremos que
+  // dependa de un control ajeno al gráfico. "mes" muestra los 12 meses del año,
+  // "semana" las semanas del mes elegido arriba, "día" los días del mes elegido.
   const MS_CORTAS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const ratiosChart = useMemo(() => {
     if (!activo) return [] as { label: string; ratio: number }[];
-    if (vista === 'semana') {
+    if (chartGran === 'semana') {
       return semanas.map(w => ({ label: w.label, ratio: getKpiPeriodo(activo.real, activo.proy, w.start, w.end).ratio }));
     }
-    if (vista === 'dia') {
+    if (chartGran === 'dia') {
       return dias.map(d => {
         const dt = new Date(d + 'T12:00:00');
         return { label: `${dt.getDate()}`, ratio: getKpiPeriodo(activo.real, activo.proy, d, d).ratio };
@@ -141,14 +143,22 @@ export default function FlujoFinancieroSubmodule() {
       const diasDelMes = daysInMonth(ANIO, m);
       return { label: MS_CORTAS[m], ratio: getKpiPeriodo(activo.real, activo.proy, diasDelMes[0], diasDelMes[diasDelMes.length - 1]).ratio };
     });
-  }, [activo, vista, semanas, dias]);
+  }, [activo, chartGran, semanas, dias]);
 
-  const indiceResaltado = vista === 'semana' ? selWeekIdx : vista === 'dia' ? dias.indexOf(selDay) : selMonth;
+  const indiceResaltado = chartGran === 'semana' ? selWeekIdx : chartGran === 'dia' ? dias.indexOf(selDay) : selMonth;
 
   // Proveedores tiene su propio set de filtros, independiente del selector "Mes" de
   // arriba (que solo gobierna las Filas 1/2, Otros Rubros y el gráfico) — igual que en
   // el HTML original, donde el panel de Proveedores filtraba por sus propios controles.
   const proveedoresPais = activo?.proveedores ?? [];
+
+  // El filtro "Mes" de Proveedores apunta al campo `mes` de cada fila (no a
+  // `vencimiento`, que es una fecha puntual de pago) — se agrupa por año-mes para
+  // que el dropdown liste meses, no cientos de fechas exactas.
+  const mesKeyDe = useCallback((mesRaw: string): string | null => {
+    const fecha = parseSheetDate(mesRaw);
+    return fecha ? `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}` : null;
+  }, []);
 
   const proveedoresFiltrados = useMemo(() => {
     const q = provBusqueda.trim().toLowerCase();
@@ -157,10 +167,10 @@ export default function FlujoFinancieroSubmodule() {
       if (provSociedad && p.sociedad !== provSociedad) return false;
       if (provAprobacion && p.aprobacion !== provAprobacion) return false;
       if (provTipo && p.detalle !== provTipo) return false;
-      if (provVencimiento && p.vencimiento !== provVencimiento) return false;
+      if (provMes && mesKeyDe(p.mes) !== provMes) return false;
       return true;
     });
-  }, [proveedoresPais, provBusqueda, provSociedad, provAprobacion, provTipo, provVencimiento]);
+  }, [proveedoresPais, provBusqueda, provSociedad, provAprobacion, provTipo, provMes, mesKeyDe]);
 
   const sociedadesDisponibles = useMemo(
     () => [...new Set(proveedoresPais.map(p => p.sociedad).filter(s => s.trim() !== ''))].sort(),
@@ -170,14 +180,16 @@ export default function FlujoFinancieroSubmodule() {
     () => [...new Set(proveedoresPais.map(p => p.detalle).filter(s => s.trim() !== ''))].sort(),
     [proveedoresPais]
   );
-  const vencimientosDisponibles = useMemo(() => {
-    const vistos = new Set<string>();
-    const out: string[] = [];
+  const mesesProveedorDisponibles = useMemo(() => {
+    const vistos = new Map<string, string>();
     for (const p of proveedoresPais) {
-      if (p.vencimiento.trim() !== '' && !vistos.has(p.vencimiento)) { vistos.add(p.vencimiento); out.push(p.vencimiento); }
+      const key = mesKeyDe(p.mes);
+      if (!key || vistos.has(key)) continue;
+      const fecha = parseSheetDate(p.mes)!;
+      vistos.set(key, `${MN[fecha.getMonth()]} ${fecha.getFullYear()}`);
     }
-    return out.sort((a, b) => (parseSheetDate(a)?.getTime() ?? 0) - (parseSheetDate(b)?.getTime() ?? 0));
-  }, [proveedoresPais]);
+    return [...vistos.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [proveedoresPais, mesKeyDe]);
 
   const chartRatioRef = useRef<HTMLCanvasElement>(null);
   const chartRatioInst = useRef<Chart | null>(null);
@@ -442,11 +454,18 @@ export default function FlujoFinancieroSubmodule() {
             <OtrosRubros pais={pais} real={activo.real} start={rangoMes.start} end={rangoMes.end} card={card} mono={mono} />
 
             <div style={{ ...card, padding: 16, marginBottom: 12 }}>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2 }}>Evolución del Ratio Orig/Cob</div>
-                <div style={{ fontSize: 10, color: C.txt3 }}>
-                  {vista === 'dia' ? `Diario · ${MN[selMonth]} 2026` : vista === 'semana' ? `Semanal · ${MN[selMonth]} 2026` : 'Mensual 2026'} · {pais === 'AR' ? 'Argentina' : 'Colombia'}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2 }}>Evolución del Ratio Orig/Cob</div>
+                  <div style={{ fontSize: 10, color: C.txt3 }}>
+                    {chartGran === 'dia' ? `Diario · ${MN[selMonth]} 2026` : chartGran === 'semana' ? `Semanal · ${MN[selMonth]} 2026` : 'Mensual 2026'} · {pais === 'AR' ? 'Argentina' : 'Colombia'}
+                  </div>
                 </div>
+                <select value={chartGran} onChange={e => setChartGran(e.target.value as Vista)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '5px 28px 5px 10px', borderRadius: 6, fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+                  <option value="mes">Mes</option>
+                  <option value="semana">Semana</option>
+                  <option value="dia">Día</option>
+                </select>
               </div>
               <div style={{ height: 195, position: 'relative' }}>
                 <canvas ref={chartRatioRef} />
@@ -478,9 +497,9 @@ export default function FlujoFinancieroSubmodule() {
                 <option value="">Sociedad: todas</option>
                 {sociedadesDisponibles.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-              <select value={provVencimiento} onChange={e => setProvVencimiento(e.target.value)} title="Filtrar por vencimiento" style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
-                <option value="">Vencimiento: todos</option>
-                {vencimientosDisponibles.map(v => <option key={v} value={v}>{formatSheetCell(v)}</option>)}
+              <select value={provMes} onChange={e => setProvMes(e.target.value)} title="Filtrar por mes" style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' }}>
+                <option value="">Mes: todos</option>
+                {mesesProveedorDisponibles.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select>
             </div>
 
