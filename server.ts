@@ -2327,7 +2327,7 @@ ${JSON.stringify(rawRows)}`;
       const fuentes: { label: string; fetcher: () => Promise<unknown> }[] = [
         { label: 'arReal', fetcher: () => fetchRawSheetByGid(CASHFLOW_AR_ID, '473723070', 45) },
         { label: 'arProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_AR_ID, '972031162', 20) },
-        { label: 'arProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 1000) },
+        { label: 'arProveedores', fetcher: () => fetchRawSheetByPartialName(PROVEEDORES_AR_ID, 'Fc pendientes de pago', 2500) },
         { label: 'coReal', fetcher: () => fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50) },
         { label: 'coProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25) },
         { label: 'coProveedores', fetcher: () => fetchRawSheetByGid(PROVEEDORES_CO_ID, '1769437501', 1000) },
