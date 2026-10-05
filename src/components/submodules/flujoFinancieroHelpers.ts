@@ -2,8 +2,6 @@
 
 export type Pais = 'AR' | 'CO';
 
-export const ANIO = 2026;
-
 export interface RowMap {
   fechas: number;
   saldoInicio?: number;
@@ -90,7 +88,7 @@ export function parseSheetNum(val: string): number {
   return isNaN(n) ? 0 : n;
 }
 
-function toDateStr(d: Date): string {
+export function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -116,7 +114,7 @@ export interface DiaFlujo {
   saldoFinal: number;
 }
 
-export function parseDailyReal(rows: string[][], map: RowMap, originacionesPorDia: Record<string, number>): DiaFlujo[] {
+export function parseDailyReal(rows: string[][], map: RowMap, originacionesPorDia: Record<string, number>, anio: number): DiaFlujo[] {
   const dateRow = rows[map.fechas] || [];
   const get = (rowIdx: number | undefined, col: number): number =>
     rowIdx === undefined ? 0 : Math.abs(parseSheetNum(rows[rowIdx]?.[col] ?? ''));
@@ -126,7 +124,7 @@ export function parseDailyReal(rows: string[][], map: RowMap, originacionesPorDi
   const out: DiaFlujo[] = [];
   for (let c = 1; c < dateRow.length; c++) {
     const date = parseSheetDate(dateRow[c]);
-    if (!date || date.getFullYear() !== ANIO) continue;
+    if (!date || date.getFullYear() !== anio) continue;
     const dateStr = toDateStr(date);
     out.push({
       dateStr, month: date.getMonth(), day: date.getDate(),
@@ -159,7 +157,7 @@ export interface DiaProyeccion {
   impuestos: number;
 }
 
-export function parseDailyProy(rows: string[][], map: RowMap): DiaProyeccion[] {
+export function parseDailyProy(rows: string[][], map: RowMap, anio: number): DiaProyeccion[] {
   const dateRow = rows[map.fechas] || [];
   const get = (rowIdx: number | undefined, col: number): number =>
     rowIdx === undefined ? 0 : Math.abs(parseSheetNum(rows[rowIdx]?.[col] ?? ''));
@@ -167,7 +165,7 @@ export function parseDailyProy(rows: string[][], map: RowMap): DiaProyeccion[] {
   const out: DiaProyeccion[] = [];
   for (let c = 1; c < dateRow.length; c++) {
     const date = parseSheetDate(dateRow[c]);
-    if (!date || date.getFullYear() !== ANIO) continue;
+    if (!date || date.getFullYear() !== anio) continue;
     out.push({
       dateStr: toDateStr(date),
       cobranzas: get(map.cobranzas, c),

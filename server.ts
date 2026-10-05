@@ -2307,18 +2307,22 @@ ${JSON.stringify(rawRows)}`;
   const PROVEEDORES_AR_ID = '1yBWR2FRISRXPxGx2mvWeL_9Jt6MCOpeFJzeEemavAak';
   const PROVEEDORES_CO_ID = '1HdPAGuNC9r3H3DNDVJ0N-j_Az4oEuapVajYKxOjFVyQ';
 
-  let flujoFinancieroCache: {
+  // Cacheada por año: las Originaciones (S3) se piden para el rango del año
+  // seleccionado, así que una entrada de 2026 no sirve para responder 2027.
+  let flujoFinancieroCache: Record<number, {
     ar: { real: string[][]; proy: string[][]; proveedores: string[][]; originaciones: Record<string, number> };
     co: { real: string[][]; proy: string[][]; proveedores: string[][]; originaciones: Record<string, number> };
     errores: { fuente: string; message: string }[];
     fetchedAt: number;
-  } | null = null;
+  }> = {};
   const FLUJO_FINANCIERO_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
 
-  app.get('/api/flujo-financiero', async (_req, res) => {
+  app.get('/api/flujo-financiero', async (req, res) => {
+    const anio = parseInt(String(req.query.anio), 10) || new Date().getFullYear();
     try {
-      if (flujoFinancieroCache && Date.now() - flujoFinancieroCache.fetchedAt < FLUJO_FINANCIERO_CACHE_TTL_MS) {
-        return res.json({ ar: flujoFinancieroCache.ar, co: flujoFinancieroCache.co, errores: flujoFinancieroCache.errores, cached: true });
+      const cacheEntry = flujoFinancieroCache[anio];
+      if (cacheEntry && Date.now() - cacheEntry.fetchedAt < FLUJO_FINANCIERO_CACHE_TTL_MS) {
+        return res.json({ ar: cacheEntry.ar, co: cacheEntry.co, errores: cacheEntry.errores, cached: true });
       }
 
       // Cada fuente se resuelve de forma independiente: si una falla (permisos/formato
@@ -2331,8 +2335,8 @@ ${JSON.stringify(rawRows)}`;
         { label: 'coReal', fetcher: () => fetchRawSheetByPartialName(CASHFLOW_CO_ID, '01. Proyeccion', 50) },
         { label: 'coProy', fetcher: () => fetchRawSheetByGid(CASHFLOW_CO_ID, '1374126371', 25) },
         { label: 'coProveedores', fetcher: () => fetchRawSheetByGid(PROVEEDORES_CO_ID, '1769437501', 1000) },
-        { label: 'arOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('ARG', '2026-01-01', '2026-12-31') },
-        { label: 'coOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('COL', '2026-01-01', '2026-12-31') },
+        { label: 'arOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('ARG', `${anio}-01-01`, `${anio}-12-31`) },
+        { label: 'coOriginaciones', fetcher: () => getOriginacionesDiariasPorPais('COL', `${anio}-01-01`, `${anio}-12-31`) },
       ];
 
       const resultados = await Promise.allSettled(fuentes.map(f => f.fetcher()));
@@ -2373,9 +2377,9 @@ ${JSON.stringify(rawRows)}`;
       // pegarle a /refresh a mano) para ver datos reales. Dejando flujoFinancieroCache
       // sin tocar, el próximo request reintenta todas las fuentes desde cero.
       if (errores.length === 0) {
-        flujoFinancieroCache = resultado;
+        flujoFinancieroCache[anio] = resultado;
       }
-      console.log(`[FlujoFinanciero] Fetched: AR real ${arReal.length}f/proy ${arProy.length}f, CO real ${coReal.length}f/proy ${coProy.length}f${errores.length ? `, ${errores.length} fuente(s) con error` : ''}`);
+      console.log(`[FlujoFinanciero] Fetched (${anio}): AR real ${arReal.length}f/proy ${arProy.length}f, CO real ${coReal.length}f/proy ${coProy.length}f${errores.length ? `, ${errores.length} fuente(s) con error` : ''}`);
       res.json({ ar: resultado.ar, co: resultado.co, errores: resultado.errores, cached: false });
     } catch (error: any) {
       console.error('[FlujoFinanciero] Error:', error);
@@ -2383,8 +2387,9 @@ ${JSON.stringify(rawRows)}`;
     }
   });
 
-  app.get('/api/flujo-financiero/refresh', (_req, res) => {
-    flujoFinancieroCache = null;
+  app.get('/api/flujo-financiero/refresh', (req, res) => {
+    const anio = parseInt(String(req.query.anio), 10) || new Date().getFullYear();
+    delete flujoFinancieroCache[anio];
     res.json({ ok: true });
   });
 

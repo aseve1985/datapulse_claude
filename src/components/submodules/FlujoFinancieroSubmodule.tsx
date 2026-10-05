@@ -6,9 +6,14 @@ Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
   parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseSheetDate,
-  weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell, ANIO,
+  weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell, toDateStr,
   type DiaFlujo, type DiaProyeccion, type ProveedorRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
+
+type MetricaDia = 'cobranzas' | 'originaciones' | 'proveedores' | 'impuestos';
+const METRICA_DIA_LABELS: Record<MetricaDia, string> = {
+  cobranzas: 'Cobranzas', originaciones: 'Ventas', proveedores: 'Proveedores', impuestos: 'Impuestos',
+};
 
 const MN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -32,6 +37,40 @@ const C = {
   greenL: '#34d399', redL: '#fb7185', amberL: '#fcd34d', blueL: '#60a5fa', green: '#10b981', amber: '#f59e0b',
 };
 
+const card: CSSProperties = { background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, position: 'relative', overflow: 'hidden' };
+const mono: CSSProperties = { fontVariantNumeric: 'tabular-nums' };
+
+// Tarjeta estandarizada: real (verde), proyectado (azul), gap absoluto (rojo), % de gap
+// (naranja) — mismo juego de campos en Fila 1 y Fila 2, siempre con la misma estructura
+// (el caller pasa val=0 cuando el día todavía no transcurrió, en vez de ocultar campos,
+// para que la tarjeta no cambie de tamaño/forma al cambiar de fecha).
+function MetricCard({ label, val, proyVal, pais, compact }: {
+  label: string; val: number; proyVal: number | null; pais: Pais; compact?: boolean;
+}) {
+  const gap = proyVal !== null ? Math.abs(val) - Math.abs(proyVal) : null;
+  const pct = proyVal !== null && Math.abs(proyVal) > 0 ? (Math.abs(val) / Math.abs(proyVal)) * 100 : null;
+  const sign = val < 0 ? '-' : '';
+
+  return (
+    <div style={{ ...card, padding: compact ? '14px 16px' : '16px 18px' }}>
+      <div style={{ fontSize: compact ? 9.5 : 12, fontWeight: 700, color: C.txt2, textTransform: compact ? 'uppercase' : undefined, letterSpacing: compact ? 0.5 : undefined, marginBottom: compact ? 9 : 10 }}>{label}</div>
+      <div style={{ fontSize: compact ? 20 : 22, fontWeight: 800, letterSpacing: -1, ...mono, color: C.txt, marginBottom: 5 }}>{sign}{fmt(val)}</div>
+      <div style={{ fontSize: 11, ...mono, color: C.txt3 }}>{fmtLocal(val, pais)}</div>
+      {proyVal !== null && (
+        <>
+          <div style={{ fontSize: 10.5, color: C.blueL, marginTop: 6 }}>Proy: <strong>{fmt(proyVal)}</strong></div>
+          {gap !== null && (
+            <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: C.redL }}>{gap > 0 ? '+' : ''}{fmt(gap)} gap</div>
+          )}
+          {pct !== null && (
+            <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 2, color: C.amberL }}>{pct.toFixed(1)}%</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 type Vista = 'mes' | 'semana' | 'dia';
 
 interface PaisData {
@@ -49,6 +88,7 @@ export default function FlujoFinancieroSubmodule() {
   const [errores, setErrores] = useState<{ fuente: string; message: string }[]>([]);
 
   const [pais, setPais] = useState<Pais>('AR');
+  const [selYear, setSelYear] = useState(() => new Date().getFullYear());
   const [selMonth, setSelMonth] = useState(new Date().getMonth());
   const [vista, setVista] = useState<Vista>('mes');
   const [selWeekIdx, setSelWeekIdx] = useState(0);
@@ -60,23 +100,33 @@ export default function FlujoFinancieroSubmodule() {
   const [provTipo, setProvTipo] = useState('');
   const [provMes, setProvMes] = useState('');
   const [chartGran, setChartGran] = useState<Vista>('mes');
+  const [tablaMetrica, setTablaMetrica] = useState<MetricaDia>('cobranzas');
+
+  // Opciones del selector de Año — año actual ± 1. Las Originaciones (S3) se piden al
+  // backend para el rango del año elegido; los Sheets de Cashflow/Proyecciones se
+  // devuelven completos y se filtran acá, así que un año sin columnas simplemente
+  // queda sin datos (ver el fallback "Sin datos para ..." más abajo).
+  const aniosDisponibles = useMemo(() => {
+    const y = new Date().getFullYear();
+    return [y - 1, y, y + 1];
+  }, []);
 
   const fetchData = useCallback(async (force = false) => {
     setLoading(true); setError(null);
     try {
-      if (force) await fetch('/api/flujo-financiero/refresh');
-      const res = await fetch('/api/flujo-financiero');
+      if (force) await fetch(`/api/flujo-financiero/refresh?anio=${selYear}`);
+      const res = await fetch(`/api/flujo-financiero?anio=${selYear}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
 
       setDataAr({
-        real: parseDailyReal(json.ar.real, ROWS_AR_REAL, json.ar.originaciones),
-        proy: parseDailyProy(json.ar.proy, ROWS_AR_PROY),
+        real: parseDailyReal(json.ar.real, ROWS_AR_REAL, json.ar.originaciones, selYear),
+        proy: parseDailyProy(json.ar.proy, ROWS_AR_PROY, selYear),
         proveedores: parseProveedoresAr(json.ar.proveedores),
       });
       setDataCo({
-        real: parseDailyReal(json.co.real, ROWS_CO_REAL, json.co.originaciones),
-        proy: parseDailyProy(json.co.proy, ROWS_CO_PROY),
+        real: parseDailyReal(json.co.real, ROWS_CO_REAL, json.co.originaciones, selYear),
+        proy: parseDailyProy(json.co.proy, ROWS_CO_PROY, selYear),
         proveedores: parseProveedoresCo(json.co.proveedores),
       });
       setErrores(json.errores ?? []);
@@ -86,14 +136,14 @@ export default function FlujoFinancieroSubmodule() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selYear]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const activo = pais === 'AR' ? dataAr : dataCo;
 
-  const semanas: Semana[] = useMemo(() => weeksInMonth(ANIO, selMonth), [selMonth]);
-  const dias: string[] = useMemo(() => daysInMonth(ANIO, selMonth), [selMonth]);
+  const semanas: Semana[] = useMemo(() => weeksInMonth(selYear, selMonth), [selYear, selMonth]);
+  const dias: string[] = useMemo(() => daysInMonth(selYear, selMonth), [selYear, selMonth]);
 
   useEffect(() => { setSelWeekIdx(0); }, [selMonth]);
   // Los valores de sociedad/tipo/vencimiento son específicos de cada país — al cambiar
@@ -140,12 +190,19 @@ export default function FlujoFinancieroSubmodule() {
       });
     }
     return Array.from({ length: 12 }, (_, m) => {
-      const diasDelMes = daysInMonth(ANIO, m);
+      const diasDelMes = daysInMonth(selYear, m);
       return { label: MS_CORTAS[m], ratio: getKpiPeriodo(activo.real, activo.proy, diasDelMes[0], diasDelMes[diasDelMes.length - 1]).ratio };
     });
-  }, [activo, chartGran, semanas, dias]);
+  }, [activo, chartGran, semanas, dias, selYear]);
 
   const indiceResaltado = chartGran === 'semana' ? selWeekIdx : chartGran === 'dia' ? dias.indexOf(selDay) : selMonth;
+
+  // Vista Día = hoy o un día futuro: todavía no hay real cargado para esa fecha, así
+  // que las tarjetas con proyección muestran solo el proyectado (Saldo Inicio/Final
+  // quedan exentas: son un saldo "arrastrado" del último día real disponible, no un
+  // dato inventado del día elegido).
+  const hoyStr = useMemo(() => toDateStr(new Date()), []);
+  const ocultarRealDia = vista === 'dia' && selDay !== '' && selDay >= hoyStr;
 
   // Proveedores tiene su propio set de filtros, independiente del selector "Mes" de
   // arriba (que solo gobierna las Filas 1/2, Otros Rubros y el gráfico) — igual que en
@@ -254,9 +311,6 @@ export default function FlujoFinancieroSubmodule() {
     </div>
   );
 
-  const card: CSSProperties = { background: C.bgCard, border: `1px solid ${C.border}`, borderRadius: 12, position: 'relative', overflow: 'hidden' };
-  const mono: CSSProperties = { fontVariantNumeric: 'tabular-nums' };
-
   return (
     <div style={{ background: C.bg, minHeight: '100%', flex: 1, fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', color: C.txt }}>
       {/* ── HEADER ── */}
@@ -287,9 +341,16 @@ export default function FlujoFinancieroSubmodule() {
         </div>
         <div style={{ width: 1, height: 22, background: C.border }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Año</span>
+          <select value={selYear} onChange={e => setSelYear(parseInt(e.target.value))} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '5px 28px 5px 10px', borderRadius: 6, fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+            {aniosDisponibles.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <div style={{ width: 1, height: 22, background: C.border }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 0.6 }}>Mes</span>
           <select value={selMonth} onChange={e => setSelMonth(parseInt(e.target.value))} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '5px 28px 5px 10px', borderRadius: 6, fontSize: 12, outline: 'none', cursor: 'pointer' }}>
-            {MN.map((mn, i) => <option key={i} value={i}>{mn} 2026</option>)}
+            {MN.map((mn, i) => <option key={i} value={i}>{mn} {selYear}</option>)}
           </select>
         </div>
         <div style={{ width: 1, height: 22, background: C.border }} />
@@ -342,44 +403,34 @@ export default function FlujoFinancieroSubmodule() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
               {([
-                { lbl: 'Saldo Inicio', val: kpiPeriodo.saldoInicio, proy: null, isEgreso: false },
-                { lbl: 'Cobranzas', val: kpiPeriodo.cobranzas, proy: kpiPeriodo.proy?.cobranzas ?? null, isEgreso: false },
-                { lbl: 'Originaciones', val: -kpiPeriodo.originaciones, proy: kpiPeriodo.proy?.originaciones ?? null, isEgreso: true },
-                { lbl: 'Proveedores', val: -kpiPeriodo.proveedores, proy: kpiPeriodo.proy?.proveedores ?? null, isEgreso: true },
-                { lbl: 'Impuestos', val: -kpiPeriodo.impuestos, proy: kpiPeriodo.proy?.impuestos ?? null, isEgreso: true },
-                { lbl: 'Saldo Final', val: kpiPeriodo.saldoFinal, proy: null, isEgreso: false },
+                { lbl: 'Saldo Inicio', val: kpiPeriodo.saldoInicio, proy: null, isEgreso: false, exento: true },
+                { lbl: 'Cobranzas', val: kpiPeriodo.cobranzas, proy: kpiPeriodo.proy?.cobranzas ?? null, isEgreso: false, exento: false },
+                { lbl: 'Originaciones', val: -kpiPeriodo.originaciones, proy: kpiPeriodo.proy?.originaciones ?? null, isEgreso: true, exento: false },
+                { lbl: 'Proveedores', val: -kpiPeriodo.proveedores, proy: kpiPeriodo.proy?.proveedores ?? null, isEgreso: true, exento: false },
+                { lbl: 'Impuestos', val: -kpiPeriodo.impuestos, proy: kpiPeriodo.proy?.impuestos ?? null, isEgreso: true, exento: false },
+                { lbl: 'Saldo Final', val: kpiPeriodo.saldoFinal, proy: null, isEgreso: false, exento: true },
               ] as const).map(c => {
                 const proyVal = c.proy === null ? null : (c.isEgreso ? -c.proy : c.proy);
-                const delta = proyVal === null ? null : Math.abs(c.val) - Math.abs(proyVal);
-                const bueno = delta === null ? null : (c.isEgreso ? delta < 0 : delta > 0);
+                const valMostrado = (!c.exento && ocultarRealDia) ? 0 : c.val;
                 return (
-                  <div key={c.lbl} style={{ ...card, padding: '14px 16px' }}>
-                    <div style={{ fontSize: 9.5, fontWeight: 700, color: C.txt2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 9 }}>{c.lbl}</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -1, lineHeight: 1, marginBottom: 5, ...mono, color: c.val < 0 ? C.redL : C.txt }}>{fmt(c.val)}</div>
-                    <div style={{ fontSize: 11, color: C.txt3 }}>{fmtLocal(c.val, pais)}</div>
-                    {proyVal !== null && (
-                      <>
-                        <div style={{ fontSize: 10, color: C.txt3, fontStyle: 'italic', marginTop: 6 }}>Proy: <strong style={{ color: C.txt2 }}>{fmt(proyVal)}</strong></div>
-                        {Math.abs(delta ?? 0) >= 1 && (
-                          <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: bueno ? C.greenL : C.redL }}>
-                            {(delta ?? 0) > 0 ? '+' : ''}{fmt(delta ?? 0)} vs proy
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <MetricCard key={c.lbl} label={c.lbl} val={valMostrado} proyVal={proyVal} pais={pais} compact />
                 );
               })}
               {(() => {
-                const ratioEstado = rcT(kpiPeriodo.ratio, pais);
+                const ratioMostrado = ocultarRealDia ? 0 : kpiPeriodo.ratio;
+                const ratioEstado = rcT(ratioMostrado, pais);
                 const color = ratioEstado.cls === 'sem-red' ? C.redL : ratioEstado.cls === 'sem-yellow' ? C.amberL : C.greenL;
+                const gapPts = kpiPeriodo.proy ? ratioMostrado - kpiPeriodo.proy.ratio : null;
                 return (
                   <div style={{ ...card, padding: '14px 16px', borderColor: ratioEstado.alerta ? 'rgba(244,63,94,.4)' : C.border }}>
                     <div style={{ fontSize: 9.5, fontWeight: 700, color: C.txt2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 9 }}>Ratio Orig/Cob</div>
-                    <div style={{ fontSize: 20, fontWeight: 800, ...mono, color }}>{kpiPeriodo.ratio.toFixed(1)}%</div>
-                    <div style={{ fontSize: 10, color: C.txt3, marginTop: 4 }}>Orig {fmt(kpiPeriodo.originaciones)} / Cob {fmt(kpiPeriodo.cobranzas)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, ...mono, color }}>{ratioMostrado.toFixed(1)}%</div>
+                    <div style={{ fontSize: 10, color: C.txt3, marginTop: 4 }}>Orig {fmt(ocultarRealDia ? 0 : kpiPeriodo.originaciones)} / Cob {fmt(ocultarRealDia ? 0 : kpiPeriodo.cobranzas)}</div>
                     {kpiPeriodo.proy && (
-                      <div style={{ fontSize: 10, color: C.txt3, fontStyle: 'italic', marginTop: 6 }}>Proy: <strong style={{ color: C.txt2 }}>{kpiPeriodo.proy.ratio.toFixed(1)}%</strong></div>
+                      <div style={{ fontSize: 10, color: C.blueL, marginTop: 6 }}>Proy: <strong>{kpiPeriodo.proy.ratio.toFixed(1)}%</strong></div>
+                    )}
+                    {gapPts !== null && (
+                      <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2, color: C.redL }}>{gapPts > 0 ? '+' : ''}{gapPts.toFixed(1)} pp</div>
                     )}
                     {ratioEstado.alerta && <div style={{ marginTop: 6, fontSize: 9, fontWeight: 700, color: C.redL }}>ALERTA</div>}
                   </div>
@@ -390,51 +441,35 @@ export default function FlujoFinancieroSubmodule() {
             {/* Fila 2: resumen del mes calendario completo */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>
-                Resumen - {MN[selMonth]} 2026
+                Resumen - {MN[selMonth]} {selYear}
               </span>
               <div style={{ flex: 1, height: 1, background: C.border }} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
               {([
-                { lbl: 'Ventas', val: kpiMes.originaciones, proy: kpiMes.proy?.originaciones ?? null, isEgreso: false },
-                { lbl: 'Cobranzas', val: kpiMes.cobranzas, proy: kpiMes.proy?.cobranzas ?? null, isEgreso: false },
-                { lbl: 'Proveedores', val: kpiMes.proveedores, proy: kpiMes.proy?.proveedores ?? null, isEgreso: true },
-                { lbl: 'Impuestos', val: kpiMes.impuestos, proy: kpiMes.proy?.impuestos ?? null, isEgreso: true },
-              ] as const).map(c => {
-                const pct = c.proy && c.proy > 0 ? (c.val / c.proy) * 100 : null;
-                // Superar el 100% es favorable para un ingreso (Ventas/Cobranzas: cobrar o
-                // vender de más es bueno) y desfavorable para un egreso (Proveedores/
-                // Impuestos: gastar de más es malo) — misma lógica que Fila 1's `bueno`.
-                const feo = pct !== null && c.isEgreso && pct > 100;
-                const bien = pct !== null && !c.isEgreso && pct > 100;
-                const pctColor = feo ? C.redL : bien ? C.greenL : C.txt2;
-                return (
-                  <div key={c.lbl} style={{ ...card, padding: '16px 18px' }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>{c.lbl}</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, ...mono, marginBottom: 8 }}>{fmt(c.val)}</div>
-                    {c.proy !== null && (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 4 }}>
-                          <span>vs proyectado mes</span>
-                          <span style={{ fontWeight: 700, color: pctColor }}>{pct !== null ? pct.toFixed(1) + '%' : '—'}</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3 }}>
-                          <span>Proyectado</span><span>{fmt(c.proy)}</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+                { lbl: 'Ventas', val: kpiMes.originaciones, proy: kpiMes.proy?.originaciones ?? null },
+                { lbl: 'Cobranzas', val: kpiMes.cobranzas, proy: kpiMes.proy?.cobranzas ?? null },
+                { lbl: 'Proveedores', val: kpiMes.proveedores, proy: kpiMes.proy?.proveedores ?? null },
+                { lbl: 'Impuestos', val: kpiMes.impuestos, proy: kpiMes.proy?.impuestos ?? null },
+              ] as const).map(c => (
+                <MetricCard key={c.lbl} label={c.lbl} val={c.val} proyVal={c.proy} pais={pais} />
+              ))}
 
               {(() => {
                 const ratioEstado = rcT(kpiMes.ratio, pais);
                 const color = ratioEstado.cls === 'sem-red' ? C.redL : ratioEstado.cls === 'sem-yellow' ? C.amberL : C.greenL;
+                const gapPts = kpiMes.proy ? kpiMes.ratio - kpiMes.proy.ratio : null;
                 return (
                   <div style={{ ...card, padding: '16px 18px', borderColor: ratioEstado.alerta ? 'rgba(244,63,94,.4)' : C.border }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2, marginBottom: 10 }}>Ratio Orig/Cob</div>
                     <div style={{ fontSize: 22, fontWeight: 800, ...mono, color, marginBottom: 8 }}>{kpiMes.ratio.toFixed(1)}%</div>
+                    {kpiMes.proy && (
+                      <div style={{ fontSize: 10.5, color: C.blueL, marginBottom: 4 }}>Proy: <strong>{kpiMes.proy.ratio.toFixed(1)}%</strong></div>
+                    )}
+                    {gapPts !== null && (
+                      <div style={{ fontSize: 10.5, fontWeight: 600, color: C.redL, marginBottom: 4 }}>{gapPts > 0 ? '+' : ''}{gapPts.toFixed(1)} pp</div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: C.txt3, marginBottom: 4 }}>
                       <span>Período seleccionado</span><span>{kpiPeriodo.ratio.toFixed(1)}%</span>
                     </div>
@@ -446,9 +481,21 @@ export default function FlujoFinancieroSubmodule() {
               })()}
             </div>
 
+            {/* Evolución diaria del mes: real/proy/gap/% día a día para una métrica elegible */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>
+                Evolución Diaria · {MN[selMonth]} {selYear}
+              </span>
+              <div style={{ flex: 1, height: 1, background: C.border }} />
+              <select value={tablaMetrica} onChange={e => setTablaMetrica(e.target.value as MetricaDia)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '5px 28px 5px 10px', borderRadius: 6, fontSize: 12, outline: 'none', cursor: 'pointer' }}>
+                {(Object.keys(METRICA_DIA_LABELS) as MetricaDia[]).map(m => <option key={m} value={m}>{METRICA_DIA_LABELS[m]}</option>)}
+              </select>
+            </div>
+            <EvolucionDiariaTabla real={activo.real} proy={activo.proy} dias={dias} metrica={tablaMetrica} pais={pais} />
+
             {/* Otros rubros del mes */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '28px 0 14px' }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>Otros Rubros · {MN[selMonth]} 2026</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: C.txt3, textTransform: 'uppercase', letterSpacing: 1, whiteSpace: 'nowrap' }}>Otros Rubros · {MN[selMonth]} {selYear}</span>
               <div style={{ flex: 1, height: 1, background: C.border }} />
             </div>
             <OtrosRubros pais={pais} real={activo.real} start={rangoMes.start} end={rangoMes.end} card={card} mono={mono} />
@@ -458,7 +505,7 @@ export default function FlujoFinancieroSubmodule() {
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.txt2 }}>Evolución del Ratio Orig/Cob</div>
                   <div style={{ fontSize: 10, color: C.txt3 }}>
-                    {chartGran === 'dia' ? `Diario · ${MN[selMonth]} 2026` : chartGran === 'semana' ? `Semanal · ${MN[selMonth]} 2026` : 'Mensual 2026'} · {pais === 'AR' ? 'Argentina' : 'Colombia'}
+                    {chartGran === 'dia' ? `Diario · ${MN[selMonth]} ${selYear}` : chartGran === 'semana' ? `Semanal · ${MN[selMonth]} ${selYear}` : `Mensual ${selYear}`} · {pais === 'AR' ? 'Argentina' : 'Colombia'}
                   </div>
                 </div>
                 <select value={chartGran} onChange={e => setChartGran(e.target.value as Vista)} style={{ background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '5px 28px 5px 10px', borderRadius: 6, fontSize: 12, outline: 'none', cursor: 'pointer' }}>
@@ -538,6 +585,48 @@ export default function FlujoFinancieroSubmodule() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Evolución día a día del mes elegido para una sola métrica (Cobranzas/Ventas/
+// Proveedores/Impuestos) — real, proyectado, gap absoluto y % de gap por día.
+function EvolucionDiariaTabla({ real, proy, dias, metrica, pais }: {
+  real: DiaFlujo[]; proy: DiaProyeccion[]; dias: string[]; metrica: MetricaDia; pais: Pais;
+}) {
+  const realPorFecha = useMemo(() => new Map(real.map(d => [d.dateStr, d])), [real]);
+  const proyPorFecha = useMemo(() => new Map(proy.map(d => [d.dateStr, d])), [proy]);
+
+  return (
+    <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 32 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: C.bgCard2 }}>
+            {['Día', 'Real', 'Proyectado', 'Gap', '%'].map(h => (
+              <th key={h} style={{ padding: '8px 14px', textAlign: h === 'Día' ? 'left' : 'right', color: C.txt3, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', borderBottom: `1px solid ${C.border}`, whiteSpace: 'nowrap' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dias.map(d => {
+            const dt = new Date(d + 'T12:00:00');
+            const r = Math.abs(realPorFecha.get(d)?.[metrica] ?? 0);
+            const p = proyPorFecha.get(d)?.[metrica] ?? null;
+            const pAbs = p !== null ? Math.abs(p) : null;
+            const gap = pAbs !== null ? r - pAbs : null;
+            const pct = pAbs !== null && pAbs > 0 ? (r / pAbs) * 100 : null;
+            return (
+              <tr key={d} style={{ borderBottom: `1px solid ${C.border}` }}>
+                <td style={{ padding: '7px 14px', color: C.txt2 }}>{dt.getDate()} {MN[dt.getMonth()].slice(0, 3)}</td>
+                <td style={{ padding: '7px 14px', textAlign: 'right', ...mono, color: C.txt, fontWeight: 700 }}>{fmtLocal(r, pais)}</td>
+                <td style={{ padding: '7px 14px', textAlign: 'right', ...mono, color: C.blueL }}>{pAbs !== null ? fmtLocal(pAbs, pais) : '—'}</td>
+                <td style={{ padding: '7px 14px', textAlign: 'right', ...mono, color: C.redL }}>{gap !== null ? `${gap > 0 ? '+' : ''}${fmtLocal(gap, pais)}` : '—'}</td>
+                <td style={{ padding: '7px 14px', textAlign: 'right', ...mono, color: C.amberL, fontWeight: 600 }}>{pct !== null ? `${pct.toFixed(1)}%` : '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
