@@ -208,12 +208,6 @@ const modules = [
         color: 'bg-slate-800'
       },
       {
-        id: 'tesoreria',
-        title: 'Tesorería',
-        description: 'Flujo de caja diario y mensual. Saldos, cobranzas y egresos operativos.',
-        color: 'bg-slate-800'
-      },
-      {
         id: 'flujo-financiero',
         title: 'Flujo Financiero',
         description: 'Cashflow diario/mensual, proveedores y ratio originación/cobranza — Argentina y Colombia.',
@@ -303,7 +297,15 @@ const modules = [
     description: 'Ciclo de vida, inventario y desarrollo de nuevas funcionalidades.',
     icon: Package,
     color: 'bg-slate-600',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'catalogo-productos',
+        title: 'Catálogo de Productos',
+        description: 'Montos, tasas y condiciones vigentes en política de originación, por país.',
+        color: 'bg-slate-600'
+      }
+    ]
   },
   {
     id: 'administration',

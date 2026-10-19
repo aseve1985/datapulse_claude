@@ -2235,11 +2235,7 @@ ${JSON.stringify(rawRows)}`;
     }
   });
 
-  // ── Tesorería ────────────────────────────────────────────────────────────────
-  const TESORERIA_SHEET_ID = '1FPFod-4AEAZ6L7Qn622PyrDhXG-mROkQdbzadZUq2sM';
-  let tesoreriaCache: { main: string[][]; proveedores: string[][]; fetchedAt: number } | null = null;
-  const TESORERIA_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
-
+  // ── Helpers de lectura de Google Sheets ───────────────────────────────────────
   async function fetchRawSheetByGid(spreadsheetId: string, gid: string, maxRows = 200): Promise<string[][]> {
     const auth = await getGoogleAuthClient();
     if (!auth) throw new Error('Google Auth no disponible');
@@ -2268,7 +2264,7 @@ ${JSON.stringify(rawRows)}`;
     );
     if (!sheet?.properties?.title) throw new Error(`Hoja con "${nameFragment}" no encontrada`);
     const title = sheet.properties.title;
-    console.log(`[Tesoreria] Hoja encontrada: "${title}"`);
+    console.log(`[Sheets] Hoja encontrada: "${title}"`);
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: `${title}!A1:AAA${maxRows}`,
@@ -2277,29 +2273,6 @@ ${JSON.stringify(rawRows)}`;
     const values = response.data.values || [];
     return values.map(row => row.map(cell => (cell === null || cell === undefined ? '' : String(cell))));
   }
-
-  app.get('/api/tesoreria', async (_req, res) => {
-    try {
-      if (tesoreriaCache && Date.now() - tesoreriaCache.fetchedAt < TESORERIA_CACHE_TTL_MS) {
-        return res.json({ main: tesoreriaCache.main, proveedores: tesoreriaCache.proveedores, cached: true });
-      }
-      const [main, proveedores] = await Promise.all([
-        fetchRawSheetByGid(TESORERIA_SHEET_ID, '473723070', 45),
-        fetchRawSheetByPartialName(TESORERIA_SHEET_ID, 'Proveedores', 1000),
-      ]);
-      tesoreriaCache = { main, proveedores, fetchedAt: Date.now() };
-      console.log(`[Tesoreria] Fetched: ${main.length} rows main, ${proveedores.length} rows proveedores`);
-      res.json({ main, proveedores, cached: false });
-    } catch (error: any) {
-      console.error('[Tesoreria] Error:', error);
-      res.status(500).json({ error: 'Error al cargar datos de tesorería', details: error.message });
-    }
-  });
-
-  app.get('/api/tesoreria/refresh', (_req, res) => {
-    tesoreriaCache = null;
-    res.json({ ok: true });
-  });
 
   // ── Flujo Financiero ────────────────────────────────────────────────────────
   const CASHFLOW_AR_ID = '1FPFod-4AEAZ6L7Qn622PyrDhXG-mROkQdbzadZUq2sM';

@@ -47,8 +47,8 @@ import BiObsidianSubmodule from './submodules/BiObsidianSubmodule';
 import AdmGastosProveedoresSubmodule from './submodules/AdmGastosProveedoresSubmodule';
 import MktComunicacionesSubmodule from './submodules/MktComunicacionesSubmodule';
 import OperadoresVentasSubmodule from './submodules/OperadoresVentasSubmodule';
-import TesoreriaSubmodule from './submodules/TesoreriaSubmodule';
 import FlujoFinancieroSubmodule from './submodules/FlujoFinancieroSubmodule';
+import CatalogoProductosSubmodule from './submodules/CatalogoProductosSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -932,12 +932,13 @@ export default function DashboardView({
   ];
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [showSpinner, setShowSpinner] = useState(loading);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const hadLoadingRef = useRef(false);
 
   useEffect(() => {
     if (loading) { hadLoadingRef.current = true; setShowSpinner(true); }
-    else if (sales.length > 0 || !hadLoadingRef.current) { setShowSpinner(false); }
-  }, [loading, sales.length]);
+    else if (sales.length > 0 || fetchError || !hadLoadingRef.current) { setShowSpinner(false); }
+  }, [loading, sales.length, fetchError]);
 
   useEffect(() => {
     if (!showSpinner) return;
@@ -953,17 +954,25 @@ export default function DashboardView({
       const from = initialReport.filtros?.startDate || startDate;
       const to = initialReport.filtros?.endDate || endDate;
       setLoading(true);
-      onFetchData(moduleId, from, to).catch(() => {}).finally(() => setLoading(false));
+      setFetchError(null);
+      onFetchData(moduleId, from, to)
+        .catch((err: any) => {
+          console.error('Fetch error:', err);
+          setFetchError(err?.message || 'No se pudieron cargar los datos. Intentá de nuevo.');
+        })
+        .finally(() => setLoading(false));
     }
   }, []);
 
   const handleFetch = async () => {
     if (!onFetchData || !moduleId) return;
     setLoading(true);
+    setFetchError(null);
     try {
       await onFetchData(moduleId, startDate, endDate);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Fetch error:', err);
+      setFetchError(err?.message || 'No se pudieron cargar los datos. Intentá de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -1651,7 +1660,7 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas', 'tesoreria', 'flujo-financiero'].includes(sub.id);
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas', 'flujo-financiero', 'catalogo-productos'].includes(sub.id);
                   const isDisabled = ['ri-analitico', 'bi-tools', 'marketing-estrategia'].includes(sub.id);
                   return (
                     <motion.button
@@ -1723,10 +1732,10 @@ export default function DashboardView({
             <MktComunicacionesSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'operadores-ventas' ? (
             <OperadoresVentasSubmodule userEmail={userEmail} />
-          ) : activeSubmodule.id === 'tesoreria' ? (
-            <TesoreriaSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'flujo-financiero' ? (
             <FlujoFinancieroSubmodule />
+          ) : activeSubmodule.id === 'catalogo-productos' ? (
+            <CatalogoProductosSubmodule />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
@@ -1815,7 +1824,14 @@ export default function DashboardView({
                 </div>
               </div>
 
-              <button 
+              {fetchError && (
+                <div className="flex items-start gap-2 px-4 py-3 bg-red-950/40 border border-red-900/50 rounded-xl text-left">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-300 leading-relaxed">{fetchError}</p>
+                </div>
+              )}
+
+              <button
                 onClick={handleFetch}
                 disabled={loading}
                 className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/40 disabled:opacity-50"
