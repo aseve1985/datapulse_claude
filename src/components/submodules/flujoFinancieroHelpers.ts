@@ -68,6 +68,30 @@ export function parseSheetDate(val: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Variante estricta para el filtro de Vencimiento de Proveedores: a diferencia de
+// parseSheetDate, NO usa el fallback genérico `new Date(val)` — esa heurística de JS
+// interpreta texto suelto cargado a mano (ej. "mar 03/feb", con día de semana y sin
+// año) como una fecha válida con un año inventado (2001), lo que generaba un mes
+// fantasma separado del mes real en el árbol del filtro. Acá cualquier formato que no
+// sea serial de Sheets, DD/MM/YYYY o ISO se considera directamente no parseable.
+export function parseVencimientoEstricto(val: string): Date | null {
+  if (!val) return null;
+  const num = Number(val);
+  if (!isNaN(num) && num > 40000 && num < 55000) {
+    const utcD = new Date(Math.round((num - 25569) * 86400 * 1000));
+    return new Date(utcD.getUTCFullYear(), utcD.getUTCMonth(), utcD.getUTCDate());
+  }
+  let d: Date | null = null;
+  if (val.includes('/')) {
+    const parts = val.split('/');
+    if (parts.length === 3) d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+  } else if (val.includes('-') && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+    const parts = val.split('-');
+    d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  }
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+
 // Las celdas de fecha vienen de Sheets como serial numérico crudo (valueRenderOption:
 // 'UNFORMATTED_VALUE'), p.ej. "46023" en vez de una fecha legible. Reusa la detección
 // de serial que ya tiene parseSheetDate (num > 40000 && num < 55000) para no duplicarla;
@@ -272,8 +296,9 @@ export function daysInMonth(year: number, month: number): string[] {
 
 export function fmt(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1e9) return (abs / 1e9).toFixed(1) + 'B';
-  if (abs >= 1e6) return (abs / 1e6).toFixed(1) + 'M';
+  // Nunca se agrupa en "B" (Billón = 10^12 en español): arriba de 1e6 siempre
+  // se expresa en millones, así miles de millones se leen como "1.300,0M".
+  if (abs >= 1e6) return (abs / 1e6).toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'M';
   if (abs >= 1e3) return (abs / 1e3).toFixed(0) + 'K';
   return abs.toFixed(0);
 }

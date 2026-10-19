@@ -1,11 +1,11 @@
 // src/components/submodules/FlujoFinancieroSubmodule.tsx
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { RefreshCcw, Loader2, AlertCircle } from 'lucide-react';
+import { RefreshCcw, Loader2, AlertCircle, ChevronDown } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
 Chart.register(...registerables);
 import {
   ROWS_AR_REAL, ROWS_AR_PROY, ROWS_CO_REAL, ROWS_CO_PROY,
-  parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseSheetDate,
+  parseDailyReal, parseDailyProy, parseProveedoresAr, parseProveedoresCo, parseSheetDate, parseVencimientoEstricto,
   weeksInMonth, daysInMonth, getKpiPeriodo, fmt, fmtLocal, rcT, formatSheetCell, toDateStr,
   type DiaFlujo, type DiaProyeccion, type ProveedorRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
@@ -16,6 +16,12 @@ const METRICA_DIA_LABELS: Record<MetricaDia, string> = {
 };
 
 const MN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// Claves especiales del filtro Vencimiento para filas que no tienen una fecha
+// utilizable: vacías, o texto cargado a mano que `parseSheetDate` no puede
+// interpretar con certeza (ej. "Vier 13/02", "mar 03/feb" — día/mes mezclados).
+const VENC_VACIO = '__vacio__';
+const VENC_INVALIDO = '__invalido__';
 
 // Etiquetas amigables por fuente para el aviso de datos parciales — nunca se muestra
 // el `message` crudo del error (puede traer identificadores internos de la service
@@ -99,6 +105,7 @@ export default function FlujoFinancieroSubmodule() {
   const [provAprobacion, setProvAprobacion] = useState('');
   const [provTipo, setProvTipo] = useState('');
   const [provMes, setProvMes] = useState('');
+  const [provVencExcluidos, setProvVencExcluidos] = useState<Set<string>>(new Set());
   const [chartGran, setChartGran] = useState<Vista>('mes');
   const [tablaMetrica, setTablaMetrica] = useState<MetricaDia>('cobranzas');
 
@@ -149,7 +156,7 @@ export default function FlujoFinancieroSubmodule() {
   // Los valores de sociedad/tipo/vencimiento son específicos de cada país — al cambiar
   // de país se limpian para no dejar un filtro seleccionado que no existe en el otro
   // dataset y termine mostrando la tabla vacía sin que se note por qué.
-  useEffect(() => { setProvSociedad(''); setProvTipo(''); setProvMes(''); }, [pais]);
+  useEffect(() => { setProvSociedad(''); setProvTipo(''); setProvMes(''); setProvVencExcluidos(new Set()); }, [pais]);
   useEffect(() => { if (dias.length > 0) setSelDay(d => dias.includes(d) ? d : dias[0]); }, [dias]);
 
   // Rango de la Fila 1 según la vista elegida
@@ -225,9 +232,46 @@ export default function FlujoFinancieroSubmodule() {
       if (provAprobacion && p.aprobacion !== provAprobacion) return false;
       if (provTipo && p.detalle !== provTipo) return false;
       if (provMes && mesKeyDe(p.mes) !== provMes) return false;
+      if (provVencExcluidos.size > 0) {
+        const raw = (p.vencimiento ?? '').trim();
+        if (raw === '') {
+          if (provVencExcluidos.has(VENC_VACIO)) return false;
+        } else {
+          const fechaVenc = parseVencimientoEstricto(p.vencimiento);
+          const key = fechaVenc ? toDateStr(fechaVenc) : VENC_INVALIDO;
+          if (provVencExcluidos.has(key)) return false;
+        }
+      }
       return true;
     });
-  }, [proveedoresPais, provBusqueda, provSociedad, provAprobacion, provTipo, provMes, mesKeyDe]);
+  }, [proveedoresPais, provBusqueda, provSociedad, provAprobacion, provTipo, provMes, mesKeyDe, provVencExcluidos]);
+
+  // Árbol Mes > Día para el filtro "Vencimiento" — se arma a partir de `p.vencimiento`
+  // (fecha puntual de pago), no de `p.mes`. Además de los meses reales, se cuentan
+  // aparte las filas vacías y las que traen texto no parseable (cargado a mano,
+  // ej. "Vier 13/02"), para poder incluirlas/excluirlas como ítems propios.
+  const vencimientoInfo = useMemo(() => {
+    const porMes = new Map<string, { label: string; dias: Map<string, string> }>();
+    let vacioCount = 0, invalidoCount = 0;
+    for (const p of proveedoresPais) {
+      const raw = (p.vencimiento ?? '').trim();
+      if (raw === '') { vacioCount++; continue; }
+      const fecha = parseVencimientoEstricto(p.vencimiento);
+      if (!fecha) { invalidoCount++; continue; }
+      const monthKey = `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}`;
+      const dayKey = toDateStr(fecha);
+      if (!porMes.has(monthKey)) porMes.set(monthKey, { label: `${MN[fecha.getMonth()]} ${fecha.getFullYear()}`, dias: new Map() });
+      porMes.get(monthKey)!.dias.set(dayKey, String(fecha.getDate()).padStart(2, '0'));
+    }
+    const meses = [...porMes.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([monthKey, { label, dias }]) => ({
+        monthKey,
+        label,
+        dias: [...dias.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([dayKey, dayLabel]) => ({ dayKey, dayLabel })),
+      }));
+    return { meses, vacioCount, invalidoCount };
+  }, [proveedoresPais]);
 
   const sociedadesDisponibles = useMemo(
     () => [...new Set(proveedoresPais.map(p => p.sociedad).filter(s => s.trim() !== ''))].sort(),
@@ -548,6 +592,7 @@ export default function FlujoFinancieroSubmodule() {
                 <option value="">Mes: todos</option>
                 {mesesProveedorDisponibles.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
               </select>
+              <VencimientoFilter info={vencimientoInfo} excluidos={provVencExcluidos} onChange={setProvVencExcluidos} />
             </div>
 
             <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 32 }}>
@@ -585,6 +630,130 @@ export default function FlujoFinancieroSubmodule() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Filtro jerárquico Mes > Día para la fecha de Vencimiento de Proveedores. El estado
+// es el conjunto de días EXCLUIDOS (claves YYYY-MM-DD): vacío = sin filtro (todo
+// tildado). Tildar/destildar un mes aplica cascada a todos sus días.
+function VencimientoFilter({ info, excluidos, onChange }: {
+  info: { meses: { monthKey: string; label: string; dias: { dayKey: string; dayLabel: string }[] }[]; vacioCount: number; invalidoCount: number };
+  excluidos: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const { meses: tree, vacioCount, invalidoCount } = info;
+  const [open, setOpen] = useState(false);
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  const todasLasClaves = useMemo(() => {
+    const claves = tree.flatMap(m => m.dias.map(d => d.dayKey));
+    if (vacioCount > 0) claves.push(VENC_VACIO);
+    if (invalidoCount > 0) claves.push(VENC_INVALIDO);
+    return claves;
+  }, [tree, vacioCount, invalidoCount]);
+  const todasTildadas = excluidos.size === 0;
+
+  const toggleTodas = () => onChange(todasTildadas ? new Set(todasLasClaves) : new Set());
+
+  const toggleMes = (m: typeof tree[number]) => {
+    const excluidasDelMes = m.dias.filter(d => excluidos.has(d.dayKey)).length;
+    const next = new Set(excluidos);
+    if (excluidasDelMes === m.dias.length) m.dias.forEach(d => next.delete(d.dayKey));
+    else m.dias.forEach(d => next.add(d.dayKey));
+    onChange(next);
+  };
+
+  const toggleDia = (dayKey: string) => {
+    const next = new Set(excluidos);
+    if (next.has(dayKey)) next.delete(dayKey); else next.add(dayKey);
+    onChange(next);
+  };
+
+  const toggleExpand = (monthKey: string) => {
+    setExpandidos(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) next.delete(monthKey); else next.add(monthKey);
+      return next;
+    });
+  };
+
+  const resumen = todasTildadas ? 'Vencimiento: todos' : `Vencimiento (${excluidos.size} excl.)`;
+  const selectStyle: CSSProperties = { background: C.bgCard2, border: `1px solid ${C.border2}`, color: C.txt, padding: '7px 12px', borderRadius: 8, fontSize: 12, outline: 'none' };
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{ ...selectStyle, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+        {resumen}
+        <ChevronDown size={13} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, zIndex: 20, minWidth: 220, maxHeight: 280, overflowY: 'auto', background: C.bgCard, border: `1px solid ${C.border2}`, borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.35)', padding: 8 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, fontWeight: 700, color: C.txt2, textTransform: 'uppercase', padding: '4px 6px', borderBottom: `1px solid ${C.border}`, marginBottom: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={todasTildadas} onChange={toggleTodas} />
+            Todos
+          </label>
+          {vacioCount > 0 && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.txt2, padding: '3px 6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={!excluidos.has(VENC_VACIO)} onChange={() => toggleDia(VENC_VACIO)} />
+              Vacío ({vacioCount})
+            </label>
+          )}
+          {invalidoCount > 0 && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.txt2, padding: '3px 6px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={!excluidos.has(VENC_INVALIDO)} onChange={() => toggleDia(VENC_INVALIDO)} />
+              Sin formato ({invalidoCount})
+            </label>
+          )}
+          {tree.length === 0 && vacioCount === 0 && invalidoCount === 0 && (
+            <div style={{ fontSize: 11, color: C.txt3, padding: '6px' }}>Sin fechas de vencimiento</div>
+          )}
+          {tree.map(m => {
+            const excluidasDelMes = m.dias.filter(d => excluidos.has(d.dayKey)).length;
+            const mesChecked = excluidasDelMes === 0;
+            const mesIndeterminate = excluidasDelMes > 0 && excluidasDelMes < m.dias.length;
+            const mesExpandido = expandidos.has(m.monthKey);
+            return (
+              <div key={m.monthKey}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 6px' }}>
+                  <input
+                    type="checkbox" checked={mesChecked}
+                    ref={el => { if (el) el.indeterminate = mesIndeterminate; }}
+                    onChange={() => toggleMes(m)}
+                  />
+                  <span
+                    onClick={() => toggleExpand(m.monthKey)}
+                    style={{ flex: 1, fontSize: 12, color: C.txt, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    {m.label}
+                    <ChevronDown size={12} style={{ color: C.txt3, transform: mesExpandido ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+                  </span>
+                </div>
+                {mesExpandido && (
+                  <div style={{ paddingLeft: 22 }}>
+                    {m.dias.map(d => (
+                      <label key={d.dayKey} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: C.txt2, padding: '3px 6px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!excluidos.has(d.dayKey)} onChange={() => toggleDia(d.dayKey)} />
+                        {d.dayLabel}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
