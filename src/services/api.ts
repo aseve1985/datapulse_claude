@@ -214,3 +214,12 @@ export async function fetchCarreraScores(): Promise<{ hechos: any[] }> {
   }
   return response.json();
 }
+
+export async function fetchCostosPorOrigenMensual(): Promise<{ rows: any[] }> {
+  const response = await fetch('/api/marketing/costos-origen-mensual', { headers: { 'accept': 'application/json' } });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.details || errorData.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}

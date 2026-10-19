@@ -186,6 +186,12 @@ const modules = [
         color: 'bg-blue-800'
       },
       {
+        id: 'marketing-costos-origen',
+        title: 'Costos por origen',
+        description: 'Costo de adquisición (CPL/CPM/CPO/CPV) del negocio nuevo, por proveedor de originación.',
+        color: 'bg-blue-800'
+      },
+      {
         id: 'marketing-estrategia',
         title: 'Estrategia de Contacto',
         description: 'Mapa conceptual de la estrategia de comunicaciones de marketing.',

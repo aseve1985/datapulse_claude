@@ -49,6 +49,7 @@ import MktComunicacionesSubmodule from './submodules/MktComunicacionesSubmodule'
 import OperadoresVentasSubmodule from './submodules/OperadoresVentasSubmodule';
 import FlujoFinancieroSubmodule from './submodules/FlujoFinancieroSubmodule';
 import CatalogoProductosSubmodule from './submodules/CatalogoProductosSubmodule';
+import MktCostosPorOrigenSubmodule from './submodules/MktCostosPorOrigenSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -1660,7 +1661,7 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'operadores-ventas', 'flujo-financiero', 'catalogo-productos'].includes(sub.id);
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'marketing-costos-origen', 'operadores-ventas', 'flujo-financiero', 'catalogo-productos'].includes(sub.id);
                   const isDisabled = ['ri-analitico', 'bi-tools', 'marketing-estrategia'].includes(sub.id);
                   return (
                     <motion.button
@@ -1730,6 +1731,8 @@ export default function DashboardView({
             <AdmGastosProveedoresSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'marketing-comunicaciones' ? (
             <MktComunicacionesSubmodule userEmail={userEmail} />
+          ) : activeSubmodule.id === 'marketing-costos-origen' ? (
+            <MktCostosPorOrigenSubmodule />
           ) : activeSubmodule.id === 'operadores-ventas' ? (
             <OperadoresVentasSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'flujo-financiero' ? (

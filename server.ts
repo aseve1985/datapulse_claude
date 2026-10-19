@@ -1475,6 +1475,58 @@ async function startServer() {
     }
   });
 
+  // ── Marketing · Costos por Origen Endpoints ─────────────────────────────────────
+  let costosPorOrigenCache: { rows: any[]; fetchedAt: number } | null = null;
+  const COSTOS_POR_ORIGEN_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas (refresh D-1 diario)
+  const COSTOS_POR_ORIGEN_NUMERIC_FIELDS = [
+    'cantidad_leads', 'cantidad_leads_otp', 'cantidad_motor', 'cantidad_ofertas', 'cantidad_ventas',
+    'capital_vendido', 'tipo_cambio_usd', 'costo_operativo_pool_pais', 'costo_operativo_por_lead',
+    'costo_operativo', 'costo_marketing', 'costo_total', 'cpl', 'cpm', 'cpo', 'cpv',
+    'cpl_usd', 'cpm_usd', 'cpo_usd', 'cpv_usd', 'conv_lead_motor', 'conv_motor_oferta',
+    'conv_oferta_venta', 'conv_lead_venta', 'factor_prorrateo',
+  ];
+
+  app.get('/api/marketing/costos-origen-mensual', async (req, res) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+    const now = Date.now();
+    if (costosPorOrigenCache && now - costosPorOrigenCache.fetchedAt <= COSTOS_POR_ORIGEN_CACHE_TTL_MS) {
+      return res.json({ rows: costosPorOrigenCache.rows });
+    }
+    try {
+      const result = await redshiftPool.query(`
+        SELECT pais, mes, origen, tipo_origen, moneda_local,
+               cantidad_leads, cantidad_leads_otp, cantidad_motor, cantidad_ofertas, cantidad_ventas,
+               capital_vendido, tipo_cambio_usd,
+               costo_operativo_pool_pais, costo_operativo_por_lead, costo_operativo, costo_marketing, costo_total,
+               cpl, cpm, cpo, cpv, cpl_usd, cpm_usd, cpo_usd, cpv_usd,
+               conv_lead_motor, conv_motor_oferta, conv_oferta_venta, conv_lead_venta,
+               mes_costo_referencia, factor_prorrateo, es_costo_estimado, es_cohorte_abierta,
+               fecha_corte, updated_at
+        FROM marketing.cac_proveedor_mensual
+        ORDER BY pais, origen, mes
+      `);
+      const rows = result.rows.map((r: any) => {
+        const out: any = { ...r };
+        for (const f of COSTOS_POR_ORIGEN_NUMERIC_FIELDS) {
+          out[f] = r[f] === null || r[f] === undefined ? null : Number(r[f]);
+        }
+        return out;
+      });
+      const safe = JSON.parse(JSON.stringify(rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
+      costosPorOrigenCache = { rows: safe, fetchedAt: now };
+      console.log(`[CostosPorOrigen] Cached ${safe.length} filas de marketing.cac_proveedor_mensual`);
+      res.json({ rows: safe });
+    } catch (error: any) {
+      console.error('[CostosPorOrigen] Error consultando Redshift:', error);
+      res.status(500).json({ error: 'Error al cargar costos por origen', details: error.message });
+    }
+  });
+
   app.patch("/api/uif/audit", async (req, res) => {
     const body = req.body as {
       loan_id: number;
