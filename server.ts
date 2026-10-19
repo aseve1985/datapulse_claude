@@ -2632,7 +2632,7 @@ ${JSON.stringify(rawRows)}`;
     ),
     motor_arg AS (
         SELECT DATE_TRUNC('month', executiondate)::date AS mes, COUNT(DISTINCT executionid) AS cantidad_motor
-        FROM risk_arg.risk_engine_arg WHERE tipo_cliente = 0 GROUP BY 1
+        FROM risk_arg.risk_engine_arg WHERE tipo_cliente = 0 AND policyid NOT IN (10,14,16) GROUP BY 1
     ),
     ofertas_arg AS (
         SELECT DATE_TRUNC('month', fecha_oferta)::date AS mes, COUNT(DISTINCT lead_id) AS cantidad_ofertas
@@ -2659,7 +2659,7 @@ ${JSON.stringify(rawRows)}`;
     ),
     motor_col AS (
         SELECT DATE_TRUNC('month', executiondate::timestamp)::date AS mes, COUNT(DISTINCT executionid) AS cantidad_motor
-        FROM risk_col.risk_engine_col WHERE tipo_cliente = 0 GROUP BY 1
+        FROM risk_col.risk_engine_col WHERE tipo_cliente = 0 AND policyid NOT IN (16,17,18) GROUP BY 1
     ),
     ofertas_col AS (
         SELECT DATE_TRUNC('month', fecha_oferta)::date AS mes, COUNT(DISTINCT lead_id) AS cantidad_ofertas
