@@ -77,12 +77,13 @@ export interface KpiAgregado {
 }
 
 export const safeDiv = (num: number, den: number): number | null => (den > 0 ? num / den : null);
+const pctDe = (num: number, den: number): number | null => { const r = safeDiv(num, den); return r === null ? null : r * 100; };
 
-const sumField = (rows: CostoOrigenRow[], field: 'costo_total' | 'costo_operativo' | 'costo_marketing' | 'cantidad_leads' | 'cantidad_motor' | 'cantidad_ofertas' | 'cantidad_ventas'): number =>
+const sumField = (rows: CostoOrigenRow[], field: keyof CostoOrigenRow): number =>
   rows.reduce((s, r) => s + (Number(r[field]) || 0), 0);
 
 // Convierte fila por fila a USD con su propio tipo_cambio_usd antes de sumar.
-export const sumUsd = (rows: CostoOrigenRow[], field: 'costo_total' | 'costo_operativo' | 'costo_marketing'): number =>
+export const sumUsd = (rows: CostoOrigenRow[], field: keyof CostoOrigenRow): number =>
   rows.reduce((s, r) => s + (r.tipo_cambio_usd > 0 ? (Number(r[field]) || 0) / r.tipo_cambio_usd : 0), 0);
 
 export function aggregateKpis(rows: CostoOrigenRow[]): KpiAgregado {
@@ -120,16 +121,19 @@ export interface TablaFila {
   key: string;
   pais: string;
   origen: string;
-  mes: string | null; // null en filas de subtotal/total
-  esSubtotal: boolean;
+  mes: string | null; // null en filas de total
   esTotal: boolean;
   leads: number;
   motor: number;
   ofertas: number;
   ventas: number;
+  capitalVendido: number;
   costoOperativo: number;
   costoMarketing: number;
   costoTotal: number;
+  pctCostoOperativo: number | null; // costoOperativo / capitalVendido, en %
+  pctCostoMarketing: number | null;
+  pctCostoTotal: number | null;
   cpl: number | null;
   cpm: number | null;
   cpo: number | null;
@@ -138,58 +142,43 @@ export interface TablaFila {
   esCohorteAbierta: boolean;
 }
 
-// Filas origen × mes + subtotal recalculado por origen + total(es) por país (o un
-// único total en USD si se está consolidando más de un país — nunca se suma ARS+COP).
+// Filas de detalle origen × mes + total(es) por país (o un único total en USD si
+// se está consolidando más de un país — nunca se suma ARS+COP).
 export function buildTableRows(rows: CostoOrigenRow[], moneda: Moneda): TablaFila[] {
   const out: TablaFila[] = [];
-  const porOrigen = new Map<string, CostoOrigenRow[]>();
-  for (const r of rows) {
-    const key = origenKey(r.pais, r.origen);
-    if (!porOrigen.has(key)) porOrigen.set(key, []);
-    porOrigen.get(key)!.push(r);
-  }
 
-  for (const key of [...porOrigen.keys()].sort()) {
-    const origenRows = [...porOrigen.get(key)!].sort((a, b) => a.mes.localeCompare(b.mes));
-    const [pais, origen] = key.split('|');
-
-    for (const r of origenRows) {
-      out.push({
-        key: `${key}|${r.mes}`, pais: r.pais, origen: r.origen, mes: r.mes,
-        esSubtotal: false, esTotal: false,
-        leads: r.cantidad_leads, motor: r.cantidad_motor, ofertas: r.cantidad_ofertas, ventas: r.cantidad_ventas,
-        costoOperativo: moneda === 'usd' ? sumUsd([r], 'costo_operativo') : r.costo_operativo,
-        costoMarketing: moneda === 'usd' ? sumUsd([r], 'costo_marketing') : r.costo_marketing,
-        costoTotal: moneda === 'usd' ? sumUsd([r], 'costo_total') : r.costo_total,
-        cpl: moneda === 'usd' ? r.cpl_usd : r.cpl,
-        cpm: moneda === 'usd' ? r.cpm_usd : r.cpm,
-        cpo: moneda === 'usd' ? r.cpo_usd : r.cpo,
-        cpv: moneda === 'usd' ? r.cpv_usd : r.cpv,
-        esEstimado: r.es_costo_estimado, esCohorteAbierta: r.es_cohorte_abierta,
-      });
-    }
-
-    const agg = aggregateKpis(origenRows);
+  for (const r of [...rows].sort((a, b) => a.origen.localeCompare(b.origen) || a.mes.localeCompare(b.mes))) {
+    const capitalVendido = moneda === 'usd' ? sumUsd([r], 'capital_vendido') : r.capital_vendido;
+    const costoOperativo = moneda === 'usd' ? sumUsd([r], 'costo_operativo') : r.costo_operativo;
+    const costoMarketing = moneda === 'usd' ? sumUsd([r], 'costo_marketing') : r.costo_marketing;
+    const costoTotal = moneda === 'usd' ? sumUsd([r], 'costo_total') : r.costo_total;
     out.push({
-      key: `${key}|subtotal`, pais, origen, mes: null, esSubtotal: true, esTotal: false,
-      leads: agg.leads, motor: agg.motor, ofertas: agg.ofertas, ventas: agg.ventas,
-      costoOperativo: moneda === 'usd' ? sumUsd(origenRows, 'costo_operativo') : sumField(origenRows, 'costo_operativo'),
-      costoMarketing: moneda === 'usd' ? sumUsd(origenRows, 'costo_marketing') : sumField(origenRows, 'costo_marketing'),
-      costoTotal: moneda === 'usd' ? agg.costoTotalUsd : agg.costoTotal,
-      cpl: moneda === 'usd' ? agg.cplUsd : agg.cpl,
-      cpm: moneda === 'usd' ? agg.cpmUsd : agg.cpm,
-      cpo: moneda === 'usd' ? agg.cpoUsd : agg.cpo,
-      cpv: moneda === 'usd' ? agg.cpvUsd : agg.cpv,
-      esEstimado: agg.esEstimado, esCohorteAbierta: agg.esCohorteAbierta,
+      key: `${origenKey(r.pais, r.origen)}|${r.mes}`, pais: r.pais, origen: r.origen, mes: r.mes, esTotal: false,
+      leads: r.cantidad_leads, motor: r.cantidad_motor, ofertas: r.cantidad_ofertas, ventas: r.cantidad_ventas,
+      capitalVendido, costoOperativo, costoMarketing, costoTotal,
+      pctCostoOperativo: pctDe(costoOperativo, capitalVendido),
+      pctCostoMarketing: pctDe(costoMarketing, capitalVendido),
+      pctCostoTotal: pctDe(costoTotal, capitalVendido),
+      cpl: moneda === 'usd' ? r.cpl_usd : r.cpl,
+      cpm: moneda === 'usd' ? r.cpm_usd : r.cpm,
+      cpo: moneda === 'usd' ? r.cpo_usd : r.cpo,
+      cpv: moneda === 'usd' ? r.cpv_usd : r.cpv,
+      esEstimado: r.es_costo_estimado, esCohorteAbierta: r.es_cohorte_abierta,
     });
   }
 
   if (moneda === 'usd') {
     const agg = aggregateKpis(rows);
+    const capitalVendido = sumUsd(rows, 'capital_vendido');
+    const costoOperativo = sumUsd(rows, 'costo_operativo');
+    const costoMarketing = sumUsd(rows, 'costo_marketing');
     out.push({
-      key: 'total', pais: '—', origen: 'TOTAL', mes: null, esSubtotal: false, esTotal: true,
+      key: 'total', pais: '—', origen: 'TOTAL', mes: null, esTotal: true,
       leads: agg.leads, motor: agg.motor, ofertas: agg.ofertas, ventas: agg.ventas,
-      costoOperativo: sumUsd(rows, 'costo_operativo'), costoMarketing: sumUsd(rows, 'costo_marketing'), costoTotal: agg.costoTotalUsd,
+      capitalVendido, costoOperativo, costoMarketing, costoTotal: agg.costoTotalUsd,
+      pctCostoOperativo: pctDe(costoOperativo, capitalVendido),
+      pctCostoMarketing: pctDe(costoMarketing, capitalVendido),
+      pctCostoTotal: pctDe(agg.costoTotalUsd, capitalVendido),
       cpl: agg.cplUsd, cpm: agg.cpmUsd, cpo: agg.cpoUsd, cpv: agg.cpvUsd,
       esEstimado: agg.esEstimado, esCohorteAbierta: agg.esCohorteAbierta,
     });
@@ -197,10 +186,16 @@ export function buildTableRows(rows: CostoOrigenRow[], moneda: Moneda): TablaFil
     for (const pais of [...new Set(rows.map(r => r.pais))].sort()) {
       const paisRows = rows.filter(r => r.pais === pais);
       const agg = aggregateKpis(paisRows);
+      const capitalVendido = sumField(paisRows, 'capital_vendido');
+      const costoOperativo = sumField(paisRows, 'costo_operativo');
+      const costoMarketing = sumField(paisRows, 'costo_marketing');
       out.push({
-        key: `total|${pais}`, pais, origen: `TOTAL ${pais}`, mes: null, esSubtotal: false, esTotal: true,
+        key: `total|${pais}`, pais, origen: 'TOTAL', mes: null, esTotal: true,
         leads: agg.leads, motor: agg.motor, ofertas: agg.ofertas, ventas: agg.ventas,
-        costoOperativo: sumField(paisRows, 'costo_operativo'), costoMarketing: sumField(paisRows, 'costo_marketing'), costoTotal: agg.costoTotal,
+        capitalVendido, costoOperativo, costoMarketing, costoTotal: agg.costoTotal,
+        pctCostoOperativo: pctDe(costoOperativo, capitalVendido),
+        pctCostoMarketing: pctDe(costoMarketing, capitalVendido),
+        pctCostoTotal: pctDe(agg.costoTotal, capitalVendido),
         cpl: agg.cpl, cpm: agg.cpm, cpo: agg.cpo, cpv: agg.cpv,
         esEstimado: agg.esEstimado, esCohorteAbierta: agg.esCohorteAbierta,
       });
@@ -208,6 +203,62 @@ export function buildTableRows(rows: CostoOrigenRow[], moneda: Moneda): TablaFil
   }
 
   return out;
+}
+
+// Agregado por origen (sin desglose mensual) — usado por el gráfico de
+// composición del costo, que ya no tiene una fila de subtotal propia en la tabla.
+export function aggregateByOrigen(rows: CostoOrigenRow[], moneda: Moneda): TablaFila[] {
+  const porOrigen = new Map<string, CostoOrigenRow[]>();
+  for (const r of rows) {
+    const key = origenKey(r.pais, r.origen);
+    if (!porOrigen.has(key)) porOrigen.set(key, []);
+    porOrigen.get(key)!.push(r);
+  }
+
+  return [...porOrigen.keys()].sort().map(key => {
+    const origenRows = porOrigen.get(key)!;
+    const [pais, origen] = key.split('|');
+    const agg = aggregateKpis(origenRows);
+    const capitalVendido = moneda === 'usd' ? sumUsd(origenRows, 'capital_vendido') : sumField(origenRows, 'capital_vendido');
+    const costoOperativo = moneda === 'usd' ? sumUsd(origenRows, 'costo_operativo') : sumField(origenRows, 'costo_operativo');
+    const costoMarketing = moneda === 'usd' ? sumUsd(origenRows, 'costo_marketing') : sumField(origenRows, 'costo_marketing');
+    const costoTotal = moneda === 'usd' ? agg.costoTotalUsd : agg.costoTotal;
+    return {
+      key, pais, origen, mes: null, esTotal: false,
+      leads: agg.leads, motor: agg.motor, ofertas: agg.ofertas, ventas: agg.ventas,
+      capitalVendido, costoOperativo, costoMarketing, costoTotal,
+      pctCostoOperativo: pctDe(costoOperativo, capitalVendido),
+      pctCostoMarketing: pctDe(costoMarketing, capitalVendido),
+      pctCostoTotal: pctDe(costoTotal, capitalVendido),
+      cpl: moneda === 'usd' ? agg.cplUsd : agg.cpl,
+      cpm: moneda === 'usd' ? agg.cpmUsd : agg.cpm,
+      cpo: moneda === 'usd' ? agg.cpoUsd : agg.cpo,
+      cpv: moneda === 'usd' ? agg.cpvUsd : agg.cpv,
+      esEstimado: agg.esEstimado, esCohorteAbierta: agg.esCohorteAbierta,
+    };
+  });
+}
+
+export type SortBy = 'origen' | 'mes' | 'cpl' | 'cpm' | 'cpo' | 'cpv';
+
+// Ordena solo las filas de detalle — las filas de Total quedan siempre al pie.
+// Los nulos (denominador en 0) se mandan al final, cualquiera sea el criterio.
+export function sortTableRows(rows: TablaFila[], sortBy: SortBy): TablaFila[] {
+  const detalle = rows.filter(r => !r.esTotal);
+  const totales = rows.filter(r => r.esTotal);
+
+  const cmp = (a: TablaFila, b: TablaFila): number => {
+    if (sortBy === 'origen') return a.origen.localeCompare(b.origen) || (a.mes ?? '').localeCompare(b.mes ?? '');
+    if (sortBy === 'mes') return (a.mes ?? '').localeCompare(b.mes ?? '') || a.origen.localeCompare(b.origen);
+    const av = a[sortBy];
+    const bv = b[sortBy];
+    if (av === null && bv === null) return 0;
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return av - bv;
+  };
+
+  return [...detalle.sort(cmp), ...totales];
 }
 
 // Desplaza un mes ('YYYY-MM-DD', primer día de mes) n meses hacia atrás.
@@ -222,6 +273,14 @@ export function contarMeses(desde: string, hasta: string): number {
   const [y1, m1] = desde.split('-').map(Number);
   const [y2, m2] = hasta.split('-').map(Number);
   return (y2 - y1) * 12 + (m2 - m1) + 1;
+}
+
+// n meses consecutivos ('YYYY-MM-DD', primer día de mes) arrancando en `desde`.
+// Sirve para construir el "período anterior" cuando la selección de meses no es
+// necesariamente un rango contiguo (ej. un árbol año/mes con checks sueltos).
+export function generarRangoMeses(desde: string, n: number): string[] {
+  const [y, m] = desde.split('-').map(Number);
+  return Array.from({ length: n }, (_, i) => new Date(Date.UTC(y, m - 1 + i, 1)).toISOString().slice(0, 10));
 }
 
 export function getVariacionPct(actual: number | null, anterior: number | null): number | null {

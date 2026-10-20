@@ -376,6 +376,15 @@ REGLAS CRÍTICAS PARA ESTE MÓDULO:
 - total_envios es una CANTIDAD de mensajes enviados (unidades enteras), NO un valor monetario. Nunca apliques cotizaciones de dólar, ARS, COP ni ninguna conversión de moneda sobre esta columna.
 - No existe costo, monto ni precio en este dataset. No inferras valores en USD ni en ninguna otra moneda.
 - El análisis debe centrarse en volumen de envíos, tendencias temporales, distribución por canal/proveedor/tipo y comparación entre países. Nada más.`,
+  'marketing-costos-origen': `Estás analizando datos del módulo de COSTOS POR ORIGEN de Marketing: costo de adquisición (CAC) del negocio nuevo de Argentina y Colombia, abierto por proveedor de originación (CREDITILIA, WITME, IKIWI, AL PRESTAMO, RESTO). Grano: país × mes de cohorte (campo "mes", el mes de CREACIÓN del lead, no el de la venta) × origen. Columnas clave: pais, mes, origen, tipo_origen, cantidad_leads, cantidad_motor, cantidad_ofertas, cantidad_ventas, capital_vendido, costo_operativo, costo_marketing, costo_total, cpl/cpm/cpo/cpv (y sus versiones _usd), conv_lead_motor/conv_motor_oferta/conv_oferta_venta, es_costo_estimado, es_cohorte_abierta.
+
+REGLAS CRÍTICAS PARA ESTE MÓDULO:
+- CPL/CPM/CPO/CPV son costo_total dividido por leads/motor/ofertas/ventas respectivamente. Si te piden un CPL/CPM/CPO/CPV agregado sobre más de una fila (varios meses u orígenes), NUNCA promedies los valores ya calculados — recalculá desde las sumas: SUM(costo_total) / SUM(denominador correspondiente). Lo mismo para las conversiones del funnel (motor/leads, ofertas/motor, ventas/ofertas).
+- Si el denominador agregado es 0, el resultado es indefinido — decilo explícitamente, no muestres 0 ni infinito.
+- Nunca sumes montos en moneda local de ARS y COP. Un total multipaís solo tiene sentido en USD, y para eso cada fila se convierte con su propio tipo_cambio_usd antes de sumar (el tipo de cambio cambia mes a mes).
+- "es_costo_estimado" = true significa que ese mes todavía no tenía costos cargados y se replicó/prorrateó el último mes disponible — avisá si el usuario pregunta por un mes reciente que tenga este flag.
+- "es_cohorte_abierta" = true significa que esa cohorte tiene leads con menos de 30 días: sus CPM/CPO/CPV todavía pueden bajar a medida que maduren — es una advertencia, no un error.
+- Ventana de conversión del funnel: 30 días desde la creación del lead.`,
 };
 
 function buildDataPrompt(

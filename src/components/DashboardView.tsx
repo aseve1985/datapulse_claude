@@ -1732,7 +1732,7 @@ export default function DashboardView({
           ) : activeSubmodule.id === 'marketing-comunicaciones' ? (
             <MktComunicacionesSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'marketing-costos-origen' ? (
-            <MktCostosPorOrigenSubmodule />
+            <MktCostosPorOrigenSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'operadores-ventas' ? (
             <OperadoresVentasSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'flujo-financiero' ? (
