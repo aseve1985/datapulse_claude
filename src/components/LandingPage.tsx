@@ -295,7 +295,21 @@ const modules = [
     description: 'Reportes ejecutivos de alto nivel y visión estratégica global.',
     icon: Users,
     color: 'bg-blue-900',
-    type: 'api'
+    type: 'api',
+    submodules: [
+      {
+        id: 'board-general',
+        title: 'Visión general',
+        description: 'Pantalla actual de Directorio: rango de fechas, ingesta de datos y vistas Overview / Datos.',
+        color: 'bg-blue-900'
+      },
+      {
+        id: 'board-conversion-renovadores',
+        title: 'Conversión de renovadores',
+        description: 'Conversión de renovaciones (crédito n → n+1) por paso y mes, con foco en 1º → 2º. Colombia y Argentina.',
+        color: 'bg-blue-900'
+      }
+    ]
   },
   {
     id: 'product',

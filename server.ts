@@ -13,6 +13,10 @@ import * as XLSX from "xlsx";
 import { generateCarteraExcel } from './carteraFideicomisoExcel';
 import chatRouter from './dwh-chat/router';
 import { getScoreColumnType, buildCarreraScoresQuery, type CatalogoScoreRow } from './server/riskCarreraScoresQuery';
+import {
+  runConversionRenovadores, parsePais, parseMeses, ParamError,
+  type PaisConversion, type ResultadoConversion,
+} from './server/conversionRenovadoresQuery';
 
 dotenv.config();
 
@@ -1526,6 +1530,66 @@ async function startServer() {
       res.status(500).json({ error: 'Error al cargar costos por origen', details: error.message });
     }
   });
+
+  // ── Directorio · Conversión de renovadores ──────────────────────────────────────
+  // Q1 de la spec (server/conversionRenovadoresQuery.ts). El DWH se actualiza una vez por día → caché 24h.
+  // Clave = país|meses (como máximo 2 × 3 = 6 entradas). Las llamadas concurrentes comparten una sola query.
+  const CONVERSION_RENOV_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+  const CONVERSION_RENOV_MIN_REFRESH_MS = 60 * 1000; // /refresh no relanza la query si el dato tiene < 1 min
+  const conversionRenovCache = new Map<string, { data: ResultadoConversion; fetchedAt: number }>();
+  const conversionRenovInflight = new Map<string, Promise<ResultadoConversion>>();
+
+  async function getConversionRenovadores(pool: Pool, pais: PaisConversion, meses: number, force = false) {
+    const key = `${pais}|${meses}`;
+    const cached = conversionRenovCache.get(key);
+    const age = cached ? Date.now() - cached.fetchedAt : Infinity;
+    const limite = force ? CONVERSION_RENOV_MIN_REFRESH_MS : CONVERSION_RENOV_CACHE_TTL_MS;
+    if (cached && age <= limite) {
+      return { data: cached.data, fetchedAt: cached.fetchedAt, fromCache: true };
+    }
+    let pending = conversionRenovInflight.get(key);
+    if (!pending) {
+      const t0 = Date.now();
+      pending = runConversionRenovadores(pool, pais, meses)
+        .then(data => {
+          conversionRenovCache.set(key, { data, fetchedAt: Date.now() });
+          console.log(`[ConversionRenovadores] ${key}: ${data.filas.length} filas en ${Date.now() - t0} ms (corte ${data.fecha_extraccion})`);
+          return data;
+        })
+        .finally(() => conversionRenovInflight.delete(key));
+      conversionRenovInflight.set(key, pending);
+    }
+    const data = await pending;
+    return { data, fetchedAt: conversionRenovCache.get(key)?.fetchedAt ?? Date.now(), fromCache: false };
+  }
+
+  const handleConversionRenovadores = (force: boolean) => async (req: express.Request, res: express.Response) => {
+    if (!redshiftPool) {
+      return res.status(503).json({
+        error: 'Conexión a Redshift no configurada',
+        required_env: ['REDSHIFT_HOST', 'REDSHIFT_DATABASE', 'REDSHIFT_USER', 'REDSHIFT_PASSWORD'],
+      });
+    }
+    let pais: PaisConversion;
+    let meses: number;
+    try {
+      pais = parsePais(req.query.pais);
+      meses = parseMeses(req.query.meses);
+    } catch (e: any) {
+      if (e instanceof ParamError) return res.status(400).json({ error: e.message });
+      throw e;
+    }
+    try {
+      const { data, fetchedAt, fromCache } = await getConversionRenovadores(redshiftPool, pais, meses, force);
+      res.json({ ...data, cached_at: new Date(fetchedAt).toISOString(), from_cache: fromCache });
+    } catch (error: any) {
+      console.error('[ConversionRenovadores] Error consultando Redshift:', error);
+      res.status(500).json({ error: 'Error al calcular la conversión de renovadores', details: error.message });
+    }
+  };
+
+  app.get('/api/board/conversion-renovadores', handleConversionRenovadores(false));
+  app.post('/api/board/conversion-renovadores/refresh', handleConversionRenovadores(true));
 
   app.patch("/api/uif/audit", async (req, res) => {
     const body = req.body as {

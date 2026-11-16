@@ -223,3 +223,26 @@ export async function fetchCostosPorOrigenMensual(): Promise<{ rows: any[] }> {
   }
   return response.json();
 }
+
+export interface ConversionRenovadoresResponse {
+  pais: string;
+  meses: number;
+  fecha_extraccion: string; // 'YYYY-MM-DD' (CURRENT_DATE de Redshift)
+  filas: any[];
+  cached_at: string;
+  from_cache: boolean;
+}
+
+async function requestConversionRenovadores(pais: string, meses: number, refresh: boolean): Promise<ConversionRenovadoresResponse> {
+  const params = new URLSearchParams({ pais, meses: String(meses) });
+  const url = `/api/board/conversion-renovadores${refresh ? '/refresh' : ''}?${params}`;
+  const response = await fetch(url, { method: refresh ? 'POST' : 'GET', headers: { 'accept': 'application/json' } });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.details || errorData.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export const fetchConversionRenovadores = (pais: string, meses: number) => requestConversionRenovadores(pais, meses, false);
+export const refreshConversionRenovadores = (pais: string, meses: number) => requestConversionRenovadores(pais, meses, true);

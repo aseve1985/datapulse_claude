@@ -50,6 +50,7 @@ import OperadoresVentasSubmodule from './submodules/OperadoresVentasSubmodule';
 import FlujoFinancieroSubmodule from './submodules/FlujoFinancieroSubmodule';
 import CatalogoProductosSubmodule from './submodules/CatalogoProductosSubmodule';
 import MktCostosPorOrigenSubmodule from './submodules/MktCostosPorOrigenSubmodule';
+import BoardConversionRenovadoresSubmodule from './submodules/BoardConversionRenovadoresSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
 
 function cn(...inputs: ClassValue[]) {
@@ -1661,7 +1662,7 @@ export default function DashboardView({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {submodules.map((sub: any, idx: number) => {
-                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'marketing-costos-origen', 'operadores-ventas', 'flujo-financiero', 'catalogo-productos'].includes(sub.id);
+                  const isLive = ['uif', 'ri-experian', 'buscador-pagos', 'ri-bcra-tasas', 'cartera-fideicomiso-arg', 'ri-asistente', 'ri-carrera-scores', 'bi-documentacion', 'bi-obsidian', 'admin-gastos', 'marketing-kpis', 'marketing-comunicaciones', 'marketing-costos-origen', 'operadores-ventas', 'flujo-financiero', 'catalogo-productos', 'board-conversion-renovadores'].includes(sub.id);
                   const isDisabled = ['ri-analitico', 'bi-tools', 'marketing-estrategia'].includes(sub.id);
                   return (
                     <motion.button
@@ -1703,7 +1704,7 @@ export default function DashboardView({
             </motion.div>
           </div>
 
-        ) : moduleType === 'api' && submodules.length > 0 && activeSubmodule && activeSubmodule.id !== 'marketing-kpis' ? (
+        ) : moduleType === 'api' && submodules.length > 0 && activeSubmodule && activeSubmodule.id !== 'marketing-kpis' && activeSubmodule.id !== 'board-general' ? (
           /* Sub-módulo activo — cada uno renderiza su propio componente */
           activeSubmodule.id === 'uif' ? (
             <UifSubmodule userEmail={userEmail} />
@@ -1739,6 +1740,8 @@ export default function DashboardView({
             <FlujoFinancieroSubmodule userEmail={userEmail} />
           ) : activeSubmodule.id === 'catalogo-productos' ? (
             <CatalogoProductosSubmodule />
+          ) : activeSubmodule.id === 'board-conversion-renovadores' ? (
+            <BoardConversionRenovadoresSubmodule />
           ) : (
             /* Placeholder para sub-módulos aún sin implementar */
             <div className="flex-1 flex flex-col items-center justify-center py-20">
