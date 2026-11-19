@@ -2,13 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { TrendingUp, AlertTriangle, Loader2, ChevronDown } from 'lucide-react';
 import { fetchCatalogoScores, fetchCarreraScores } from '../../services/api';
-import { pivotGrid, filterGridByBanda, computeHeaderIndicators, UMBRALES, type HechoRow, type BandaCatalogo, type GridRow } from './carreraScoresHelpers';
+import { pivotGrid, filterGridByBanda, computeHeaderIndicators, UMBRALES, BANDAS_ESPECIALES, type HechoRow, type BandaCatalogo, type GridRow } from './carreraScoresHelpers';
 
 const formatPct = (v: number | null) => v === null ? null : `${v.toFixed(1)}%`;
 const formatMonto = (v: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
 const formatMontoPorPais = (v: number, pais: string) => `${pais === 'ARG' ? '$' : 'COP'} ${Math.round(v).toLocaleString('es-AR')}`;
-
-const BANDAS_COMPARATIVO = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
 interface ComparativoColumna {
   scoreKey: string;
@@ -165,11 +163,11 @@ export default function RiCarreraScoresSubmodule() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <IndicadorCard titulo="Spread observado vs esperado"
                 valor={indicadores.spread !== null ? `${indicadores.spread.toFixed(2)}x` : 'volumen insuficiente'}
-                sub={indicadores.spreadEsperado !== null ? `esperado (lift d1/d10): ${indicadores.spreadEsperado.toFixed(2)}x` : undefined}
+                sub={indicadores.spreadEsperado !== null ? `${indicadores.spreadEsperadoLabel}: ${indicadores.spreadEsperado.toFixed(2)}x` : undefined}
                 gris={indicadores.spread === null} />
               <IndicadorCard titulo="Inversiones"
                 valor={String(indicadores.inversiones)}
-                sub={indicadores.inversiones === 0 ? 'sin inversiones — esperado' : 'algún par de tramos consecutivos se invirtió'} />
+                sub={indicadores.inversiones === 0 ? 'sin inversiones — esperado' : 'algún par de tramos/bandas consecutivos se invirtió'} />
               <IndicadorCard titulo="Cobertura" valor={`${indicadores.coberturaPct.toFixed(1)}%`} sub="Q con score / Q vendidos" />
             </div>
           )}
@@ -231,6 +229,11 @@ export default function RiCarreraScoresSubmodule() {
 function ComparativoTable({ titulo, columnas }: { titulo: string; columnas: ComparativoColumna[] }) {
   if (columnas.length === 0) return null;
   const pais = titulo.includes('ARG') ? 'ARG' : 'COL';
+  // Cada score puede tener un esquema vigente distinto (10 deciles, 6 bandas...):
+  // las filas son la unión de bandas numéricas de todos los scores del país.
+  const bandasFilas = [...new Set(columnas.flatMap(c => c.grid
+    .filter(r => !r.esTotal && !BANDAS_ESPECIALES.includes(r.banda) && r.banda !== 'FUERA_DE_RANGO')
+    .map(r => r.banda)))].sort((a, b) => Number(a) - Number(b));
 
   return (
     <div className="flex flex-col gap-2">
@@ -258,7 +261,7 @@ function ComparativoTable({ titulo, columnas }: { titulo: string; columnas: Comp
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
-            {[...BANDAS_COMPARATIVO, 'TOTAL'].map(banda => (
+            {[...bandasFilas, 'TOTAL'].map(banda => (
               <tr key={banda} className={banda === 'TOTAL' ? 'bg-slate-800/60 font-bold' : 'hover:bg-slate-800/40'}>
                 <td className="px-4 py-2 text-xs text-zinc-200 whitespace-nowrap border-r border-slate-800">
                   {banda === 'TOTAL' ? 'Total' : `Banda ${banda}`}
@@ -267,6 +270,17 @@ function ComparativoTable({ titulo, columnas }: { titulo: string; columnas: Comp
                   const row = c.grid.find(r => banda === 'TOTAL' ? r.esTotal : r.banda === banda);
                   const celda30 = row?.celdas[30];
                   const pct = celda30 ? formatPct(celda30.moraPct) : null;
+                  if (!row) {
+                    // Este score no tiene esa banda en su esquema vigente.
+                    return (
+                      <Fragment key={c.scoreKey}>
+                        <td className="px-3 py-2 text-xs text-zinc-600 whitespace-nowrap border-l border-slate-800">—</td>
+                        <td className="px-3 py-2 text-xs text-zinc-600">—</td>
+                        <td className="px-3 py-2 text-xs text-zinc-600">—</td>
+                        <td className="px-3 py-2 text-xs text-zinc-600">—</td>
+                      </Fragment>
+                    );
+                  }
                   return (
                     <Fragment key={c.scoreKey}>
                       <td className="px-3 py-2 text-xs text-zinc-300 whitespace-nowrap border-l border-slate-800">{(row?.qVendidos ?? 0).toLocaleString('es-AR')}</td>

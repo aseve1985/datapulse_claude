@@ -99,10 +99,13 @@ const CANCELADO_DIAS_BANDA_SQL = (bindScoreKey: string) => `
     FROM cancelado
   ),
   banda AS (
+    -- Solo bandas vigentes (flag_vigente = 1): un mismo score puede tener esquemas
+    -- viejos y nuevos en el catálogo; sin este filtro un crédito matchea en ambos y
+    -- se cuenta dos veces. Nunca usar cortes a mano ni las columnas banda_score_* de gold.
     SELECT d.*, bnd.decil
     FROM dias d
     LEFT JOIN gold.catalogo_scores_bandas_multipais bnd
-      ON bnd.score_key = ${bindScoreKey} AND d.estado_score = 'VALIDO'
+      ON bnd.score_key = ${bindScoreKey} AND bnd.flag_vigente = 1 AND d.estado_score = 'VALIDO'
      AND d.score_final BETWEEN bnd.score_min AND bnd.score_max
   )
 `;

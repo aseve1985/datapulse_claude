@@ -3,7 +3,7 @@ export interface HechoRow {
   pais: string;
   segmento: string;
   cepa: string;
-  banda: string; // '1'..'10' | 'SIN_SCORE' | 'ERROR_NODO'
+  banda: string; // decil vigente ('1'..'N') | 'SIN_SCORE' | 'ERROR_NODO'
   umbral_dias: number;
   q_vendidos: number;
   capital: number;
@@ -19,11 +19,26 @@ export interface BandaCatalogo {
   score_max: number;
   bad_rate: number;
   lift: number;
-  tramo_5: string;
+  tramo_5: string | null; // null en esquemas sin tramos (ej. SHADOW_Q6)
+  esquema_bandas?: string;
+  metrica_bad?: string;
+  flag_vigente?: number;
 }
 
 export const UMBRALES = [5, 10, 30, 60, 90] as const;
-export const BANDA_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'SIN_SCORE', 'ERROR_NODO'];
+export const BANDAS_ESPECIALES = ['SIN_SCORE', 'ERROR_NODO'];
+
+/**
+ * Bandas vigentes de un score, ordenadas por decil. La cantidad depende del esquema
+ * vigente en gold.catalogo_scores_bandas_multipais (10 deciles, 6 bandas, etc.) —
+ * nunca se asume un número fijo. El server ya filtra flag_vigente = 1; el filtro acá
+ * es defensa por si llega alguna fila no vigente.
+ */
+export function bandasVigentesDelScore(bandas: BandaCatalogo[], scoreKey: string): BandaCatalogo[] {
+  return bandas
+    .filter(b => b.score_key === scoreKey && (b.flag_vigente === undefined || Number(b.flag_vigente) === 1))
+    .sort((a, b) => Number(a.decil) - Number(b.decil));
+}
 
 export interface GridCell {
   moraPct: number | null; // null = sin madurar (n_elegible === 0)
@@ -64,9 +79,11 @@ export function pivotGrid(
 ): GridRow[] {
   const cepasSet = new Set(cepas);
   const filtrados = hechos.filter(h => h.score_key === scoreKey && cepasSet.has(h.cepa));
-  const bandasDelScore = new Map(bandas.filter(b => b.score_key === scoreKey).map(b => [String(b.decil), b]));
+  const vigentes = bandasVigentesDelScore(bandas, scoreKey);
+  const bandasDelScore = new Map(vigentes.map(b => [String(b.decil), b]));
+  const bandaOrder = [...vigentes.map(b => String(b.decil)), ...BANDAS_ESPECIALES];
 
-  const rows: GridRow[] = BANDA_ORDER.map(banda => {
+  const rows: GridRow[] = bandaOrder.map(banda => {
     const filasBanda = filtrados.filter(h => h.banda === banda);
     const catalogoBanda = bandasDelScore.get(banda);
     // q_vendidos/capital/capital_mas_interes se repiten idénticos en las 5 filas de
@@ -87,7 +104,7 @@ export function pivotGrid(
 
     const label = banda === 'SIN_SCORE' ? 'SIN SCORE'
       : banda === 'ERROR_NODO' ? 'ERROR NODO (-1)'
-      : `${banda} · ${catalogoBanda?.tramo_5 ?? ''}`;
+      : catalogoBanda?.tramo_5 ? `${banda} · ${catalogoBanda.tramo_5}` : `Banda ${banda}`;
     const scoreRange = catalogoBanda ? `${catalogoBanda.score_min}-${catalogoBanda.score_max}` : null;
 
     return { banda, label, scoreRange, qVendidos, capital, capitalMasInteres, celdas };
@@ -95,7 +112,7 @@ export function pivotGrid(
 
   // Cualquier banda no reconocida (ej. un score fuera del rango de bandas del catálogo)
   // se agrupa en una fila visible propia — nunca se descarta en silencio.
-  const bandasReconocidas = new Set(BANDA_ORDER);
+  const bandasReconocidas = new Set(bandaOrder);
   const filasFueraDeRango = filtrados.filter(h => !bandasReconocidas.has(h.banda));
   if (filasFueraDeRango.length > 0) {
     const unaFilaPorCepa = [...new Map(filasFueraDeRango.filter(h => h.umbral_dias === UMBRALES[0]).map(h => [h.cepa, h])).values()];
@@ -127,6 +144,7 @@ export function filterGridByBanda(grid: GridRow[], bandasSeleccionadas: Set<stri
 export interface HeaderIndicators {
   spread: number | null; // null = volumen insuficiente
   spreadEsperado: number | null;
+  spreadEsperadoLabel: string;
   inversiones: number;
   coberturaPct: number;
 }
@@ -134,50 +152,77 @@ export interface HeaderIndicators {
 const TRAMOS_ORDEN = ['1 MUY BUENO', '2 BUENO', '3 MEDIO', '4 MALO', '5 MUY MALO'];
 const MIN_N_PARA_SPREAD = 300;
 
+/**
+ * Si todas las bandas vigentes del score tienen tramo_5 (esquema de deciles de desarrollo),
+ * el spread y las inversiones se miden por tramo (5 MUY MALO / 1 MUY BUENO) contra el
+ * lift d1/d10 del catálogo — comportamiento original.
+ * Si el esquema vigente no tiene tramos (ej. SHADOW_Q6 de arg_nuevos_v2), se mide banda a
+ * banda (peor banda / mejor banda) y el esperado sale del bad_rate de esas mismas bandas
+ * vigentes, para no comparar contra el lift del esquema viejo.
+ */
 export function computeHeaderIndicators(
   grid: GridRow[],
   bandas: BandaCatalogo[],
   scoreKey: string,
   liftD1D10Esperado: number | null
 ): HeaderIndicators {
-  const bandasDelScore = new Map(bandas.filter(b => b.score_key === scoreKey).map(b => [String(b.decil), b]));
+  const vigentes = bandasVigentesDelScore(bandas, scoreKey);
+  const bandasDelScore = new Map(vigentes.map(b => [String(b.decil), b]));
+  const usaTramos = vigentes.length > 0 && vigentes.every(b => !!b.tramo_5);
 
-  const porTramo = new Map<string, { nElegible: number; nMalos: number }>();
-  grid.filter(r => !r.esTotal && r.banda !== 'SIN_SCORE' && r.banda !== 'ERROR_NODO').forEach(r => {
-    const tramo = bandasDelScore.get(r.banda)?.tramo_5;
-    if (!tramo) return;
+  // Grupos ordenados de mejor a peor: tramos (esquema D10) o bandas individuales.
+  const grupos = usaTramos ? TRAMOS_ORDEN : vigentes.map(b => String(b.decil));
+  const grupoDe = (banda: string) => usaTramos ? bandasDelScore.get(banda)?.tramo_5 ?? undefined
+    : bandasDelScore.has(banda) ? banda : undefined;
+
+  const porGrupo = new Map<string, { nElegible: number; nMalos: number }>();
+  grid.filter(r => !r.esTotal && !BANDAS_ESPECIALES.includes(r.banda)).forEach(r => {
+    const grupo = grupoDe(r.banda);
+    if (!grupo) return;
     const celda30 = r.celdas[30];
-    const acc = porTramo.get(tramo) ?? { nElegible: 0, nMalos: 0 };
+    const acc = porGrupo.get(grupo) ?? { nElegible: 0, nMalos: 0 };
     acc.nElegible += celda30.nElegible;
     acc.nMalos += celda30.moraPct !== null ? Math.round((celda30.moraPct / 100) * celda30.nElegible) : 0;
-    porTramo.set(tramo, acc);
+    porGrupo.set(grupo, acc);
   });
 
-  const moraPorTramo = TRAMOS_ORDEN.map(t => {
-    const v = porTramo.get(t);
+  const moraPorGrupo = grupos.map(g => {
+    const v = porGrupo.get(g);
     return v && v.nElegible > 0 ? v.nMalos / v.nElegible : null;
   });
 
-  const nPorTramo = TRAMOS_ORDEN.map(t => porTramo.get(t)?.nElegible ?? 0);
-  const volumenSuficiente = nPorTramo.every(n => n >= MIN_N_PARA_SPREAD);
+  const nPorGrupo = grupos.map(g => porGrupo.get(g)?.nElegible ?? 0);
+  const volumenSuficiente = grupos.length >= 2 && nPorGrupo.every(n => n >= MIN_N_PARA_SPREAD);
 
-  const mejorTramo = moraPorTramo[0];
-  const peorTramo = moraPorTramo[4];
-  const spread = volumenSuficiente && mejorTramo !== null && peorTramo !== null && mejorTramo > 0
-    ? peorTramo / mejorTramo
+  const mejor = moraPorGrupo[0];
+  const peor = moraPorGrupo[moraPorGrupo.length - 1];
+  const spread = volumenSuficiente && mejor !== null && peor !== null && mejor > 0
+    ? peor / mejor
     : null;
 
   let inversiones = 0;
-  for (let i = 0; i < moraPorTramo.length - 1; i++) {
-    const a = moraPorTramo[i];
-    const b = moraPorTramo[i + 1];
+  for (let i = 0; i < moraPorGrupo.length - 1; i++) {
+    const a = moraPorGrupo[i];
+    const b = moraPorGrupo[i + 1];
     if (a !== null && b !== null && b < a) inversiones++;
   }
 
+  let spreadEsperado: number | null;
+  let spreadEsperadoLabel: string;
+  if (usaTramos) {
+    spreadEsperado = liftD1D10Esperado;
+    spreadEsperadoLabel = 'esperado (lift d1/d10)';
+  } else {
+    const brMejor = vigentes.length > 0 ? Number(vigentes[0].bad_rate) : NaN;
+    const brPeor = vigentes.length > 0 ? Number(vigentes[vigentes.length - 1].bad_rate) : NaN;
+    spreadEsperado = Number.isFinite(brMejor) && Number.isFinite(brPeor) && brMejor > 0 ? brPeor / brMejor : null;
+    spreadEsperadoLabel = `esperado (bad rate banda ${grupos[grupos.length - 1] ?? '?'}/banda ${grupos[0] ?? '?'})`;
+  }
+
   const totalRow = grid.find(r => r.esTotal)!;
-  const sinScoreRow = grid.find(r => r.banda === 'SIN_SCORE')!;
-  const qConScore = totalRow.qVendidos - sinScoreRow.qVendidos;
+  const sinScoreRow = grid.find(r => r.banda === 'SIN_SCORE');
+  const qConScore = totalRow.qVendidos - (sinScoreRow?.qVendidos ?? 0);
   const coberturaPct = totalRow.qVendidos > 0 ? (qConScore / totalRow.qVendidos) * 100 : 0;
 
-  return { spread, spreadEsperado: liftD1D10Esperado, inversiones, coberturaPct };
+  return { spread, spreadEsperado, spreadEsperadoLabel, inversiones, coberturaPct };
 }

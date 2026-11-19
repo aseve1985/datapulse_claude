@@ -1408,7 +1408,8 @@ async function startServer() {
     try {
       const [scoresResult, bandasResult] = await Promise.all([
         redshiftPool.query('SELECT * FROM gold.catalogo_scores_multipais ORDER BY pais, segmento, score_key'),
-        redshiftPool.query('SELECT * FROM gold.catalogo_scores_bandas_multipais ORDER BY score_key, decil'),
+        // Solo el esquema de bandas vigente de cada score (puede haber esquemas viejos con flag_vigente = 0).
+        redshiftPool.query('SELECT * FROM gold.catalogo_scores_bandas_multipais WHERE flag_vigente = 1 ORDER BY score_key, decil'),
       ]);
       const scores = JSON.parse(JSON.stringify(scoresResult.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
       const bandas = JSON.parse(JSON.stringify(bandasResult.rows, (_k, v) => typeof v === 'bigint' ? Number(v) : v));
