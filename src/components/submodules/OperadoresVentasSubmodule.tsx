@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { generateInsights, chatWithData } from '../../services/gemini';
+import PageLoader from '../PageLoader';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -601,33 +602,7 @@ export default function OperadoresVentasSubmodule({ userEmail }: Props) {
   // ── Render ──
 
   if (loading && operadores.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-6">
-        <div className="relative">
-          <div className="w-16 h-16 rounded-full border-4 border-slate-700" />
-          <div className="w-16 h-16 rounded-full border-4 border-t-blue-500 border-r-transparent border-b-transparent border-l-transparent animate-spin absolute inset-0" />
-          <Sparkles className="w-6 h-6 text-blue-400 absolute inset-0 m-auto" />
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <motion.p
-            key={loadingMsg}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.35 }}
-            className="text-white text-sm font-medium"
-          >
-            {loadingMsg}
-          </motion.p>
-          <p className="text-zinc-600 text-xs">Esto puede tomar unos segundos</p>
-        </div>
-        <div className="flex gap-1.5 mt-1">
-          {LOADING_MSGS.map((m, i) => (
-            <div key={i} className={`h-1 rounded-full transition-all duration-300 ${m === loadingMsg ? 'w-6 bg-blue-500' : 'w-1.5 bg-slate-700'}`} />
-          ))}
-        </div>
-      </div>
-    );
+    return <PageLoader message={loadingMsg || LOADING_MSGS[0]} subtitle="Esto puede tomar unos segundos" />;
   }
 
   return (

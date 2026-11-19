@@ -7,6 +7,7 @@ import {
 import MultiSelect from '../ui/MultiSelect';
 import { Chart, registerables } from 'chart.js';
 import { generateInsights, chatWithData } from '../../services/gemini';
+import PageLoader from '../PageLoader';
 
 Chart.register(...registerables);
 
@@ -375,10 +376,7 @@ export default function MktComunicacionesSubmodule({ userEmail }: Props) {
 
   if (loading && records.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-        <p className="text-zinc-400 text-sm">Cargando datos de comunicaciones...</p>
-      </div>
+      <PageLoader message="Cargando datos de comunicaciones..." />
     );
   }
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Loader2, AlertCircle, RefreshCcw, Filter } from 'lucide-react';
+import { AlertCircle, RefreshCcw, Filter } from 'lucide-react';
 import { Chart, registerables } from 'chart.js';
 import MultiSelect from '../ui/MultiSelect';
+import PageLoader from '../PageLoader';
 
 Chart.register(...registerables);
 
@@ -395,10 +396,7 @@ export default function RiCostosSubmodule() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 min-h-[50vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-400" />
-        <p className="text-zinc-400 text-sm font-semibold animate-pulse">Cargando costos...</p>
-      </div>
+      <PageLoader message="Cargando costos..." />
     );
   }
 

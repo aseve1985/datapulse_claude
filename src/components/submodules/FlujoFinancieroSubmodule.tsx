@@ -11,6 +11,7 @@ import {
   weeksInMonth, daysInMonth, getKpiPeriodo, sumRangeReal, fmt, fmtLocal, rcT, formatSheetCell, toDateStr,
   type DiaFlujo, type DiaProyeccion, type ProveedorRow, type Pais, type Semana,
 } from './flujoFinancieroHelpers';
+import PageLoader from '../PageLoader';
 
 type MetricaDia = 'cobranzas' | 'originaciones' | 'proveedores' | 'impuestos';
 const METRICA_DIA_LABELS: Record<MetricaDia, string> = {
@@ -441,12 +442,7 @@ export default function FlujoFinancieroSubmodule({ userEmail }: { userEmail?: st
   }, [ratiosChart, indiceResaltado, pais]);
 
   if (loading) return (
-    <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', padding: '80px 0', background: C.bg }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-        <Loader2 style={{ width: 32, height: 32, color: C.blueL }} className="animate-spin" />
-        <p style={{ color: C.txt2, fontSize: 13 }}>Cargando datos de flujo financiero...</p>
-      </div>
-    </div>
+    <PageLoader message="Cargando datos de flujo financiero..." />
   );
 
   if (error) return (

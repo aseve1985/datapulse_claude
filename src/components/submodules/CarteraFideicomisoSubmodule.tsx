@@ -9,6 +9,7 @@ import {
   MARKET, OUR_TOTAL, VINT_BENCH, CYCLE_PHASES, POOL_DATA, POOL_ROWS,
   aggregateByVintageFilter as staticAggregateByVintageFilter,
 } from './carteraFideicomisoData';
+import PageLoader from '../PageLoader';
 
 Chart.register(...registerables);
 
@@ -1470,9 +1471,7 @@ export default function CarteraFideicomisoSubmodule() {
   }), [liveSnap, liveComparison, liveDynamic, liveCurves, liveAllVintages, liveLastV, liveAggFn, liveMakeCurveDs]);
 
   if (loading) return (
-    <div className="flex-1 flex items-center justify-center">
-      <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
-    </div>
+    <PageLoader message="Cargando cartera fideicomiso..." />
   );
 
   if (error) return (

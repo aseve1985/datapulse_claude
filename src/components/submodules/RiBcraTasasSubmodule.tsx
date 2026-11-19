@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Download, Loader2, RefreshCcw, AlertCircle } from 'lucide-react';
+import PageLoader from '../PageLoader';
 
 const COLUMNS: { key: string; label: string }[] = [
   { key: 'nombre_largo', label: 'Nombre Largo' },
@@ -97,10 +98,7 @@ export default function RiBcraTasasSubmodule() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 min-h-[50vh]">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-400" />
-        <p className="text-zinc-400 text-sm font-semibold animate-pulse">Cargando tasas...</p>
-      </div>
+      <PageLoader message="Cargando tasas..." />
     );
   }
 

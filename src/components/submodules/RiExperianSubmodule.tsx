@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Database, Loader2, Download, FileText, RefreshCcw, CalendarCheck } from 'lucide-react';
 import { useState } from 'react';
+import PageLoader from '../PageLoader';
 
 interface Stats {
   total: number;
@@ -66,6 +67,7 @@ export default function RiExperianSubmodule() {
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
             {loading ? 'Preparando reporte…' : 'Cargar Registros'}
           </button>
+          {loading && <PageLoader message="Preparando reporte RI-Experian..." />}
         </motion.div>
       </div>
     );

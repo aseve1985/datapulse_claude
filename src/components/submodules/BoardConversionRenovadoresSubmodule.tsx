@@ -11,6 +11,7 @@ import {
   colorSemaforo, umbrales, fmtMes, fmtNum, fmtPct, etiquetaPaso,
   type FilaConversion, type Ventana, type Celda,
 } from './conversionRenovadoresHelpers';
+import PageLoader from '../PageLoader';
 
 type Pais = 'COL' | 'ARG';
 
@@ -62,10 +63,7 @@ export default function BoardConversionRenovadoresSubmodule() {
 
   if (loading && !datos) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-        <p className="text-zinc-400 text-sm">Cargando conversión de renovadores...</p>
-      </div>
+      <PageLoader message="Cargando conversión de renovadores..." />
     );
   }
 

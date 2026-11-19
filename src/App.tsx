@@ -17,6 +17,7 @@ import { FeatureRequestModal } from './components/FeatureRequestModal';
 import { fetchSalesData, fetchServicesData, fetchCollectionsData, fetchMarketingData, fetchCeluAhoraData } from './services/api';
 import { updateExchangeRates, EXCHANGE_RATES } from './constants';
 import type { SavedReport, ReportFilters } from './types';
+import PageLoader from './components/PageLoader';
 
 type View = 'landing' | 'dashboard';
 
@@ -473,12 +474,8 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-6">
-        <div className="w-16 h-16 border-4 border-blue-900/30 border-t-blue-500 rounded-full animate-spin shadow-lg shadow-blue-500/20" />
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-white font-bold animate-pulse tracking-widest uppercase text-xs">Verificando Identidad...</p>
-          <p className="text-zinc-500 text-[10px] uppercase tracking-widest">Google Cloud IAP SSO</p>
-        </div>
+      <div className="min-h-screen bg-slate-950">
+        <PageLoader coverHeader message="Verificando identidad..." subtitle="Google Cloud IAP SSO" />
       </div>
     );
   }
@@ -574,10 +571,7 @@ export default function App() {
       />
 
       {loading && currentView === 'landing' && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col items-center justify-center gap-4">
-          <div className="w-16 h-16 border-4 border-blue-900/30 border-t-blue-500 rounded-full animate-spin shadow-lg shadow-blue-500/20" />
-          <p className="text-white font-bold animate-pulse tracking-widest uppercase text-xs">Procesando Ingesta de Datos...</p>
-        </div>
+        <PageLoader coverHeader message="Procesando ingesta de datos..." />
       )}
 
       <AnimatePresence>

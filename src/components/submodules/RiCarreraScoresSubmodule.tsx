@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, AlertTriangle, Loader2, ChevronDown } from 'lucide-react';
+import { TrendingUp, AlertTriangle, ChevronDown } from 'lucide-react';
 import { fetchCatalogoScores, fetchCarreraScores } from '../../services/api';
 import { pivotGrid, filterGridByBanda, computeHeaderIndicators, UMBRALES, BANDAS_ESPECIALES, type HechoRow, type BandaCatalogo, type GridRow } from './carreraScoresHelpers';
+import PageLoader from '../PageLoader';
 
 const formatPct = (v: number | null) => v === null ? null : `${v.toFixed(1)}%`;
 const formatMonto = (v: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
@@ -112,9 +113,7 @@ export default function RiCarreraScoresSubmodule() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center gap-3 text-zinc-400">
-        <Loader2 className="w-5 h-5 animate-spin" /> Cargando Carrera de Scores...
-      </div>
+      <PageLoader message="Cargando Carrera de Scores..." />
     );
   }
   if (error) {

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelect from '../ui/MultiSelect';
+import PageLoader from '../PageLoader';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -820,6 +821,7 @@ export default function UifSubmodule({ userEmail }: { userEmail?: string }) {
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Database className="w-5 h-5" />}
             {loading ? 'Cargando registros…' : 'Cargar Registros'}
           </button>
+          {loading && <PageLoader message="Cargando registros UIF..." />}
         </div>
       </div>
     );

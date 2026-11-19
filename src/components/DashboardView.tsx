@@ -52,6 +52,7 @@ import CatalogoProductosSubmodule from './submodules/CatalogoProductosSubmodule'
 import MktCostosPorOrigenSubmodule from './submodules/MktCostosPorOrigenSubmodule';
 import BoardConversionRenovadoresSubmodule from './submodules/BoardConversionRenovadoresSubmodule';
 import MarketingFunnelCharts from './MarketingFunnelCharts';
+import PageLoader from './PageLoader';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -932,7 +933,6 @@ export default function DashboardView({
     'Casi lo tenemos...',
     'Un momento más...',
   ];
-  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [showSpinner, setShowSpinner] = useState(loading);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const hadLoadingRef = useRef(false);
@@ -942,11 +942,6 @@ export default function DashboardView({
     else if (sales.length > 0 || fetchError || !hadLoadingRef.current) { setShowSpinner(false); }
   }, [loading, sales.length, fetchError]);
 
-  useEffect(() => {
-    if (!showSpinner) return;
-    const t = setInterval(() => setLoadingMsgIdx(i => (i + 1) % LOADING_MESSAGES.length), 1800);
-    return () => clearInterval(t);
-  }, [showSpinner]);
 
   // Auto-fetch when opening from a saved report — only for API modules
   const didAutoFetch = useRef(false);
@@ -1590,18 +1585,7 @@ export default function DashboardView({
 
       <main className="max-w-7xl mx-auto px-6 py-8 w-full flex-1 flex flex-col">
         {showSpinner ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-6 min-h-[70vh]">
-            <div className="relative">
-              <Loader2 className="w-16 h-16 animate-spin text-blue-500" />
-              <div className="absolute inset-0 w-16 h-16 rounded-full bg-blue-500/10 animate-ping" />
-            </div>
-            <div className="text-center space-y-2">
-              <p key={loadingMsgIdx} className="text-white text-base font-semibold transition-all">
-                {LOADING_MESSAGES[loadingMsgIdx]}
-              </p>
-              <p className="text-zinc-500 text-xs">DataPulse está procesando tu consulta</p>
-            </div>
-          </div>
+          <PageLoader message={LOADING_MESSAGES} subtitle="DataPulse está procesando tu consulta" />
         ) : isRawText ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-8">

@@ -14,6 +14,7 @@ import {
   mesesAtras, generarRangoMeses, origenKey,
   type CostoOrigenRow, type Moneda, type SortBy,
 } from './costosPorOrigenHelpers';
+import PageLoader from '../PageLoader';
 
 const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const PALETTE = ['#60a5fa', '#f59e0b', '#34d399', '#f87171', '#a78bfa', '#06b6d4', '#f97316', '#84cc16'];
@@ -406,10 +407,7 @@ export default function MktCostosPorOrigenSubmodule({ userEmail }: Props) {
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-        <p className="text-zinc-400 text-sm">Cargando Costos por origen...</p>
-      </div>
+      <PageLoader message="Cargando costos por origen..." />
     );
   }
   if (error) {
